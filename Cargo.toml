@@ -1,21 +1,21 @@
 [workspace.package]
 license = "MIT-0"
-authors = ["Parity Technologies <admin@parity.io>"]
-homepage = "https://paritytech.github.io/polkadot-sdk/"
-repository = "https://github.com/paritytech/polkadot-sdk-solochain-template.git"
+authors = ["Caerulean ByteChains Private Limited"]
+homepage = "https://cbytechains.com/"
+repository = "https://github.com/CAERULEAN-BYTECHAINS-PRIVATE-LIMITED/CBC-Chain.git"
 edition = "2021"
 
 [workspace]
 members = [
-    "node",
-    "pallets/template",
-    "runtime",
+    "cbc-node",
+    "cbc-pallets/template",
+    "cbc-runtime",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-solochain-template-runtime = { path = "./runtime", default-features = false }
-pallet-template = { path = "./pallets/template", default-features = false }
+cbc-runtime= { path = "./cbc-runtime", default-features = false }
+pallet-template = { path = "./cbc-pallets/template", default-features = false }
 clap = { version = "4.5.13" }
 frame-benchmarking-cli = { version = "47.0.0", default-features = false }
 frame-metadata-hash-extension = { version = "0.8.0", default-features = false }
