@@ -12,27 +12,31 @@ use sp_keyring::Sr25519Keyring;
 
 impl SubstrateCli for Cli {
 	fn impl_name() -> String {
-		"Substrate Node".into()
+		"CBC CHAIN".into()
 	}
 
 	fn impl_version() -> String {
-		env!("SUBSTRATE_CLI_IMPL_VERSION").into()
+		env!("CBC_CLI_IMPL_VERSION").into()
 	}
 
 	fn description() -> String {
-		env!("CARGO_PKG_DESCRIPTION").into()
+		
+		"A CBC Chain runtime node built with Substrate.".into()
 	}
 
 	fn author() -> String {
-		env!("CARGO_PKG_AUTHORS").into()
+		
+		"Caerulean ByteChains Private Limited".into()
 	}
+	
 
 	fn support_url() -> String {
-		"support.anonymous.an".into()
+		
+		"https://support.cbytechains.com".into()
 	}
 
 	fn copyright_start_year() -> i32 {
-		2017
+		2025
 	}
 
 	fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
