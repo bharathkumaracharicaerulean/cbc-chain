@@ -1,54 +1,48 @@
-// This file is part of Substrate.
+// This file is part of the CBC Runtime.
+// It defines functions for generating JSON-based genesis configurations used by the blockchain node
+// when starting a development or local testnet chain.
 
-// Copyright (C) Parity Technologies (UK) Ltd.
-// SPDX-License-Identifier: Apache-2.0
+use crate::{AccountId, BalancesConfig, RuntimeGenesisConfig, SudoConfig}; // Runtime-specific types
+use alloc::{vec, vec::Vec}; // Alloc crate for dynamic arrays
+use frame_support::build_struct_json_patch; // Macro to build partial JSON patches for genesis config
+use serde_json::Value; // JSON value type
+use sp_consensus_aura::sr25519::AuthorityId as AuraId; // Aura consensus authority ID
+use sp_consensus_grandpa::AuthorityId as GrandpaId; // Grandpa finality authority ID
+use sp_genesis_builder::{self, PresetId}; // Genesis builder utilities and PresetId for pre-defined configs
+use sp_keyring::Sr25519Keyring; // Keyring to easily access dev accounts
 
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// 	http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-use crate::{AccountId, BalancesConfig, RuntimeGenesisConfig, SudoConfig};
-use alloc::{vec, vec::Vec};
-use frame_support::build_struct_json_patch;
-use serde_json::Value;
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_consensus_grandpa::AuthorityId as GrandpaId;
-use sp_genesis_builder::{self, PresetId};
-use sp_keyring::Sr25519Keyring;
-
-// Returns the genesis config presets populated with given parameters.
+/// Returns a genesis configuration in JSON format with the specified authorities,
+/// endowed accounts, and sudo (root) key.
 fn testnet_genesis(
-	initial_authorities: Vec<(AuraId, GrandpaId)>,
-	endowed_accounts: Vec<AccountId>,
-	root: AccountId,
+	initial_authorities: Vec<(AuraId, GrandpaId)>, // Validator authority pairs
+	endowed_accounts: Vec<AccountId>,              // Accounts pre-funded with balance
+	root: AccountId,                               // Root (sudo) key
 ) -> Value {
 	build_struct_json_patch!(RuntimeGenesisConfig {
+		// Configure initial balances for all endowed accounts with large amounts of tokens
 		balances: BalancesConfig {
 			balances: endowed_accounts
 				.iter()
 				.cloned()
-				.map(|k| (k, 1u128 << 60))
+				.map(|k| (k, 1u128 << 60)) // Each gets 2^60 units
 				.collect::<Vec<_>>(),
 		},
+		// Set Aura authorities from the provided initial authorities
 		aura: pallet_aura::GenesisConfig {
 			authorities: initial_authorities.iter().map(|x| (x.0.clone())).collect::<Vec<_>>(),
 		},
+		// Set Grandpa authorities with weight (1 in this case)
 		grandpa: pallet_grandpa::GenesisConfig {
 			authorities: initial_authorities.iter().map(|x| (x.1.clone(), 1)).collect::<Vec<_>>(),
 		},
+		// Assign the sudo (root) key to the provided account
 		sudo: SudoConfig { key: Some(root) },
 	})
 }
 
-/// Return the development genesis config.
+/// Returns a basic development configuration suitable for running a single-node dev chain.
+/// - Uses Alice as the sole authority and sudo.
+/// - Endows Alice, Bob, and their stash accounts with tokens.
 pub fn development_config_genesis() -> Value {
 	testnet_genesis(
 		vec![(
@@ -65,7 +59,10 @@ pub fn development_config_genesis() -> Value {
 	)
 }
 
-/// Return the local genesis config preset.
+/// Returns a local testnet configuration:
+/// - Alice and Bob are set as authorities.
+/// - Endows all keyring accounts (except One and Two) with tokens.
+/// - Alice is the sudo key.
 pub fn local_config_genesis() -> Value {
 	testnet_genesis(
 		vec![
@@ -78,6 +75,7 @@ pub fn local_config_genesis() -> Value {
 				sp_keyring::Ed25519Keyring::Bob.public().into(),
 			),
 		],
+		// Filter out keys "One" and "Two" which are not intended to be endowed
 		Sr25519Keyring::iter()
 			.filter(|v| v != &Sr25519Keyring::One && v != &Sr25519Keyring::Two)
 			.map(|v| v.to_account_id())
@@ -86,13 +84,16 @@ pub fn local_config_genesis() -> Value {
 	)
 }
 
-/// Provides the JSON representation of predefined genesis config for given `id`.
+/// Fetches the JSON representation of the genesis config for the given `PresetId`.
+/// - Supports "dev" and "local" presets.
+/// - Returns None for unknown presets.
 pub fn get_preset(id: &PresetId) -> Option<Vec<u8>> {
 	let patch = match id.as_ref() {
 		sp_genesis_builder::DEV_RUNTIME_PRESET => development_config_genesis(),
 		sp_genesis_builder::LOCAL_TESTNET_RUNTIME_PRESET => local_config_genesis(),
-		_ => return None,
+		_ => return None, // Unknown preset
 	};
+	// Serialize the generated config into JSON and return as byte array
 	Some(
 		serde_json::to_string(&patch)
 			.expect("serialization to json is expected to work. qed.")
@@ -100,7 +101,8 @@ pub fn get_preset(id: &PresetId) -> Option<Vec<u8>> {
 	)
 }
 
-/// List of supported presets.
+/// Returns the list of preset names that are supported by this runtime.
+/// These identifiers can be used when launching the chain with a specific genesis preset.
 pub fn preset_names() -> Vec<PresetId> {
 	vec![
 		PresetId::from(sp_genesis_builder::DEV_RUNTIME_PRESET),

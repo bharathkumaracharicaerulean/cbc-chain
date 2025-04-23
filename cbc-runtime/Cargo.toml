@@ -1,57 +1,66 @@
+# Basic package metadata
 [package]
-name = "cbc-runtime"
-description = "cbc-runtime part of CAERULEAN  BYTECHAINS."
-version = "0.1.0"
-license = "Unlicense"
-authors.workspace = true
-homepage.workspace = true
-repository.workspace = true
-edition.workspace = true
-publish = false
+name = "cbc-runtime"                         # The name of the crate
+description = "cbc-runtime part of CAERULEAN  BYTECHAINS."  # Description for documentation
+version = "0.1.0"                            # Version of the crate
+license = "Unlicense"                        # License type for the project
+authors.workspace = true                     # Inherit authors from the workspace settings
+homepage.workspace = true                    # Inherit homepage URL from workspace
+repository.workspace = true                  # Inherit repository URL from workspace
+edition.workspace = true                     # Use the Rust edition specified in the workspace
+publish = false                              # Prevent publishing to crates.io
 
+# Configuration for generating documentation on docs.rs
 [package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+targets = ["x86_64-unknown-linux-gnu"]       # Specify target for documentation builds
 
+# List of project dependencies
 [dependencies]
-codec = { features = ["derive"], workspace = true }
-frame-benchmarking = { optional = true, workspace = true }
-frame-executive.workspace = true
-frame-metadata-hash-extension.workspace = true
-frame-support = { features = ["experimental"], workspace = true }
-frame-system-benchmarking = { optional = true, workspace = true }
-frame-system-rpc-runtime-api.workspace = true
-frame-system.workspace = true
-frame-try-runtime = { optional = true, workspace = true }
-pallet-aura.workspace = true
-pallet-balances.workspace = true
-pallet-grandpa.workspace = true
-pallet-sudo.workspace = true
-pallet-template.workspace = true
-pallet-timestamp.workspace = true
-pallet-transaction-payment-rpc-runtime-api.workspace = true
-pallet-transaction-payment.workspace = true
-scale-info = { features = ["derive", "serde"], workspace = true }
-serde_json = { workspace = true, default-features = false, features = ["alloc"] }
-sp-api.workspace = true
-sp-block-builder.workspace = true
-sp-consensus-aura = { features = ["serde"], workspace = true }
-sp-consensus-grandpa = { features = ["serde"], workspace = true }
-sp-core = { features = ["serde"], workspace = true }
-sp-genesis-builder.workspace = true
-sp-inherents.workspace = true
-sp-keyring.workspace = true
-sp-offchain.workspace = true
-sp-runtime = { features = ["serde"], workspace = true }
-sp-session.workspace = true
-sp-storage.workspace = true
-sp-transaction-pool.workspace = true
-sp-version = { features = ["serde"], workspace = true }
+codec = { features = ["derive"], workspace = true }                              # SCALE codec with derive support
+frame-benchmarking = { optional = true, workspace = true }                       # Optional benchmarking support
+frame-executive.workspace = true                                                 # FRAME core executor
+frame-metadata-hash-extension.workspace = true                                   # Metadata hash checker
+frame-support = { features = ["experimental"], workspace = true }                # Support library for pallets
+frame-system-benchmarking = { optional = true, workspace = true }                # Optional system benchmarking
+frame-system-rpc-runtime-api.workspace = true                                    # System runtime APIs for RPC
+frame-system.workspace = true                                                    # Core system pallet
+frame-try-runtime = { optional = true, workspace = true }                        # Optional try-runtime feature
+pallet-aura.workspace = true                                                     # Aura consensus pallet
+pallet-balances.workspace = true                                                 # Balances pallet
+pallet-grandpa.workspace = true                                                  # Grandpa consensus pallet
+pallet-sudo.workspace = true                                                     # Sudo pallet for superuser access
+pallet-template.workspace = true                                                 # Custom template pallet
+pallet-timestamp.workspace = true                                                # Timestamp pallet
+pallet-transaction-payment-rpc-runtime-api.workspace = true                      # Payment APIs for transactions
+pallet-transaction-payment.workspace = true                                      # Transaction fee pallet
+scale-info = { features = ["derive", "serde"], workspace = true }                # Type metadata generation with serde
+serde_json = { workspace = true, default-features = false, features = ["alloc"] }# JSON support with alloc only
 
+# Substrate primitives and runtime libraries
+sp-api.workspace = true                                                          # Substrate runtime API interface
+sp-block-builder.workspace = true                                                # Block building traits
+sp-consensus-aura = { features = ["serde"], workspace = true }                   # Aura consensus engine
+sp-consensus-grandpa = { features = ["serde"], workspace = true }                # Grandpa consensus engine
+sp-core = { features = ["serde"], workspace = true }                             # Core Substrate types
+sp-genesis-builder.workspace = true                                              # Genesis block builder
+sp-inherents.workspace = true                                                    # Support for inherents (e.g., timestamp)
+sp-keyring.workspace = true                                                      # Development keyring support
+sp-offchain.workspace = true                                                     # Offchain workers
+sp-runtime = { features = ["serde"], workspace = true }                          # Core runtime traits
+sp-session.workspace = true                                                      # Session management
+sp-storage.workspace = true                                                      # Runtime storage primitives
+sp-transaction-pool.workspace = true                                             # Transaction pool management
+sp-version = { features = ["serde"], workspace = true }                          # Runtime versioning support
+
+# Build dependencies used at compile time
 [build-dependencies]
-substrate-wasm-builder = { optional = true, workspace = true, default-features = true }
+substrate-wasm-builder = { optional = true, workspace = true, default-features = true } # WASM build tool
 
+# Feature definitions
 [features]
-default = ["std"]
+default = ["std"]                            # Enable standard library support by default
+
+# Enable `std` support for all dependencies that support both `std` and `no_std`
 std = [
 	"codec/std",
 	"frame-benchmarking?/std",
@@ -89,6 +98,7 @@ std = [
 	"substrate-wasm-builder",
 ]
 
+# Benchmarking feature for runtime pallets
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
@@ -103,6 +113,7 @@ runtime-benchmarks = [
 	"sp-runtime/runtime-benchmarks",
 ]
 
+# Try-runtime feature for runtime upgrade testing and dry runs
 try-runtime = [
 	"frame-executive/try-runtime",
 	"frame-support/try-runtime",
@@ -118,15 +129,9 @@ try-runtime = [
 	"sp-runtime/try-runtime",
 ]
 
-# Enable the metadata hash generation.
-#
-# This is hidden behind a feature because it increases the compile time.
-# The wasm binary needs to be compiled twice, once to fetch the metadata,
-# generate the metadata hash and then a second time with the
-# `RUNTIME_METADATA_HASH` environment variable set for the `CheckMetadataHash`
-# extension.
+# Feature to enable metadata hashing for compatibility checks
+# Increases compile time due to double compilation (for metadata and final binary)
 metadata-hash = ["substrate-wasm-builder/metadata-hash"]
 
-# A convenience feature for enabling things when doing a build
-# for an on-chain release.
+# Convenience feature for preparing a runtime for on-chain release
 on-chain-release-build = ["metadata-hash", "sp-api/disable-logging"]

@@ -1,228 +1,199 @@
+// This attribute ensures that the runtime is compiled without the standard library (`no_std`) 
+// when the `std` feature is not enabled. This is required for Substrate runtimes to run in a 
+// WebAssembly (Wasm) environment.
 #![cfg_attr(not(feature = "std"), no_std)]
 
+// Include the Wasm binary generated during the build process when the `std` feature is enabled.
+// This binary is used for native execution of the runtime.
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-pub mod apis;
+// Declare runtime modules (pallets) and other components.
+pub mod apis; // Runtime APIs exposed to the outside world.
 #[cfg(feature = "runtime-benchmarks")]
-mod benchmarks;
-pub mod configs;
+mod benchmarks; // Benchmarking logic for runtime performance.
+pub mod configs; // Configuration settings for the runtime.
 
-extern crate alloc;
-use alloc::vec::Vec;
+extern crate alloc; // Import the `alloc` crate for heap-allocated data structures in `no_std` environments.
+use alloc::vec::Vec; // Import the `Vec` type for dynamic arrays.
+
 use sp_runtime::{
-	generic, impl_opaque_keys,
-	traits::{BlakeTwo256, IdentifyAccount, Verify},
-	MultiAddress, MultiSignature,
+    generic, impl_opaque_keys,
+    traits::{BlakeTwo256, IdentifyAccount, Verify},
+    MultiAddress, MultiSignature,
 };
 #[cfg(feature = "std")]
-use sp_version::NativeVersion;
-use sp_version::RuntimeVersion;
+use sp_version::NativeVersion; // Used for native runtime versioning.
+use sp_version::RuntimeVersion; // Defines the runtime version.
 
-pub use frame_system::Call as SystemCall;
-pub use pallet_balances::Call as BalancesCall;
-pub use pallet_timestamp::Call as TimestampCall;
+pub use frame_system::Call as SystemCall; // Expose the `frame_system` pallet's call type.
+pub use pallet_balances::Call as BalancesCall; // Expose the `pallet_balances` pallet's call type.
+pub use pallet_timestamp::Call as TimestampCall; // Expose the `pallet_timestamp` pallet's call type.
 #[cfg(any(feature = "std", test))]
-pub use sp_runtime::BuildStorage;
+pub use sp_runtime::BuildStorage; // Utility for building storage during tests or native execution.
 
-pub mod genesis_config_presets;
+pub mod genesis_config_presets; // Preset configurations for the genesis block.
 
-/// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
-/// the specifics of the runtime. They can then be made to be agnostic over specific formats
-/// of data like extrinsics, allowing for them to continue syncing the network through upgrades
-/// to even the core data structures.
+/// Opaque types are used to abstract away the specifics of runtime data structures.
+/// These types are used by the CLI and other tools to interact with the runtime without
+/// needing to know the exact implementation details.
 pub mod opaque {
-	use super::*;
-	use sp_runtime::{
-		generic,
-		traits::{BlakeTwo256, Hash as HashT},
-	};
+    use super::*;
+    use sp_runtime::{
+        generic,
+        traits::{BlakeTwo256, Hash as HashT},
+    };
 
-	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
+    pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic; // Opaque extrinsic type.
 
-	/// Opaque block header type.
-	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
-	/// Opaque block type.
-	pub type Block = generic::Block<Header, UncheckedExtrinsic>;
-	/// Opaque block identifier type.
-	pub type BlockId = generic::BlockId<Block>;
-	/// Opaque block hash type.
-	pub type Hash = <BlakeTwo256 as HashT>::Output;
+    /// Opaque block header type. This hides the specifics of the header structure.
+    pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
+    /// Opaque block type. This hides the specifics of the block structure.
+    pub type Block = generic::Block<Header, UncheckedExtrinsic>;
+    /// Opaque block identifier type. Used to identify blocks.
+    pub type BlockId = generic::BlockId<Block>;
+    /// Opaque block hash type. Represents the hash of a block.
+    pub type Hash = <BlakeTwo256 as HashT>::Output;
 }
 
+// Define the session keys used for consensus mechanisms like Aura and Grandpa.
 impl_opaque_keys! {
-	pub struct SessionKeys {
-		pub aura: Aura,
-		pub grandpa: Grandpa,
-	}
+    pub struct SessionKeys {
+        pub aura: Aura, // Aura consensus key.
+        pub grandpa: Grandpa, // Grandpa finality key.
+    }
 }
 
-// To learn more about runtime versioning, see:
-// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
+// Define the runtime version. This is critical for ensuring compatibility between the native
+// runtime and the Wasm runtime. It also helps tools like Polkadot-JS Apps to interact with the chain.
 #[sp_version::runtime_version]
 pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: alloc::borrow::Cow::Borrowed("cbc-runtime"),
-	impl_name: alloc::borrow::Cow::Borrowed("cbc-runtime"),
-	authoring_version: 1,
-	// The version of the runtime specification. A full node will not attempt to use its native
-	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
-	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
-	//   the compatible custom types.
-	spec_version: 100,
-	impl_version: 1,
-	apis: apis::RUNTIME_API_VERSIONS,
-	transaction_version: 1,
-	system_version: 1,
+    spec_name: alloc::borrow::Cow::Borrowed("cbc-runtime"), // Name of the runtime specification.
+    impl_name: alloc::borrow::Cow::Borrowed("cbc-runtime"), // Name of the runtime implementation.
+    authoring_version: 1, // Version of the authoring logic.
+    spec_version: 100, // Version of the runtime specification.
+    impl_version: 1, // Version of the runtime implementation.
+    apis: apis::RUNTIME_API_VERSIONS, // Runtime APIs exposed by this runtime.
+    transaction_version: 1, // Version of the transaction format.
+    system_version: 1, // Version of the system logic.
 };
 
 mod block_times {
-	/// This determines the average expected block time that we are targeting. Blocks will be
-	/// produced at a minimum duration defined by `SLOT_DURATION`. `SLOT_DURATION` is picked up by
-	/// `pallet_timestamp` which is in turn picked up by `pallet_aura` to implement `fn
-	/// slot_duration()`.
-	///
-	/// Change this to adjust the block time.
-	pub const MILLI_SECS_PER_BLOCK: u64 = 6000;
+    /// Defines the average expected block time in milliseconds. This value is used by the
+    /// `pallet_timestamp` and `pallet_aura` pallets to determine the block production interval.
+    pub const MILLI_SECS_PER_BLOCK: u64 = 6000;
 
-	// NOTE: Currently it is not possible to change the slot duration after the chain has started.
-	// Attempting to do so will brick block production.
-	pub const SLOT_DURATION: u64 = MILLI_SECS_PER_BLOCK;
+    // The slot duration is the minimum time between blocks. It is derived from the block time.
+    pub const SLOT_DURATION: u64 = MILLI_SECS_PER_BLOCK;
 }
 pub use block_times::*;
 
-// Time is measured by number of blocks.
+// Constants for time measurement in terms of blocks.
 pub const MINUTES: BlockNumber = 60_000 / (MILLI_SECS_PER_BLOCK as BlockNumber);
 pub const HOURS: BlockNumber = MINUTES * 60;
 pub const DAYS: BlockNumber = HOURS * 24;
 
-pub const BLOCK_HASH_COUNT: BlockNumber = 2400;
+// Constants for blockchain parameters.
+pub const BLOCK_HASH_COUNT: BlockNumber = 2400; // Number of recent blocks to store in the block hash map.
 
-// Unit = the base number of indivisible units for balances
-pub const UNIT: Balance = 1_000_000_000_000;
-pub const MILLI_UNIT: Balance = 1_000_000_000;
-pub const MICRO_UNIT: Balance = 1_000_000;
+// Constants for balances.
+pub const UNIT: Balance = 1_000_000_000_000; // Base unit for balances.
+pub const MILLI_UNIT: Balance = 1_000_000_000; // Milli unit for balances.
+pub const MICRO_UNIT: Balance = 1_000_000; // Micro unit for balances.
+pub const EXISTENTIAL_DEPOSIT: Balance = MILLI_UNIT; // Minimum balance required to keep an account alive.
 
-/// Existential deposit.
-pub const EXISTENTIAL_DEPOSIT: Balance = MILLI_UNIT;
-
-/// The version information used to identify this runtime when compiled natively.
+// Define the native runtime version for native execution.
 #[cfg(feature = "std")]
 pub fn native_version() -> NativeVersion {
-	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
+    NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
 }
 
-/// Alias to 512-bit hash when used in the context of a transaction signature on the chain.
-pub type Signature = MultiSignature;
+// Type aliases for commonly used types in the runtime.
+pub type Signature = MultiSignature; // Signature type for transactions.
+pub type AccountId = <<Signature as Verify>::Signer as IdentifyAccount>::AccountId; // Account identifier.
+pub type Balance = u128; // Balance type.
+pub type Nonce = u32; // Nonce type for transactions.
+pub type Hash = sp_core::H256; // Hash type.
+pub type BlockNumber = u32; // Block number type.
+pub type Address = MultiAddress<AccountId, ()>; // Address type for accounts.
+pub type Header = generic::Header<BlockNumber, BlakeTwo256>; // Block header type.
+pub type Block = generic::Block<Header, UncheckedExtrinsic>; // Block type.
+pub type SignedBlock = generic::SignedBlock<Block>; // Signed block type.
+pub type BlockId = generic::BlockId<Block>; // Block identifier type.
 
-/// Some way of identifying an account on the chain. We intentionally make it equivalent
-/// to the public key of our transaction signing scheme.
-pub type AccountId = <<Signature as Verify>::Signer as IdentifyAccount>::AccountId;
-
-/// Balance of an account.
-pub type Balance = u128;
-
-/// Index of a transaction in the chain.
-pub type Nonce = u32;
-
-/// A hash of some data used by the chain.
-pub type Hash = sp_core::H256;
-
-/// An index to a block.
-pub type BlockNumber = u32;
-
-/// The address format for describing accounts.
-pub type Address = MultiAddress<AccountId, ()>;
-
-/// Block header type as expected by this runtime.
-pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
-
-/// Block type as expected by this runtime.
-pub type Block = generic::Block<Header, UncheckedExtrinsic>;
-
-/// A Block signed with a Justification
-pub type SignedBlock = generic::SignedBlock<Block>;
-
-/// BlockId type as expected by this runtime.
-pub type BlockId = generic::BlockId<Block>;
-
-/// The `TransactionExtension` to the basic transaction logic.
+// Define the transaction extensions used in the runtime.
 pub type TxExtension = (
-	frame_system::CheckNonZeroSender<Runtime>,
-	frame_system::CheckSpecVersion<Runtime>,
-	frame_system::CheckTxVersion<Runtime>,
-	frame_system::CheckGenesis<Runtime>,
-	frame_system::CheckEra<Runtime>,
-	frame_system::CheckNonce<Runtime>,
-	frame_system::CheckWeight<Runtime>,
-	pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
-	frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
-	frame_system::WeightReclaim<Runtime>,
+    frame_system::CheckNonZeroSender<Runtime>,
+    frame_system::CheckSpecVersion<Runtime>,
+    frame_system::CheckTxVersion<Runtime>,
+    frame_system::CheckGenesis<Runtime>,
+    frame_system::CheckEra<Runtime>,
+    frame_system::CheckNonce<Runtime>,
+    frame_system::CheckWeight<Runtime>,
+    pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
+    frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
+    frame_system::WeightReclaim<Runtime>,
 );
 
-/// Unchecked extrinsic type as expected by this runtime.
+// Define the unchecked extrinsic type for the runtime.
 pub type UncheckedExtrinsic =
-	generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, TxExtension>;
+    generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, TxExtension>;
 
-/// The payload being signed in transactions.
+// Define the payload being signed in transactions.
 pub type SignedPayload = generic::SignedPayload<RuntimeCall, TxExtension>;
 
-/// All migrations of the runtime, aside from the ones declared in the pallets.
-///
-/// This can be a tuple of types, each implementing `OnRuntimeUpgrade`.
 #[allow(unused_parens)]
 type Migrations = ();
 
-/// Executive: handles dispatch to the various modules.
+// Define the executive type, which handles dispatching calls to the appropriate pallets.
 pub type Executive = frame_executive::Executive<
-	Runtime,
-	Block,
-	frame_system::ChainContext<Runtime>,
-	Runtime,
-	AllPalletsWithSystem,
-	Migrations,
+    Runtime,
+    Block,
+    frame_system::ChainContext<Runtime>,
+    Runtime,
+    AllPalletsWithSystem,
+    Migrations,
 >;
 
-// Create the runtime by composing the FRAME pallets that were previously configured.
+// Define the runtime by composing the FRAME pallets.
 #[frame_support::runtime]
 mod runtime {
-	#[runtime::runtime]
-	#[runtime::derive(
-		RuntimeCall,
-		RuntimeEvent,
-		RuntimeError,
-		RuntimeOrigin,
-		RuntimeFreezeReason,
-		RuntimeHoldReason,
-		RuntimeSlashReason,
-		RuntimeLockId,
-		RuntimeTask,
-		RuntimeViewFunction
-	)]
-	pub struct Runtime;
+    #[runtime::runtime]
+    #[runtime::derive(
+        RuntimeCall,
+        RuntimeEvent,
+        RuntimeError,
+        RuntimeOrigin,
+        RuntimeFreezeReason,
+        RuntimeHoldReason,
+        RuntimeSlashReason,
+        RuntimeLockId,
+        RuntimeTask,
+        RuntimeViewFunction
+    )]
+    pub struct Runtime;
 
-	#[runtime::pallet_index(0)]
-	pub type System = frame_system;
+    #[runtime::pallet_index(0)]
+    pub type System = frame_system; // FRAME system pallet.
 
-	#[runtime::pallet_index(1)]
-	pub type Timestamp = pallet_timestamp;
+    #[runtime::pallet_index(1)]
+    pub type Timestamp = pallet_timestamp; // Timestamp pallet.
 
-	#[runtime::pallet_index(2)]
-	pub type Aura = pallet_aura;
+    #[runtime::pallet_index(2)]
+    pub type Aura = pallet_aura; // Aura consensus pallet.
 
-	#[runtime::pallet_index(3)]
-	pub type Grandpa = pallet_grandpa;
+    #[runtime::pallet_index(3)]
+    pub type Grandpa = pallet_grandpa; // Grandpa finality pallet.
 
-	#[runtime::pallet_index(4)]
-	pub type Balances = pallet_balances;
+    #[runtime::pallet_index(4)]
+    pub type Balances = pallet_balances; // Balances pallet.
 
-	#[runtime::pallet_index(5)]
-	pub type TransactionPayment = pallet_transaction_payment;
+    #[runtime::pallet_index(5)]
+    pub type TransactionPayment = pallet_transaction_payment; // Transaction payment pallet.
 
-	#[runtime::pallet_index(6)]
-	pub type Sudo = pallet_sudo;
+    #[runtime::pallet_index(6)]
+    pub type Sudo = pallet_sudo; // Sudo pallet for administrative tasks.
 
-	// Include the custom logic from the pallet-template in the runtime.
-	#[runtime::pallet_index(7)]
-	pub type Template = pallet_template;
+    #[runtime::pallet_index(7)]
+    pub type Template = pallet_template; // Custom template pallet.
 }
