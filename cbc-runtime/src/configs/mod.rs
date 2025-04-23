@@ -23,7 +23,7 @@
 //
 // For more information, please refer to <http://unlicense.org>
 
-// Substrate and Polkadot dependencies
+// Substrate dependencies
 use frame_support::{
 	derive_impl, parameter_types,
 	traits::{ConstBool, ConstU128, ConstU32, ConstU64, ConstU8, VariantCountOf},

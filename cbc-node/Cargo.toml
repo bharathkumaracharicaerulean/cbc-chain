@@ -1,106 +1,135 @@
-[package]
-name = "cbc-node"
-description = "cbc-node."
-version = "0.1.0"
-license = "Unlicense"
-authors.workspace = true
-homepage.workspace = true
-repository.workspace = true
-edition.workspace = true
-publish = false
+# 									=======  CBC-NODE  ======
 
-build = "build.rs"
+[package]
+# Basic package metadata
+name = "cbc-node"                     # Name of the package
+description = "cbc-node."             # Short description of the package
+version = "0.1.0"                     # Version of the package
+license = "Unlicense"                 # License under which the package is distributed
+authors.workspace = true              # Authors are inherited from the workspace
+homepage.workspace = true             # Homepage URL is inherited from the workspace
+repository.workspace = true           # Repository URL is inherited from the workspace
+edition.workspace = true              # Rust edition is inherited from the workspace
+publish = false                       # Prevent this package from being published to crates.io
+
+# Build script
+build = "build.rs"                    # Specifies the build script for this package
 
 [package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+# Documentation settings for docs.rs
+targets = ["x86_64-unknown-linux-gnu"] # Target platforms for which documentation is built
 
 [dependencies]
-clap = { features = ["derive"], workspace = true }
-frame-benchmarking-cli.default-features = true
-frame-benchmarking-cli.workspace = true
-frame-metadata-hash-extension.default-features = true
-frame-metadata-hash-extension.workspace = true
-frame-system.default-features = true
-frame-system.workspace = true
-futures = { features = ["thread-pool"], workspace = true }
-jsonrpsee = { features = ["server"], workspace = true }
-pallet-transaction-payment-rpc.default-features = true
-pallet-transaction-payment-rpc.workspace = true
-pallet-transaction-payment.default-features = true
-pallet-transaction-payment.workspace = true
-sc-basic-authorship.default-features = true
-sc-basic-authorship.workspace = true
-sc-cli.default-features = true
-sc-cli.workspace = true
-sc-client-api.default-features = true
-sc-client-api.workspace = true
-sc-consensus-aura.default-features = true
-sc-consensus-aura.workspace = true
-sc-consensus-grandpa.default-features = true
-sc-consensus-grandpa.workspace = true
-sc-consensus.default-features = true
-sc-consensus.workspace = true
-sc-executor.default-features = true
-sc-executor.workspace = true
-sc-network.default-features = true
-sc-network.workspace = true
-sc-offchain.default-features = true
-sc-offchain.workspace = true
-sc-service.default-features = true
-sc-service.workspace = true
-sc-telemetry.default-features = true
-sc-telemetry.workspace = true
-sc-transaction-pool-api.default-features = true
-sc-transaction-pool-api.workspace = true
-sc-transaction-pool.default-features = true
-sc-transaction-pool.workspace = true
-cbc-runtime.workspace = true
-sp-api.default-features = true
-sp-api.workspace = true
-sp-block-builder.default-features = true
-sp-block-builder.workspace = true
-sp-blockchain.default-features = true
-sp-blockchain.workspace = true
-sp-consensus-aura.default-features = true
-sp-consensus-aura.workspace = true
-sp-core.default-features = true
-sp-core.workspace = true
-sp-genesis-builder.default-features = true
-sp-genesis-builder.workspace = true
-sp-inherents.default-features = true
-sp-inherents.workspace = true
-sp-io.default-features = true
-sp-io.workspace = true
-sp-keyring.default-features = true
-sp-keyring.workspace = true
-sp-runtime.default-features = true
-sp-runtime.workspace = true
-sp-timestamp.default-features = true
-sp-timestamp.workspace = true
-substrate-frame-rpc-system.default-features = true
-substrate-frame-rpc-system.workspace = true
+# === CLI and Command-Line Parsing ===
+clap = { features = ["derive"], workspace = true } # Command-line argument parsing library
+
+# === Benchmarking ===
+frame-benchmarking-cli.default-features = true    # CLI tools for runtime benchmarking
+frame-benchmarking-cli.workspace = true          # Use workspace version
+
+# === Metadata and Extensions ===
+frame-metadata-hash-extension.default-features = true # Metadata hash extension
+frame-metadata-hash-extension.workspace = true       # Use workspace version
+
+# === FRAME System ===
+frame-system.default-features = true            # FRAME system module
+frame-system.workspace = true                   # Use workspace version
+
+# === Async and Futures ===
+futures = { features = ["thread-pool"], workspace = true } # Asynchronous programming utilities
+
+# === JSON-RPC ===
+jsonrpsee = { features = ["server"], workspace = true }    # JSON-RPC server implementation
+
+# === Pallet Transaction Payment ===
+pallet-transaction-payment-rpc.default-features = true # RPC for transaction payment pallet
+pallet-transaction-payment-rpc.workspace = true       # Use workspace version
+pallet-transaction-payment.default-features = true    # Transaction payment pallet
+pallet-transaction-payment.workspace = true           # Use workspace version
+
+# === Substrate Core Components ===
+sc-basic-authorship.default-features = true # Basic authorship logic for block production
+sc-basic-authorship.workspace = true        # Use workspace version
+sc-cli.default-features = true              # Substrate CLI utilities
+sc-cli.workspace = true                     # Use workspace version
+sc-client-api.default-features = true       # Substrate client API
+sc-client-api.workspace = true              # Use workspace version
+sc-consensus-aura.default-features = true   # AURA consensus algorithm
+sc-consensus-aura.workspace = true          # Use workspace version
+sc-consensus-grandpa.default-features = true # GRANDPA consensus algorithm
+sc-consensus-grandpa.workspace = true       # Use workspace version
+sc-consensus.default-features = true        # General consensus utilities
+sc-consensus.workspace = true               # Use workspace version
+sc-executor.default-features = true         # Substrate executor
+sc-executor.workspace = true                # Use workspace version
+sc-network.default-features = true          # Substrate networking
+sc-network.workspace = true                 # Use workspace version
+sc-offchain.default-features = true         # Offchain worker utilities
+sc-offchain.workspace = true                # Use workspace version
+sc-service.default-features = true          # Substrate service utilities
+sc-service.workspace = true                 # Use workspace version
+sc-telemetry.default-features = true        # Telemetry support
+sc-telemetry.workspace = true               # Use workspace version
+sc-transaction-pool-api.default-features = true # Transaction pool API
+sc-transaction-pool-api.workspace = true    # Use workspace version
+sc-transaction-pool.default-features = true # Transaction pool implementation
+sc-transaction-pool.workspace = true        # Use workspace version
+
+# === Runtime ===
+cbc-runtime.workspace = true                # CBC runtime
+
+# === Substrate Primitives ===
+sp-api.default-features = true              # Substrate API primitives
+sp-api.workspace = true                     # Use workspace version
+sp-block-builder.default-features = true    # Block builder primitives
+sp-block-builder.workspace = true           # Use workspace version
+sp-blockchain.default-features = true       # Blockchain primitives
+sp-blockchain.workspace = true              # Use workspace version
+sp-consensus-aura.default-features = true   # AURA consensus primitives
+sp-consensus-aura.workspace = true          # Use workspace version
+sp-core.default-features = true             # Core Substrate primitives
+sp-core.workspace = true                    # Use workspace version
+sp-genesis-builder.default-features = true  # Genesis block builder
+sp-genesis-builder.workspace = true         # Use workspace version
+sp-inherents.default-features = true        # Inherent data primitives
+sp-inherents.workspace = true               # Use workspace version
+sp-io.default-features = true               # Substrate I/O primitives
+sp-io.workspace = true                      # Use workspace version
+sp-keyring.default-features = true          # Keyring for testing and development
+sp-keyring.workspace = true                 # Use workspace version
+sp-runtime.default-features = true          # Runtime primitives
+sp-runtime.workspace = true                 # Use workspace version
+sp-timestamp.default-features = true        # Timestamp pallet primitives
+sp-timestamp.workspace = true               # Use workspace version
+
+# === RPC System ===
+substrate-frame-rpc-system.default-features = true # FRAME RPC system
+substrate-frame-rpc-system.workspace = true       # Use workspace version
 
 [build-dependencies]
-substrate-build-script-utils.default-features = true
-substrate-build-script-utils.workspace = true
+# === Build Script Utilities ===
+substrate-build-script-utils.default-features = true # Utilities for build scripts
+substrate-build-script-utils.workspace = true       # Use workspace version
 
 [features]
-default = ["std"]
-std = ["cbc-runtime/std"]
-# Dependencies that are only required if runtime benchmarking should be build.
+# === Default Features ===
+default = ["std"]                      # Default feature set includes standard library support
+std = ["cbc-runtime/std"]              # Enable standard library support for the runtime
+
+# === Runtime Benchmarking ===
 runtime-benchmarks = [
-	"frame-benchmarking-cli/runtime-benchmarks",
-	"frame-system/runtime-benchmarks",
-	"pallet-transaction-payment/runtime-benchmarks",
-	"sc-service/runtime-benchmarks",
-	"cbc-runtime/runtime-benchmarks",
-	"sp-runtime/runtime-benchmarks",
+    "frame-benchmarking-cli/runtime-benchmarks", # Enable runtime benchmarking for CLI
+    "frame-system/runtime-benchmarks",          # Enable runtime benchmarking for FRAME system
+    "pallet-transaction-payment/runtime-benchmarks", # Enable runtime benchmarking for transaction payment pallet
+    "sc-service/runtime-benchmarks",            # Enable runtime benchmarking for Substrate service
+    "cbc-runtime/runtime-benchmarks",           # Enable runtime benchmarking for CBC runtime
+    "sp-runtime/runtime-benchmarks",            # Enable runtime benchmarking for runtime primitives
 ]
-# Enable features that allow the runtime to be tried and debugged. Name might be subject to change
-# in the near future.
+
+# === Try Runtime ===
 try-runtime = [
-	"frame-system/try-runtime",
-	"pallet-transaction-payment/try-runtime",
-	"cbc-runtime/try-runtime",
-	"sp-runtime/try-runtime",
+    "frame-system/try-runtime",                 # Enable try-runtime for FRAME system
+    "pallet-transaction-payment/try-runtime",   # Enable try-runtime for transaction payment pallet
+    "cbc-runtime/try-runtime",                  # Enable try-runtime for CBC runtime
+    "sp-runtime/try-runtime",                   # Enable try-runtime for runtime primitives
 ]

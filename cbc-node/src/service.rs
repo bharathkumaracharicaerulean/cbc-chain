@@ -1,28 +1,39 @@
-//! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
+//! Service and ServiceFactory implementation.
+//!
+//! This file defines how the CBC node's services are built and launched,
+//! including consensus setup (AURA/GRANDPA), transaction pool, networking,
+//! and RPC interfaces. It’s a critical part of the node runtime.
 
-use futures::FutureExt;
-use sc_client_api::{Backend, BlockBackend};
-use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
-use sc_consensus_grandpa::SharedVoterState;
-use sc_service::{error::Error as ServiceError, Configuration, TaskManager, WarpSyncConfig};
-use sc_telemetry::{Telemetry, TelemetryWorker};
-use sc_transaction_pool_api::OffchainTransactionPoolFactory;
-use cbc_runtime::{self, apis::RuntimeApi, opaque::Block};
-use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
-use std::{sync::Arc, time::Duration};
+use futures::FutureExt; // Needed for handling async functions that return futures.
+use sc_client_api::{Backend, BlockBackend}; // Traits for interacting with blockchain backends.
+use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams}; // AURA consensus building blocks.
+use sc_consensus_grandpa::SharedVoterState; // Used for GRANDPA consensus participation.
+use sc_service::{error::Error as ServiceError, Configuration, TaskManager, WarpSyncConfig}; // Core service types.
+use sc_telemetry::{Telemetry, TelemetryWorker}; // Telemetry for monitoring nodes.
+use sc_transaction_pool_api::OffchainTransactionPoolFactory; // For submitting transactions via offchain workers.
+use cbc_runtime::{self, apis::RuntimeApi, opaque::Block}; // Use CBC runtime types and APIs.
+use sp_consensus_aura::sr25519::AuthorityPair as AuraPair; // AURA authority type.
+use std::{sync::Arc, time::Duration}; // Standard concurrency and time utilities.
 
+// === Type Aliases for Readability ===
+
+/// Full CBC client type (using the runtime’s `Block` and `RuntimeApi`)
 pub(crate) type FullClient = sc_service::TFullClient<
 	Block,
 	RuntimeApi,
 	sc_executor::WasmExecutor<sp_io::SubstrateHostFunctions>,
 >;
+
+/// Full backend type used for storage operations.
 type FullBackend = sc_service::TFullBackend<Block>;
+
+/// Longest-chain selection strategy for forks.
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
-/// The minimum period of blocks on which justifications will be
-/// imported and generated.
+/// The interval (in blocks) to generate GRANDPA justifications.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
+/// Alias for the output of `new_partial()` — the essential building blocks of a node.
 pub type Service = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
@@ -36,45 +47,56 @@ pub type Service = sc_service::PartialComponents<
 	),
 >;
 
+/// Builds the partial components of a node (used for both full and light nodes).
+/// Returns the essential pieces to create the full node later.
 pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
+	// Setup optional telemetry (for Prometheus/Grafana dashboards).
 	let telemetry = config
 		.telemetry_endpoints
 		.clone()
 		.filter(|x| !x.is_empty())
 		.map(|endpoints| -> Result<_, sc_telemetry::Error> {
-			let worker = TelemetryWorker::new(16)?;
+			let worker = TelemetryWorker::new(16)?; // buffer size
 			let telemetry = worker.handle().new_telemetry(endpoints);
 			Ok((worker, telemetry))
 		})
-		.transpose()?;
+		.transpose()?; // Flatten nested Result<Option<_>>
 
+	// Create WASM executor for executing runtime logic.
 	let executor = sc_service::new_wasm_executor::<sp_io::SubstrateHostFunctions>(&config.executor);
+
+	// Build the core node components (client, backend, keystore, task manager).
 	let (client, backend, keystore_container, task_manager) =
 		sc_service::new_full_parts::<Block, RuntimeApi, _>(
 			config,
 			telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
 			executor,
 		)?;
-	let client = Arc::new(client);
 
+	let client = Arc::new(client); // Wrap the client in Arc for shared use
+
+	// If telemetry was enabled, spawn its background worker.
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
 		telemetry
 	});
 
+	// Longest chain fork choice rule (used by consensus).
 	let select_chain = sc_consensus::LongestChain::new(backend.clone());
 
+	// Create the transaction pool, responsible for managing pending transactions.
 	let transaction_pool = Arc::from(
 		sc_transaction_pool::Builder::new(
 			task_manager.spawn_essential_handle(),
 			client.clone(),
-			config.role.is_authority().into(),
+			config.role.is_authority().into(), // Enable pool if this node is an authority
 		)
 		.with_options(config.transaction_pool.clone())
 		.with_prometheus(config.prometheus_registry())
 		.build(),
 	);
 
+	// Set up GRANDPA consensus logic (used for finality).
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
 		client.clone(),
 		GRANDPA_JUSTIFICATION_PERIOD,
@@ -83,7 +105,8 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 		telemetry.as_ref().map(|x| x.handle()),
 	)?;
 
-	let cidp_client = client.clone();
+	// Set up AURA (block production) import queue and inherent data providers.
+	let cidp_client = client.clone(); // Clone used inside async closure
 	let import_queue =
 		sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(ImportQueueParams {
 			block_import: grandpa_block_import.clone(),
@@ -98,11 +121,10 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 					)?;
 					let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
 
-					let slot =
-						sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
-							*timestamp,
-							slot_duration,
-						);
+					let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+						*timestamp,
+						slot_duration,
+					);
 
 					Ok((slot, timestamp))
 				}
@@ -114,6 +136,7 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 			compatibility_mode: Default::default(),
 		})?;
 
+	// Return all the components as a tuple for building the full node.
 	Ok(sc_service::PartialComponents {
 		client,
 		backend,
@@ -126,12 +149,17 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 	})
 }
 
-/// Builds a new service for a full client.
+/// Builds and starts a full CBC service node.
+/// This includes the network layer, consensus engine (AURA and GRANDPA),
+/// offchain workers, and RPC server.
+///
+/// `N` is the type of network backend (e.g., Libp2p or Litep2p).
 pub fn new_full<
 	N: sc_network::NetworkBackend<Block, <Block as sp_runtime::traits::Block>::Hash>,
 >(
 	config: Configuration,
 ) -> Result<TaskManager, ServiceError> {
+	// Start with building partial components (client, pool, backend, etc.)
 	let sc_service::PartialComponents {
 		client,
 		backend,
@@ -143,31 +171,42 @@ pub fn new_full<
 		other: (block_import, grandpa_link, mut telemetry),
 	} = new_partial(&config)?;
 
+	// === Network Setup ===
+
+	// Generate a full network configuration from the node's base config.
 	let mut net_config = sc_network::config::FullNetworkConfiguration::<
 		Block,
 		<Block as sp_runtime::traits::Block>::Hash,
 		N,
 	>::new(&config.network, config.prometheus_registry().cloned());
+
 	let metrics = N::register_notification_metrics(config.prometheus_registry());
 
 	let peer_store_handle = net_config.peer_store_handle();
+
+	// GRANDPA protocol setup: used for finality synchronization across peers.
 	let grandpa_protocol_name = sc_consensus_grandpa::protocol_standard_name(
 		&client.block_hash(0).ok().flatten().expect("Genesis block exists; qed"),
 		&config.chain_spec,
 	);
+
 	let (grandpa_protocol_config, grandpa_notification_service) =
 		sc_consensus_grandpa::grandpa_peers_set_config::<_, N>(
 			grandpa_protocol_name.clone(),
 			metrics.clone(),
 			peer_store_handle,
 		);
+
 	net_config.add_notification_protocol(grandpa_protocol_config);
 
+	// Set up warp sync (fast sync mechanism for GRANDPA finality).
 	let warp_sync = Arc::new(sc_consensus_grandpa::warp_proof::NetworkProvider::new(
 		backend.clone(),
 		grandpa_link.shared_authority_set().clone(),
 		Vec::default(),
 	));
+
+	// === Build the network ===
 
 	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
@@ -183,6 +222,9 @@ pub fn new_full<
 			metrics,
 		})?;
 
+	// === Offchain Workers ===
+
+	// If offchain workers are enabled, start them.
 	if config.offchain_worker.enabled {
 		let offchain_workers =
 			sc_offchain::OffchainWorkers::new(sc_offchain::OffchainWorkerOptions {
@@ -195,8 +237,9 @@ pub fn new_full<
 				)),
 				network_provider: Arc::new(network.clone()),
 				enable_http_requests: true,
-				custom_extensions: |_| vec![],
+				custom_extensions: |_| vec![], // Can inject custom extensions here.
 			})?;
+
 		task_manager.spawn_handle().spawn(
 			"offchain-workers-runner",
 			"offchain-worker",
@@ -204,12 +247,16 @@ pub fn new_full<
 		);
 	}
 
+	// === Runtime Configuration and Consensus ===
+
 	let role = config.role;
 	let force_authoring = config.force_authoring;
 	let backoff_authoring_blocks: Option<()> = None;
 	let name = config.network.node_name.clone();
 	let enable_grandpa = !config.disable_grandpa;
 	let prometheus_registry = config.prometheus_registry().cloned();
+
+	// === RPC Setup ===
 
 	let rpc_extensions_builder = {
 		let client = client.clone();
@@ -220,6 +267,8 @@ pub fn new_full<
 			crate::rpc::create_full(deps).map_err(Into::into)
 		})
 	};
+
+	// === Spawn all async services (RPC, networking, etc.) ===
 
 	let _rpc_handlers = sc_service::spawn_tasks(sc_service::SpawnTasksParams {
 		network: Arc::new(network.clone()),
@@ -235,6 +284,8 @@ pub fn new_full<
 		config,
 		telemetry: telemetry.as_mut(),
 	})?;
+
+	// === AURA Block Authoring Setup ===
 
 	if role.is_authority() {
 		let proposer_factory = sc_basic_authorship::ProposerFactory::new(
@@ -257,11 +308,10 @@ pub fn new_full<
 				create_inherent_data_providers: move |_, ()| async move {
 					let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
 
-					let slot =
-						sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
-							*timestamp,
-							slot_duration,
-						);
+					let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+						*timestamp,
+						slot_duration,
+					);
 
 					Ok((slot, timestamp))
 				},
@@ -277,20 +327,21 @@ pub fn new_full<
 			},
 		)?;
 
-		// the AURA authoring task is considered essential, i.e. if it
-		// fails we take down the service with it.
 		task_manager
 			.spawn_essential_handle()
 			.spawn_blocking("aura", Some("block-authoring"), aura);
 	}
 
+	// === GRANDPA Finality Gadget Setup ===
+
 	if enable_grandpa {
-		// if the node isn't actively participating in consensus then it doesn't
-		// need a keystore, regardless of which protocol we use below.
-		let keystore = if role.is_authority() { Some(keystore_container.keystore()) } else { None };
+		let keystore = if role.is_authority() {
+			Some(keystore_container.keystore())
+		} else {
+			None
+		};
 
 		let grandpa_config = sc_consensus_grandpa::Config {
-			// FIXME #1578 make this available through chainspec
 			gossip_duration: Duration::from_millis(333),
 			justification_generation_period: GRANDPA_JUSTIFICATION_PERIOD,
 			name: Some(name),
@@ -301,12 +352,6 @@ pub fn new_full<
 			protocol_name: grandpa_protocol_name,
 		};
 
-		// start the full GRANDPA voter
-		// NOTE: non-authorities could run the GRANDPA observer protocol, but at
-		// this point the full voter should provide better guarantees of block
-		// and vote data availability than the observer. The observer has not
-		// been tested extensively yet and having most nodes in a network run it
-		// could lead to finality stalls.
 		let grandpa_config = sc_consensus_grandpa::GrandpaParams {
 			config: grandpa_config,
 			link: grandpa_link,
@@ -320,8 +365,6 @@ pub fn new_full<
 			offchain_tx_pool_factory: OffchainTransactionPoolFactory::new(transaction_pool),
 		};
 
-		// the GRANDPA voter task is considered infallible, i.e.
-		// if it fails we take down the service with it.
 		task_manager.spawn_essential_handle().spawn_blocking(
 			"grandpa-voter",
 			None,
@@ -329,5 +372,6 @@ pub fn new_full<
 		);
 	}
 
+	// All services have started successfully.
 	Ok(task_manager)
 }
