@@ -101,6 +101,7 @@ pub const UNIT: Balance = 1_000_000_000_000; // Base unit for balances.
 pub const MILLI_UNIT: Balance = 1_000_000_000; // Milli unit for balances.
 pub const MICRO_UNIT: Balance = 1_000_000; // Micro unit for balances.
 pub const EXISTENTIAL_DEPOSIT: Balance = MILLI_UNIT; // Minimum balance required to keep an account alive.
+pub const DOLLARS: Balance = UNIT; // 1 DOLLAR equals 1 UNIT
 
 // Define the native runtime version for native execution.
 #[cfg(feature = "std")]
@@ -195,5 +196,14 @@ mod runtime {
     pub type Sudo = pallet_sudo; // Sudo pallet for administrative tasks.
 
     #[runtime::pallet_index(7)]
-    pub type Template = pallet_template; // Custom template pallet.
+    pub type Template = cbc_pallet_template; // Custom template pallet.
+}
+use sp_runtime::traits::parameter_types;
+
+parameter_types! {
+	pub const EnterDuration: BlockNumber = 4 * HOURS;
+	pub const EnterDepositAmount: Balance = 2_000_000 * DOLLARS;
+	pub const ExtendDuration: BlockNumber = 2 * HOURS;
+	pub const ExtendDepositAmount: Balance = 1_000_000 * DOLLARS;
+	pub const ReleaseDelay: u32 = 2 * DAYS;
 }

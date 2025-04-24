@@ -34,5 +34,5 @@ frame_benchmarking::define_benchmarks!(
     // Benchmarks for a custom or template pallet called `pallet_template`.
     // This is typically a starting point for developing custom pallets and includes benchmarking
     // for any custom extrinsics or storage operations defined within the template.
-    [pallet_template, Template]
+    [cbc_pallet_template, Template]
 );

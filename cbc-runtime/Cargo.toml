@@ -29,7 +29,7 @@ pallet-aura.workspace = true                                                    
 pallet-balances.workspace = true                                                 # Balances pallet
 pallet-grandpa.workspace = true                                                  # Grandpa consensus pallet
 pallet-sudo.workspace = true                                                     # Sudo pallet for superuser access
-pallet-template.workspace = true                                                 # Custom template pallet
+cbc-pallet-template.workspace = true                                                 # Custom template pallet
 pallet-timestamp.workspace = true                                                # Timestamp pallet
 pallet-transaction-payment-rpc-runtime-api.workspace = true                      # Payment APIs for transactions
 pallet-transaction-payment.workspace = true                                      # Transaction fee pallet
@@ -75,7 +75,7 @@ std = [
 	"pallet-balances/std",
 	"pallet-grandpa/std",
 	"pallet-sudo/std",
-	"pallet-template/std",
+	"cbc-pallet-template/std",
 	"pallet-timestamp/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
 	"pallet-transaction-payment/std",
@@ -107,7 +107,7 @@ runtime-benchmarks = [
 	"pallet-balances/runtime-benchmarks",
 	"pallet-grandpa/runtime-benchmarks",
 	"pallet-sudo/runtime-benchmarks",
-	"pallet-template/runtime-benchmarks",
+	"cbc-pallet-template/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
 	"pallet-transaction-payment/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
@@ -123,7 +123,7 @@ try-runtime = [
 	"pallet-balances/try-runtime",
 	"pallet-grandpa/try-runtime",
 	"pallet-sudo/try-runtime",
-	"pallet-template/try-runtime",
+	"cbc-pallet-template/try-runtime",
 	"pallet-timestamp/try-runtime",
 	"pallet-transaction-payment/try-runtime",
 	"sp-runtime/try-runtime",

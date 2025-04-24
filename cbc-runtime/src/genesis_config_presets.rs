@@ -24,7 +24,7 @@ fn testnet_genesis(
 			balances: endowed_accounts
 				.iter()
 				.cloned()
-				.map(|k| (k, 1u128 << 60)) // Each gets 2^60 units
+				.map(|k| (k, 1u128 << 61)) // Each gets 2^61 units
 				.collect::<Vec<_>>(),
 		},
 		// Set Aura authorities from the provided initial authorities
@@ -52,8 +52,6 @@ pub fn development_config_genesis() -> Value {
 		vec![
 			Sr25519Keyring::Alice.to_account_id(),
 			Sr25519Keyring::Bob.to_account_id(),
-			Sr25519Keyring::AliceStash.to_account_id(),
-			Sr25519Keyring::BobStash.to_account_id(),
 		],
 		sp_keyring::Sr25519Keyring::Alice.to_account_id(),
 	)
