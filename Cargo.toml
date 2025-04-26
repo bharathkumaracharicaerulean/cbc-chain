@@ -9,6 +9,8 @@ edition = "2021"
 members = [
     "cbc-node",
     "cbc-pallets/template",
+    "cbc-pallets/pallet-cbc-poi",
+    "cbc-pallets/pallet-cbc-pos",
     "cbc-runtime",
 ]
 resolver = "2"
@@ -16,6 +18,8 @@ resolver = "2"
 [workspace.dependencies]
 cbc-runtime= { path = "./cbc-runtime", default-features = false }
 cbc-pallet-template = { path = "./cbc-pallets/template", default-features = false }
+pallet-cbc-poi = { path="./cbc-pallets/pallet-cbc-poi", default-features = false }
+pallet-cbc-pos = { path="./cbc-pallets/pallet-cbc-pos", default-features = false}
 clap = { version = "4.5.13" }
 frame-benchmarking-cli = { version = "47.0.0", default-features = false }
 frame-metadata-hash-extension = { version = "0.8.0", default-features = false }
