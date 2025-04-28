@@ -1,52 +1,163 @@
-use sc_service::ChainType; // Import the ChainType enum to specify the type of blockchain (e.g., Development, Local, etc.)
-use cbc_runtime::WASM_BINARY; // Import the WASM binary for the runtime, which is required to build the chain specification.
+// In your chain_spec.rs file
 
-/// Specialized `ChainSpec`. 
-/// This is a type alias for the CBC `GenericChainSpec`, which is used to define the configuration of a blockchain.
-/// The `ChainSpec` contains information such as the chain name, ID, type, and genesis configuration.
-pub type ChainSpec = sc_service::GenericChainSpec;
+// Import necessary dependencies
+use sp_core::{sr25519, Pair, Public};
+use node_primitives::{AccountId, Balance};
+use cbc_runtime::{
+    BalancesConfig, GenesisConfig, SudoConfig, SystemConfig,
+    WASM_BINARY, 
+};
+use sp_runtime::traits::{IdentifyAccount, Verify};
+use sc_service::ChainType;
 
+// Helper function to derive account ID from seed
+pub fn get_account_id_from_seed<TPublic: Public>(seed: &str) -> AccountId
+where
+    AccountPublic: From<<TPublic::Pair as Pair>::Public>,
+    AccountId: From<AccountPublic>,
+{
+    AccountPublic::from(get_from_seed::<TPublic>(seed)).into_account()
+}
 
-/// Generates the chain specification for a development chain.
-///
-/// This function creates a `ChainSpec` for a development environment, which is typically used for testing purposes.
-/// The development chain is a single-node blockchain with a predefined genesis configuration.
-///
-/// # Returns
-/// A `Result` containing the `ChainSpec` for the development chain or an error message if the WASM binary is unavailable.
-pub fn development_chain_spec() -> Result<ChainSpec, String> {
-    Ok(
-        ChainSpec::builder(
-            // Use the WASM binary for the runtime. If it's not available, return an error.
-            WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
-            None, // No additional properties are provided for the chain spec.
-        )
-        .with_name("Development") // Set the name of the chain to "Development".
-        .with_id("dev") // Set the unique identifier for the chain to "dev".
-        .with_chain_type(ChainType::Development) // Specify that this is a development chain.
-        .with_genesis_config_preset_name(sp_genesis_builder::DEV_RUNTIME_PRESET) // Use the development runtime preset for the genesis configuration.
-        .build() // Build and return the chain specification.
+// Helper function to generate key from seed
+pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
+    TPublic::Pair::from_string(&format!("//{}", seed), None)
+        .expect("static values are valid; qed")
+        .public()
+}
+
+// Function to create the genesis configuration
+fn testnet_genesis(
+    wasm_binary: &[u8],
+    initial_authorities: Vec<(AccountId, AccountId, BabeId, GrandpaId)>,
+    root_key: AccountId,
+    endowed_accounts: Vec<AccountId>,
+    _enable_println: bool,
+) -> GenesisConfig {
+    // Define initial balance amount
+    const ENDOWMENT: Balance = 1_000_000_000_000_000_000; // 1 token with 18 decimals
+
+    GenesisConfig {
+        system: SystemConfig {
+            // Add the wasm binary in genesis
+            code: wasm_binary.to_vec(),
+        },
+        balances: BalancesConfig {
+            // Configure multiple accounts with initial balances
+            balances: endowed_accounts
+                .iter()
+                .cloned()
+                .map(|k| (k, ENDOWMENT))
+                .collect(),
+        },
+        sudo: SudoConfig {
+            // Assign the sudo key
+            key: Some(root_key),
+        },
+        // Add other module configs as needed
+        // ...
+    }
+}
+
+// Function to create the development chain specification
+pub fn development_config() -> ChainSpec {
+    // Define accounts to be endowed with tokens
+    let endowed_accounts = vec![
+        get_account_id_from_seed::<sr25519::Public>("Alice"),
+        get_account_id_from_seed::<sr25519::Public>("Bob"),
+        get_account_id_from_seed::<sr25519::Public>("Charlie"),
+        get_account_id_from_seed::<sr25519::Public>("Dave"),
+        get_account_id_from_seed::<sr25519::Public>("Eve"),
+        // Add custom accounts using their public keys
+        AccountId::from_ss58check("5GukQt4gJW2XqzFwmm3RHa7x6sYuVcGhuhz72CN7oiBsgffx").unwrap(),
+        // Add more accounts as needed
+    ];
+
+    ChainSpec::from_genesis(
+        // Name of the chain
+        "Development",
+        // ID of the chain
+        "dev",
+        ChainType::Development,
+        move || {
+            testnet_genesis(
+                WASM_BINARY.expect("WASM binary was not built, please build it!"),
+                vec![],
+                get_account_id_from_seed::<sr25519::Public>("Alice"),
+                endowed_accounts.clone(),
+                true,
+            )
+        },
+        // Bootnodes
+        vec![],
+        // Telemetry endpoints
+        None,
+        // Protocol ID
+        None,
+        // Properties
+        Some(properties()),
+        // Extensions
+        None,
     )
 }
 
-/// Generates the chain specification for a local testnet.
-///
-/// This function creates a `ChainSpec` for a local testnet, which is typically used for testing with multiple nodes.
-/// The local testnet allows developers to simulate a real blockchain environment on their local machines.
-///
-/// # Returns
-/// A `Result` containing the `ChainSpec` for the local testnet or an error message if the WASM binary is unavailable.
-pub fn local_chain_spec() -> Result<ChainSpec, String> {
-    Ok(
-        ChainSpec::builder(
-            // Use the WASM binary for the runtime. If it's not available, return an error.
-            WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
-            None, // No additional properties are provided for the chain spec.
-        )
-        .with_name("Local Testnet") // Set the name of the chain to "Local Testnet".
-        .with_id("local_testnet") // Set the unique identifier for the chain to "local_testnet".
-        .with_chain_type(ChainType::Local) // Specify that this is a local testnet chain.
-        .with_genesis_config_preset_name(sp_genesis_builder::LOCAL_TESTNET_RUNTIME_PRESET) // Use the local testnet runtime preset for the genesis configuration.
-        .build() // Build and return the chain specification.
+// Function to create a custom testnet chain specification
+pub fn custom_testnet_config() -> ChainSpec {
+    // Define accounts to be endowed with tokens for the testnet
+    let endowed_accounts = vec![
+        // Add accounts that should have tokens in your testnet
+        get_account_id_from_seed::<sr25519::Public>("Alice"),
+        get_account_id_from_seed::<sr25519::Public>("Bob"),
+        AccountId::from_ss58check("5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty").unwrap(),
+        AccountId::from_ss58check("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY").unwrap(),
+        // Add more accounts as needed
+    ];
+
+    // Define initial authorities if using consensus like Aura/GRANDPA
+    let initial_authorities = vec![
+        // Add authority keys here
+    ];
+
+    ChainSpec::from_genesis(
+        // Name of the chain - can be overridden with --chain-name
+        "My Custom Testnet",
+        // ID of the chain - can be overridden with --chain-id
+        "my_custom_testnet",
+        ChainType::Local,
+        move || {
+            testnet_genesis(
+                WASM_BINARY.expect("WASM binary was not built, please build it!"),
+                initial_authorities.clone(),
+                get_account_id_from_seed::<sr25519::Public>("Alice"),
+                endowed_accounts.clone(),
+                true,
+            )
+        },
+        // Bootnodes - can be overridden with --bootnodes
+        vec![
+            // Add bootnodes in the format:
+            // "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp".parse().unwrap(),
+        ],
+        // Telemetry endpoints
+        None,
+        // Protocol ID
+        Some("my-custom-testnet"),
+        // Properties
+        Some(properties()),
+        // Extensions
+        None,
     )
+}
+
+// Define chain properties
+fn properties() -> serde_json::map::Map<String, serde_json::Value> {
+    let mut properties = serde_json::map::Map::new();
+    // Define token symbol - can be overridden at runtime
+    properties.insert("tokenSymbol".into(), "CBC".into());
+    // Define token decimals - can be overridden at runtime
+    properties.insert("tokenDecimals".into(), 18.into());
+    // Add other properties as needed
+    properties.insert("ss58Format".into(), 42.into());
+    
+    properties
 }
