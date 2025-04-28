@@ -135,3 +135,15 @@ impl cbc_pallet_template::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = cbc_pallet_template::weights::SubstrateWeight<Runtime>;
 }
+
+// === CBC POI Pallet Configuration ===
+impl pallet_cbc_poi::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = pallet_cbc_poi::weights::SubstrateWeight<Runtime>;
+}
+
+// === CBC POS Pallet Configuration ===
+impl pallet_cbc_pos::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = pallet_cbc_pos::weights::SubstrateWeight<Runtime>;
+}
