@@ -26,6 +26,26 @@ pub struct FullDeps<C, P> {
 	/// Shared reference to the transaction pool.
 	pub pool: Arc<P>,
 }
+use jsonrpsee::core::{RpcResult};
+use jsonrpsee::proc_macros::rpc;
+
+/// Custom RPC trait for CBC node.
+#[rpc(server)]
+pub trait ChainApi {
+    #[method(name = "chain_getChainName")]
+    fn get_chain_name(&self) -> RpcResult<String>;
+}
+
+
+/// Implementation of the CustomApi trait.
+pub struct ChainApiImpl;
+
+impl ChainApiServer for ChainApiImpl {
+    fn get_chain_name(&self) -> RpcResult<String> {
+        Ok("CBC-Chain".to_string())
+    }
+}
+
 
 /// Creates a complete RPC module with all CBC-specific runtime extensions.
 /// This will be called when the full node is started to build the JSON-RPC interface.
@@ -74,6 +94,11 @@ where
 	// let genesis_hash = client.block_hash(0).ok().flatten().expect("Genesis block exists; qed"); // Fetch the genesis hash
 	// let properties = chain_spec.properties(); // Chain-specific metadata (token symbol, decimals, etc.)
 	// module.merge(ChainSpec::new(chain_name, genesis_hash, properties).into_rpc())?;
+	// Register the custom RPC
+	let chain_api = ChainApiImpl;
+	module.merge(ChainApiServer::into_rpc(chain_api))?;
 
+	//  curl -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"chain_getChainName","params":[]}' http://localhost:9944
+	
 	Ok(module) // Return the composed module with all active RPCs
 }
