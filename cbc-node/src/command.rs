@@ -22,7 +22,9 @@ impl SubstrateCli for Cli {
 
 	fn impl_version() -> String {
 		// Uses a compile-time environment variable (set in `build.rs`) to show version info
-		env!("CBC_CLI_IMPL_VERSION").into()
+		// env!("CBC_CLI_IMPL_VERSION").into()
+		env!("CARGO_PKG_VERSION").into()
+
 	}
 
 	fn description() -> String {
@@ -65,6 +67,14 @@ pub fn run() -> sc_cli::Result<()> {
 
 		Some(Subcommand::Key(cmd)) => cmd.run(&cli), // Key management commands (e.g., generate, inspect)
 
+		Some(Subcommand::Faucet(cmd)) => {
+			println!(
+				"[FAUCET] Would send {} tokens to address {} (dummy, no on-chain transaction).",
+				cmd.amount, cmd.to
+			);
+			Ok(())
+		},
+		
 		Some(Subcommand::BuildSpec(cmd)) => {
 			// Generates a genesis chain spec (useful for custom networks)
 			let runner = cli.create_runner(cmd)?;

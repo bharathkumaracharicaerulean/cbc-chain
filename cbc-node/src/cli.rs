@@ -2,7 +2,7 @@
 
 use sc_cli::RunCmd;
 use clap::Parser;
-
+use clap:: Args;
 /// The main CLI struct for CBC Chain Node.
 ///
 /// Defines all command-line arguments and subcommands available to users.
@@ -57,10 +57,22 @@ pub enum Subcommand {
     /// Revert the chain to a previous state by removing recent blocks.
     Revert(sc_cli::RevertCmd),
 
+    Faucet(FaucetCmd),
+
     /// Sub-commands concerned with benchmarking.
     #[command(subcommand)]
     Benchmark(frame_benchmarking_cli::BenchmarkCmd),
 
     /// Display database meta columns information.
     ChainInfo(sc_cli::ChainInfoCmd),
+}
+#[derive(Debug, Args)]
+pub struct FaucetCmd {
+    /// Destination address to receive tokens
+    #[clap(long)]
+    pub to: String,
+
+    /// Amount of tokens to send
+    #[clap(long)]
+    pub amount: u128,
 }
