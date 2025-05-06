@@ -212,6 +212,20 @@ parameter_types! {
 	pub const ExtendDuration: BlockNumber = 2 * HOURS;
 	pub const ExtendDepositAmount: Balance = 1_000_000 * DOLLARS;
 	pub const ReleaseDelay: u32 = 2 * DAYS;
+
+    // Validator parameters
+    pub const MinValidatorScore: u32 = 50;
+    pub const MinActiveValidators: u32 = 3;
+    pub const MaxValidators: u32 = 100;
+    pub const ValidatorScoreDecay: u32 = 10;
+    pub const MaxSlashingCount: u32 = 3;
+
+    // Inference parameters
+    pub const MinInferenceConfidence: u32 = 80;
+    pub const MaxInferenceAge: u32 = 10;
+    pub const ChallengeWindow: u32 = 5;
+    pub const InferenceReward: u128 = 1000;
+    pub const ChallengeReward: u128 = 500;
 }
 
 pub use pallet_cbc_poi;

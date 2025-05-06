@@ -7,8 +7,9 @@ pub use weights::*;
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::{pallet_prelude::*, storage::types::StorageMap}; // Corrected import
+    use frame_support::{pallet_prelude::*, storage::types::StorageMap};
     use frame_system::pallet_prelude::*;
+    use scale_info::prelude::vec::Vec;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -16,7 +17,44 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        type WeightInfo: WeightInfo; // Ensure WeightInfo is used
+        type WeightInfo: WeightInfo;
+
+        /// Minimum confidence threshold for inference (0-100)
+        type MinInferenceConfidence: Get<u32>;
+        /// Maximum age of inference in epochs
+        type MaxInferenceAge: Get<u32>;
+        /// Number of epochs to challenge an inference
+        type ChallengeWindow: Get<u32>;
+        /// Reward for correct inference
+        type InferenceReward: Get<u128>;
+        /// Reward for successful challenge
+        type ChallengeReward: Get<u128>;
+    }
+
+    #[pallet::genesis_config]
+    #[derive(frame_support::DefaultNoBound)]
+    pub struct GenesisConfig<T: Config> {
+        pub inference_results: Vec<(T::AccountId, u32)>,
+        pub challenges: Vec<(T::AccountId, T::AccountId, u32)>,
+        pub current_epoch: u32,
+    }
+
+    #[pallet::genesis_build]
+    impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
+        fn build(&self) {
+            // Initialize inference results
+            for (account, result) in &self.inference_results {
+                InferenceResults::<T>::insert(account, (*result, self.current_epoch));
+            }
+
+            // Initialize challenges
+            for (challenger, challenged, result) in &self.challenges {
+                Challenges::<T>::insert(challenger, (challenged, *result, self.current_epoch));
+            }
+
+            // Initialize current epoch
+            CurrentEpoch::<T>::put(self.current_epoch);
+        }
     }
 
     /// Storage for inference result submissions from validators.
@@ -26,7 +64,7 @@ pub mod pallet {
         _, 
         Blake2_128Concat, 
         T::AccountId, 
-        u32, // Example: u32 represents the inference result.
+        (u32, u32), // (result, epoch)
         OptionQuery
     >;
 
@@ -37,7 +75,7 @@ pub mod pallet {
         _, 
         Blake2_128Concat, 
         T::AccountId, 
-        (T::AccountId, u32), // Challenger, disputed inference result.
+        (T::AccountId, u32, u32), // (challenged, result, epoch)
         OptionQuery
     >;
 
@@ -49,10 +87,12 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// An inference result was submitted. [who, result]
-        InferenceSubmitted { who: T::AccountId, result: u32 },
+        /// An inference result was submitted. [who, result, confidence]
+        InferenceSubmitted { who: T::AccountId, result: u32, confidence: u32 },
         /// An inference result was challenged. [challenger, challenged, result]
         InferenceChallenged { challenger: T::AccountId, challenged: T::AccountId, result: u32 },
+        /// A challenge was resolved. [challenger, challenged, result, success]
+        ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
     }
 
     #[pallet::error]
@@ -63,16 +103,23 @@ pub mod pallet {
         InferenceNotFound,
         /// The challenge is invalid.
         InvalidChallenge,
+        /// The confidence level is too low.
+        ConfidenceTooLow,
+        /// The challenge window has expired.
+        ChallengeWindowExpired,
+        /// The inference is too old.
+        InferenceTooOld,
     }
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         /// Submit an inference result.
         #[pallet::call_index(0)]
-        #[pallet::weight(T::WeightInfo::submit_inference())] // Updated weight function
+        #[pallet::weight(T::WeightInfo::submit_inference())]
         pub fn submit_inference(
             origin: OriginFor<T>,
             result: u32,
+            confidence: u32,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
@@ -82,18 +129,26 @@ pub mod pallet {
                 Error::<T>::InferenceAlreadySubmitted
             );
 
-            // Store the inference result.
-            InferenceResults::<T>::insert(&who, result);
+            // Ensure confidence meets minimum threshold
+            ensure!(
+                confidence >= T::MinInferenceConfidence::get(),
+                Error::<T>::ConfidenceTooLow
+            );
+
+            let current_epoch = CurrentEpoch::<T>::get();
+
+            // Store the inference result with current epoch
+            InferenceResults::<T>::insert(&who, (result, current_epoch));
 
             // Emit an event.
-            Self::deposit_event(Event::InferenceSubmitted { who, result });
+            Self::deposit_event(Event::InferenceSubmitted { who, result, confidence });
 
             Ok(())
         }
 
         /// Submit a challenge against an inference result.
         #[pallet::call_index(1)]
-        #[pallet::weight(T::WeightInfo::challenge_inference())] // Updated weight function
+        #[pallet::weight(T::WeightInfo::challenge_inference())]
         pub fn challenge_inference(
             origin: OriginFor<T>,
             challenged: T::AccountId,
@@ -101,14 +156,32 @@ pub mod pallet {
         ) -> DispatchResult {
             let challenger = ensure_signed(origin)?;
 
-            // Ensure the inference result exists.
+            // Get the inference result and its epoch
+            let (stored_result, epoch) = InferenceResults::<T>::get(&challenged)
+                .ok_or(Error::<T>::InferenceNotFound)?;
+
+            let current_epoch = CurrentEpoch::<T>::get();
+
+            // Ensure the inference is not too old
             ensure!(
-                InferenceResults::<T>::get(&challenged) == Some(result),
-                Error::<T>::InferenceNotFound
+                current_epoch - epoch <= T::MaxInferenceAge::get(),
+                Error::<T>::InferenceTooOld
             );
 
-            // Store the challenge.
-            Challenges::<T>::insert(&challenger, (&challenged, result));
+            // Ensure we're within the challenge window
+            ensure!(
+                current_epoch - epoch <= T::ChallengeWindow::get(),
+                Error::<T>::ChallengeWindowExpired
+            );
+
+            // Ensure the inference result matches
+            ensure!(
+                stored_result == result,
+                Error::<T>::InvalidChallenge
+            );
+
+            // Store the challenge with current epoch
+            Challenges::<T>::insert(&challenger, (&challenged, result, current_epoch));
 
             // Emit an event.
             Self::deposit_event(Event::InferenceChallenged {

@@ -18,6 +18,21 @@ fn testnet_genesis(
 	endowed_accounts: Vec<AccountId>,              // Accounts pre-funded with balance
 	root: AccountId,                               // Root (sudo) key
 ) -> Value {
+	// Create initial validators list (Alice and Bob)
+	let initial_validators = vec![
+		Sr25519Keyring::Alice.to_account_id(),
+		Sr25519Keyring::Bob.to_account_id(),
+	];
+
+	// Create initial validator scores
+	let validator_scores = vec![100, 100];
+
+	// Create initial inference results
+	let inference_results = initial_validators
+		.iter()
+		.map(|acc| (acc.clone(), 42))
+		.collect::<Vec<_>>();
+
 	build_struct_json_patch!(RuntimeGenesisConfig {
 		// Configure initial balances for all endowed accounts with large amounts of tokens
 		balances: BalancesConfig {
@@ -37,6 +52,19 @@ fn testnet_genesis(
 		},
 		// Assign the sudo (root) key to the provided account
 		sudo: SudoConfig { key: Some(root) },
+		// Configure initial validators
+		pallet_cbc_pos: pallet_cbc_pos::GenesisConfig {
+			validators: initial_validators,
+			validator_scores,
+			current_epoch: 0,
+			slashing_count: vec![],
+		},
+		// Configure initial inference results
+		pallet_cbc_poi: pallet_cbc_poi::GenesisConfig {
+			inference_results,
+			challenges: vec![],
+			current_epoch: 0,
+		},
 	})
 }
 

@@ -24,6 +24,11 @@ use super::{
     System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION,
 };
 
+use crate::{
+    MinValidatorScore, MinActiveValidators, MaxValidators, ValidatorScoreDecay, MaxSlashingCount,
+    MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward,
+};
+
 // === Constants ===
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
@@ -140,10 +145,20 @@ impl cbc_pallet_template::Config for Runtime {
 impl pallet_cbc_poi::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_cbc_poi::weights::SubstrateWeight<Runtime>;
+    type MinInferenceConfidence = MinInferenceConfidence;
+    type MaxInferenceAge = MaxInferenceAge;
+    type ChallengeWindow = ChallengeWindow;
+    type InferenceReward = InferenceReward;
+    type ChallengeReward = ChallengeReward;
 }
 
 // === CBC POS Pallet Configuration ===
 impl pallet_cbc_pos::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_cbc_pos::weights::SubstrateWeight<Runtime>;
+    type MinValidatorScore = MinValidatorScore;
+    type MinActiveValidators = MinActiveValidators;
+    type MaxValidators = MaxValidators;
+    type ValidatorScoreDecay = ValidatorScoreDecay;
+    type MaxSlashingCount = MaxSlashingCount;
 }
