@@ -21,8 +21,8 @@ pub fn development_chain_spec() -> Result<ChainSpec, String> {
             WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
             None, // No additional properties are provided for the chain spec.
         )
-        .with_name("Development") // Set the name of the chain to "Development".
-        .with_id("dev") // Set the unique identifier for the chain to "dev".
+        .with_name("CBC-CHAIN") // Set the name of the chain to "Development".
+        .with_id("CBC") // Set the unique identifier for the chain to "dev".
         .with_chain_type(ChainType::Development) // Specify that this is a development chain.
         .with_genesis_config_preset_name(sp_genesis_builder::DEV_RUNTIME_PRESET) // Use the development runtime preset for the genesis configuration.
         .build() // Build and return the chain specification.

@@ -35,4 +35,15 @@ frame_benchmarking::define_benchmarks!(
     // This is typically a starting point for developing custom pallets and includes benchmarking
     // for any custom extrinsics or storage operations defined within the template.
     [cbc_pallet_template, Template]
+
+    // Benchmarks for the `pallet_cbc_poi`, which might be a custom pallet related to
+    // proof of identity or similar functionality.
+    // It includes performance tests for any identity-related operations or storage.
+    [pallet_cbc_poi, PoiBench::<Runtime>]
+
+    // Benchmarks for the `pallet_cbc_pos`, which might be a custom pallet related to
+    // proof of stake or similar functionality.
+    // It includes performance tests for any staking-related operations or storage.
+    [pallet_cbc_pos, PosBench::<Runtime>]
+    
 );

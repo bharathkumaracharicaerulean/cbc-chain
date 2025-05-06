@@ -197,6 +197,12 @@ mod runtime {
 
     #[runtime::pallet_index(7)]
     pub type Template = cbc_pallet_template; // Custom template pallet.
+
+    #[runtime::pallet_index(8)]
+    pub type PalletCbcPoi = pallet_cbc_poi;
+
+    #[runtime::pallet_index(9)]
+    pub type PalletCbcPos = pallet_cbc_pos;
 }
 use sp_runtime::traits::parameter_types;
 
@@ -207,3 +213,6 @@ parameter_types! {
 	pub const ExtendDepositAmount: Balance = 1_000_000 * DOLLARS;
 	pub const ReleaseDelay: u32 = 2 * DAYS;
 }
+
+pub use pallet_cbc_poi;
+pub use pallet_cbc_pos;
