@@ -52,6 +52,9 @@ pub fn development_config_genesis() -> Value {
 		vec![
 			Sr25519Keyring::Alice.to_account_id(),
 			Sr25519Keyring::Bob.to_account_id(),
+			Sr25519Keyring::AliceStash.to_account_id(),
+			Sr25519Keyring::BobStash.to_account_id(),
+
 		],
 		sp_keyring::Sr25519Keyring::Alice.to_account_id(),
 	)

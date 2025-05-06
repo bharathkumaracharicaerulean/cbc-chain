@@ -51,32 +51,156 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
     )
 }
 
+pub fn bob_sudo_chain_spec() -> Result<ChainSpec, String> {
+    Ok(
+        ChainSpec::builder(
+            WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
+            None,
+        )
+        .with_name("Bob Sudo Chain")
+        .with_id("bob_sudo")
+        .with_chain_type(ChainType::Development)
+        .with_genesis_config_preset_name("bob_sudo") // Use custom preset
+        .build()
+    )
+}
 
 
 
 
 
 
-
-
-// use sc_service::ChainType; // Import the ChainType enum to specify the type of blockchain
+// use sc_service::ChainType;
 // use cbc_runtime::{
-//     WASM_BINARY, // Import the WASM binary for the runtime
+//     WASM_BINARY,
 //     AccountId, 
 //     BalancesConfig, 
-//     GenesisConfig, 
-//     SystemConfig,
 //     SudoConfig,
 // };
 // use sp_core::{sr25519, Pair, Public};
 // use sp_runtime::traits::{IdentifyAccount, Verify};
-// use sp_genesis_builder::Result as GenesisResult; // Import Result type for genesis builder
-// use sp_genesis_builder::GenesisBuilder; // Import GenesisBuilder for custom genesis configuration
+// use sp_genesis_builder::Result as GenesisResult;
+// use sp_genesis_builder::GenesisBuilder;
+// use sp_runtime::MultiSignature;
+// use serde_json::{self, Value as JsonValue};
+// use sc_chain_spec::{ChainSpecExtension, ChainSpecGroup, GenericChainSpec};
+// use serde::{Serialize, Deserialize};
+// use sp_runtime::generic::{Block, Header};
+// use sp_runtime::OpaqueExtrinsic;
+// use sc_cli::ChainSpec as ChainSpecTrait;
+// use std::path::PathBuf;
+// use sc_telemetry::TelemetryEndpoints;
+// use sp_runtime::{BuildStorage, Storage};
+// use std::collections::BTreeMap;
+// use sc_network_types::multiaddr::Multiaddr;
+
+// /// The extensions for the [`ChainSpec`].
+// #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ChainSpecGroup, ChainSpecExtension)]
+// #[serde(deny_unknown_fields)]
+// pub struct Extensions {
+//     /// The relay chain of the parachain.
+//     pub relay_chain: String,
+//     /// The id of the parachain.
+//     pub para_id: u32,
+// }
+
+// impl Extensions {
+//     /// Try to get the extension from the given `ChainSpec`.
+//     pub fn try_get(chain_spec: &dyn sc_service::ChainSpec) -> Option<&Self> {
+//         sc_chain_spec::get_extension(chain_spec.extensions())
+//     }
+// }
 
 // /// Specialized `ChainSpec`.
-// /// This is a type alias for the CBC `GenericChainSpec`, which is used to define the configuration of a blockchain.
-// /// The `ChainSpec` contains information such as the chain name, ID, type, and genesis configuration.
-// pub type ChainSpec = sc_service::GenericChainSpec<GenesisConfig>;
+// #[derive(Clone)]
+// pub struct ChainSpec(GenericChainSpec<Extensions>);
+
+// impl BuildStorage for ChainSpec {
+//     fn assimilate_storage(&self, storage: &mut sp_runtime::Storage) -> Result<(), String> {
+//         self.0.assimilate_storage(storage)
+//     }
+// }
+
+// impl ChainSpec {
+//     /// Create a new chain spec builder.
+//     pub fn builder(
+//         wasm_binary: &[u8],
+//         extensions: Extensions,
+//     ) -> sc_chain_spec::ChainSpecBuilder<Extensions> {
+//         GenericChainSpec::builder(wasm_binary, extensions)
+//     }
+
+//     /// Load chain spec from JSON file.
+//     pub fn from_json_file(path: PathBuf) -> Result<Self, String> {
+//         Ok(ChainSpec(GenericChainSpec::from_json_file(path)?))
+//     }
+// }
+
+// impl ChainSpecTrait for ChainSpec {
+//     fn name(&self) -> &str {
+//         self.0.name()
+//     }
+
+//     fn id(&self) -> &str {
+//         self.0.id()
+//     }
+
+//     fn chain_type(&self) -> ChainType {
+//         self.0.chain_type()
+//     }
+
+//     fn boot_nodes(&self) -> &[Multiaddr] {
+//         self.0.boot_nodes()
+//     }
+
+//     fn telemetry_endpoints(&self) -> &Option<TelemetryEndpoints> {
+//         self.0.telemetry_endpoints()
+//     }
+
+//     fn protocol_id(&self) -> Option<&str> {
+//         self.0.protocol_id()
+//     }
+
+//     fn properties(&self) -> serde_json::Map<String, JsonValue> {
+//         self.0.properties()
+//     }
+
+//     fn extensions(&self) -> &dyn sc_chain_spec::GetExtension {
+//         self.0.extensions()
+//     }
+
+//     fn extensions_mut(&mut self) -> &mut dyn sc_chain_spec::GetExtension {
+//         self.0.extensions_mut()
+//     }
+
+//     fn add_boot_node(&mut self, addr: Multiaddr) {
+//         self.0.add_boot_node(addr)
+//     }
+
+//     fn as_json(&self, raw: bool) -> Result<String, String> {
+//         self.0.as_json(raw)
+//     }
+
+//     fn fork_id(&self) -> Option<&str> {
+//         self.0.fork_id()
+//     }
+
+//     fn as_storage_builder(&self) -> &dyn BuildStorage {
+//         self
+//     }
+
+//     fn cloned_box(&self) -> Box<dyn ChainSpecTrait> {
+//         Box::new(self.clone())
+//     }
+
+//     fn set_storage(&mut self, storage: Storage) {
+//         self.0.set_storage(storage)
+//     }
+
+//     fn code_substitutes(&self) -> BTreeMap<String, Vec<u8>> {
+//         self.0.code_substitutes()
+//     }
+// }
 
 // /// Generate a crypto pair from seed.
 // pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
@@ -85,7 +209,7 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
 //         .public()
 // }
 
-// type AccountPublic = <Signature as Verify>::Signer;
+// type AccountPublic = <MultiSignature as Verify>::Signer;
 
 // /// Generate an account ID from seed.
 // pub fn get_account_id_from_seed<TPublic: Public>(seed: &str) -> AccountId
@@ -96,31 +220,17 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
 // }
 
 // /// Configure initial storage state for the development chain.
-// ///
-// /// This function creates a custom genesis configuration for the development chain 
-// /// with multiple predefined accounts and their initial token balances.
-// fn development_genesis() -> GenesisResult<GenesisConfig> {
+// fn development_genesis() -> GenesisResult {
 //     let root = get_account_id_from_seed::<sr25519::Public>("Alice");
     
-//     // Define multiple accounts with their initial balances
-//     // This is the BalancesConfig that you need to extend
 //     let mut balances = vec![
-//         (root.clone(), 1_000_000_000_000_000), // Alice (sudo account) with 1,000,000 tokens
-//         (get_account_id_from_seed::<sr25519::Public>("Rishit"), 500_000_000_000_000),
+//         (root.clone(), 1_000_000_000_000_000),
+//         (get_account_id_from_seed::<sr25519::Public>("Bob"), 500_000_000_000_000),
 //         (get_account_id_from_seed::<sr25519::Public>("Charlie"), 500_000_000_000_000),
-//         (get_account_id_from_seed::<sr25519::Public>("Dave"), 500_000_000_000_000),
-//         (get_account_id_from_seed::<sr25519::Public>("Eve"), 500_000_000_000_000),
-//         (get_account_id_from_seed::<sr25519::Public>("Ferdie"), 500_000_000_000_000),
-//         // Add more accounts as needed
 //     ];
-    
-//     // You can also add real-world accounts if needed
-//     // Example of adding a specific account using SS58 address format:
-//     // let account1 = AccountId::from_ss58check("5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty").unwrap();
-//     // balances.push((account1, 1_000_000_000_000_000));
 
-//     // Build the genesis configuration
-//     GenesisBuilder::default()
+//     let mut builder = <dyn GenesisBuilder<Block<Header<u32, sp_runtime::traits::BlakeTwo256>, OpaqueExtrinsic>>>::default();
+//     builder
 //         .with_wasm_binary(WASM_BINARY.unwrap())
 //         .with_balances_config(|config: &mut BalancesConfig| {
 //             config.balances = balances;
@@ -132,27 +242,18 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
 // }
 
 // /// Configure initial storage state for the local testnet.
-// ///
-// /// This function creates a custom genesis configuration for the local testnet
-// /// with multiple predefined accounts and their initial token balances.
-// fn local_testnet_genesis() -> GenesisResult<GenesisConfig> {
+// fn local_testnet_genesis() -> GenesisResult {
 //     let root = get_account_id_from_seed::<sr25519::Public>("Alice");
     
-//     // Define multiple accounts with their initial balances for the local testnet
 //     let mut balances = vec![
-//         (root.clone(), 1_000_000_000_000_000), // Alice (sudo account)
-//         (get_account_id_from_seed::<sr25519::Public>("Rishit"), 500_000_000_000_000),
+//         (root.clone(), 1_000_000_000_000_000),
+//         (get_account_id_from_seed::<sr25519::Public>("Bob"), 500_000_000_000_000),
 //         (get_account_id_from_seed::<sr25519::Public>("Charlie"), 500_000_000_000_000),
 //         (get_account_id_from_seed::<sr25519::Public>("Dave"), 500_000_000_000_000),
-//         (get_account_id_from_seed::<sr25519::Public>("Eve"), 500_000_000_000_000),
-//         (get_account_id_from_seed::<sr25519::Public>("Ferdie"), 500_000_000_000_000),
-//         // Add additional accounts for testing
-//         (get_account_id_from_seed::<sr25519::Public>("George"), 500_000_000_000_000),
-//         (get_account_id_from_seed::<sr25519::Public>("Harry"), 500_000_000_000_000),
 //     ];
 
-//     // Build the genesis configuration
-//     GenesisBuilder::default()
+//     let mut builder = <dyn GenesisBuilder<Block<Header<u32, sp_runtime::traits::BlakeTwo256>, OpaqueExtrinsic>>>::default();
+//     builder
 //         .with_wasm_binary(WASM_BINARY.unwrap())
 //         .with_balances_config(|config: &mut BalancesConfig| {
 //             config.balances = balances;
@@ -164,85 +265,51 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
 // }
 
 // /// Generates the chain specification for a development chain.
-// ///
-// /// This function creates a `ChainSpec` for a development environment, which is typically used for testing purposes.
-// /// The development chain is a single-node blockchain with a predefined genesis configuration.
-// ///
-// /// # Returns
-// /// A `Result` containing the `ChainSpec` for the development chain or an error message if the WASM binary is unavailable.
 // pub fn development_chain_spec() -> Result<ChainSpec, String> {
-//     // CUSTOMIZATION GUIDE:
-//     // - To override chain name: Change "Development" in .with_name()
-//     // - To override chain ID: Change "dev" in .with_id()
-//     // - To override properties: Add a sc_service::Properties object and use .with_properties()
-    
 //     let mut properties = sc_service::Properties::new();
 //     properties.insert("tokenSymbol".into(), "CBC".into());
 //     properties.insert("tokenDecimals".into(), 12.into());
 //     properties.insert("ss58Format".into(), 42.into());
     
-//     // Instead of using the preset, use our custom genesis function
 //     let genesis = development_genesis().map_err(|e| format!("{:?}", e))?;
     
-//     ChainSpec::from_genesis(
-//         // Name of the chain
-//         "Development",
-//         // Unique identifier for the chain
-//         "dev",
-//         // Chain type (Development, Local, Live, Custom)
-//         ChainType::Development,
-//         // Genesis config builder function
-//         move || genesis.clone(),
-//         // Bootnodes - override with your own if needed
-//         Vec::new(),
-//         // Telemetry endpoints - set to None for development
-//         None,
-//         // Protocol ID - can be customized if needed
-//         None,
-//         // Fork ID - can be used to identify specific forks
-//         None,
-//         // Chain properties - token symbol, decimals, etc.
-//         Some(properties),
-//         // Extensions - additional features for the chain
-//         None,
+//     Ok(ChainSpec(ChainSpec::builder(
+//         WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
+//         Extensions {
+//             relay_chain: "rococo-local".into(),
+//             para_id: 1000,
+//         },
 //     )
+//     .with_name("Development")
+//     .with_id("dev")
+//     .with_chain_type(ChainType::Development)
+//     .with_genesis_config_patch(serde_json::to_value(genesis).map_err(|e| format!("{:?}", e))?)
+//     .with_properties(properties)
+//     .build()))
 // }
 
 // /// Generates the chain specification for a local testnet.
-// ///
-// /// This function creates a `ChainSpec` for a local testnet, which is typically used for testing with multiple nodes.
-// /// The local testnet allows developers to simulate a real blockchain environment on their local machines.
-// ///
-// /// # Returns
-// /// A `Result` containing the `ChainSpec` for the local testnet or an error message if the WASM binary is unavailable.
 // pub fn local_chain_spec() -> Result<ChainSpec, String> {
-//     // CUSTOMIZATION GUIDE:
-//     // - To override chain name: Change "Local Testnet" in .with_name()
-//     // - To override chain ID: Change "local_testnet" in .with_id()
-//     // - To override bootnodes: Add multiaddresses to the Vec in the ChainSpec::from_genesis call
-//     // Example bootnode: "/ip4/192.168.1.100/tcp/30333/p2p/QmPeerID..."
-    
 //     let mut properties = sc_service::Properties::new();
 //     properties.insert("tokenSymbol".into(), "CBC".into());
 //     properties.insert("tokenDecimals".into(), 12.into());
 //     properties.insert("ss58Format".into(), 42.into());
     
-//     // Instead of using the preset, use our custom genesis function
 //     let genesis = local_testnet_genesis().map_err(|e| format!("{:?}", e))?;
     
-//     ChainSpec::from_genesis(
-//         "Local Testnet",
-//         "local_testnet",
-//         ChainType::Local,
-//         move || genesis.clone(),
-//         // Bootnodes can be specified here
-//         Vec::new(),
-//         None,
-//         None,
-//         None,
-//         Some(properties),
-//         None,
+//     Ok(ChainSpec(ChainSpec::builder(
+//         WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
+//         Extensions {
+//             relay_chain: "rococo-local".into(),
+//             para_id: 1000,
+//         },
 //     )
+//     .with_name("Local Testnet")
+//     .with_id("local_testnet")
+//     .with_chain_type(ChainType::Local)
+//     .with_genesis_config_patch(serde_json::to_value(genesis).map_err(|e| format!("{:?}", e))?)
+//     .with_properties(properties)
+//     .build()))
 // }
 
 // /// Generates a JSON chain specification file from a ChainSpec.
@@ -263,7 +330,7 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
 //  * HOW TO GENERATE AND USE A JSON CHAIN SPEC:
 //  * ------------------------------------------
 //  *
-//  * 1. Generate the raw chain spec:
+//  * 1. Generate the plain chain spec:
 //  *    $ ./target/release/cbc-node build-spec --chain=dev > chain-spec-plain.json
 //  *
 //  * 2. Convert to raw format:
@@ -272,15 +339,40 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
 //  * 3. Start a node with the generated chain spec:
 //  *    $ ./target/release/cbc-node --chain=chain-spec-raw.json
 //  *
-//  * TESTING PROCESS:
-//  * ---------------
+//  * OVERRIDING CHAIN PROPERTIES:
+//  * ---------------------------
+//  * You can override various properties when creating or using a chain spec:
+//  * 
+//  * - Chain Name: Defined using .with_name() in ChainSpec builder
+//  * - Chain ID: Defined using .with_id() in ChainSpec builder
+//  * 
+//  * - Boot Nodes: Can be specified in three ways:
+//  *   a) In the chain spec JSON under "bootNodes" array
+//  *   b) Programmatically using chain_spec.add_boot_node()
+//  *   c) When starting a node: --bootnodes /ip4/127.0.0.1/tcp/30333/p2p/NODE_PEER_ID
+//  *
+//  * - Chain Properties:
+//  *   - Token Symbol: Set with properties.insert("tokenSymbol".into(), "CBC".into())
+//  *   - Token Decimals: Set with properties.insert("tokenDecimals".into(), 12.into())
+//  *   - SS58 Format: Set with properties.insert("ss58Format".into(), 42.into())
+//  *
+//  * TESTING INSTRUCTIONS:
+//  * -------------------
 //  * 1. Build your node:
 //  *    $ cargo build --release
 //  *
-//  * 2. Generate and test your chain spec with the commands above
+//  * 2. Generate the chain spec JSON as described above
 //  *
-//  * 3. You can verify the balances by:
-//  *    - Starting your node
-//  *    - Connecting to it with the Polkadot JS Apps (https://polkadot.js.org/apps/)
-//  *    - Checking the Accounts section to see if your accounts have the correct balances
+//  * 3. Verify accounts and balances:
+//  *    - Start your node: ./target/release/cbc-node --chain=chain-spec-raw.json
+//  *    - Connect using Polkadot JS Apps: https://polkadot.js.org/apps/
+//  *    - Navigate to Accounts tab to verify balances
+//  *
+//  * 4. Multi-node test network:
+//  *    - Start the first node (bootnode):
+//  *      $ ./target/release/cbc-node --chain=chain-spec-raw.json --port 30333 --ws-port 9944
+//  *    - Get its peer ID from the logs
+//  *    - Start additional nodes:
+//  *      $ ./target/release/cbc-node --chain=chain-spec-raw.json --port 30334 --ws-port 9945 \
+//  *        --bootnodes /ip4/127.0.0.1/tcp/30333/p2p/FIRST_NODE_PEER_ID
 //  */

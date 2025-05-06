@@ -102,6 +102,14 @@ sp-runtime.workspace = true                 # Use workspace version
 sp-timestamp.default-features = true        # Timestamp pallet primitives
 sp-timestamp.workspace = true               # Use workspace version
 
+# === Chain Spec ===
+sc-chain-spec.default-features = true       # Chain specification utilities
+sc-chain-spec.workspace = true              # Use workspace version
+
+# === JSON Serialization ===
+serde = { version = "1.0", features = ["derive"] } # JSON serialization library
+serde_json = { version = "1.0", features = ["raw_value"] } # JSON serialization library
+
 # === RPC System ===
 substrate-frame-rpc-system.default-features = true # FRAME RPC system
 substrate-frame-rpc-system.workspace = true       # Use workspace version
