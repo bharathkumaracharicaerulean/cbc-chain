@@ -1,5 +1,3 @@
-
-
 #![cfg_attr(rustfmt, rustfmt_skip)]
 #![allow(unused_parens)]
 #![allow(unused_imports)]
@@ -10,6 +8,8 @@ use core::marker::PhantomData;
 /// Weight functions needed for pallet_cbc_poi.
 pub trait WeightInfo {
 	fn store_something() -> Weight;
+	fn submit_inference() -> Weight;
+	fn challenge_inference() -> Weight;
 }
 
 /// Weights for pallet_cbc_poi using the Substrate node and recommended hardware.
@@ -20,6 +20,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	fn store_something() -> Weight {
 		Weight::from_parts(10_000, 0)
 			.saturating_add(Weight::from_parts(0, 500)) // db write
+	}
+
+	/// Weight for `submit_inference`.
+	fn submit_inference() -> Weight {
+		Weight::from_parts(20_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64)) // db write
+	}
+
+	/// Weight for `challenge_inference`.
+	fn challenge_inference() -> Weight {
+		Weight::from_parts(30_000, 0)
+			.saturating_add(RocksDbWeight::get().reads_writes(1_u64, 1_u64)) // db read + write
 	}
 }
 
@@ -34,5 +46,15 @@ impl WeightInfo for () {
 		// Minimum execution time: 8_000_000 picoseconds.
 		Weight::from_parts(9_000_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+
+	fn submit_inference() -> Weight {
+		Weight::from_parts(20_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+
+	fn challenge_inference() -> Weight {
+		Weight::from_parts(30_000, 0)
+			.saturating_add(RocksDbWeight::get().reads_writes(1_u64, 1_u64))
 	}
 }
