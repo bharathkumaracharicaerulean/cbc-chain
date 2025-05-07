@@ -5,6 +5,12 @@ pub use pallet::*;
 pub mod weights;
 pub use weights::*;
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
