@@ -6,7 +6,7 @@
     "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWDGAmPUgUViUCGnfJoehx27yaANmWDr9q7TWpD2Xojz61"
   ],
   "telemetryEndpoints": null,
-  "protocolId": null,
+  "protocolId": "CBC",
   "properties": null,
   "codeSubstitutes": {},
   "genesis": {
