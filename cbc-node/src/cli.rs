@@ -26,6 +26,22 @@ pub struct Cli {
     /// CBC custom mode (e.g., "testing", "production").
     #[clap(long, default_value = "production", help = "CBC custom mode (e.g., testing, production)")]
     pub cbc_mode: String,
+
+    /// Enable CBC custom RPC extensions
+    #[clap(long, help = "Enable CBC custom RPC extensions")]
+    pub enable_cbc_extensions: bool,
+
+    /// Expose unsafe RPC methods
+    #[clap(long, help = "Enable unsafe RPC methods (use with caution)")]
+    pub unsafe_rpc_expose: bool,
+
+    /// RPC rate limiting window in seconds
+    #[clap(long, default_value = "60", help = "RPC rate limiting window in seconds")]
+    pub rpc_rate_limit_window: u64,
+
+    /// Maximum RPC requests per window
+    #[clap(long, default_value = "100", help = "Maximum RPC requests per rate limit window")]
+    pub rpc_rate_limit_requests: u32,
 }
 
 /// All available subcommands for the CBC Chain Node CLI.

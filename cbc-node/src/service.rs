@@ -2,7 +2,7 @@
 //!
 //! This file defines how the CBC node's services are built and launched,
 //! including consensus setup (AURA/GRANDPA), transaction pool, networking,
-//! and RPC interfaces. It’s a critical part of the node runtime.
+//! and RPC interfaces. It's a critical part of the node runtime.
 
 use futures::FutureExt; // Needed for handling async functions that return futures.
 use sc_client_api::{Backend, BlockBackend}; // Traits for interacting with blockchain backends.
@@ -17,7 +17,7 @@ use std::{sync::Arc, time::Duration}; // Standard concurrency and time utilities
 
 // === Type Aliases for Readability ===
 
-/// Full CBC client type (using the runtime’s `Block` and `RuntimeApi`)
+/// Full CBC client type (using the runtime's `Block` and `RuntimeApi`)
 pub(crate) type FullClient = sc_service::TFullClient<
 	Block,
 	RuntimeApi,
@@ -47,9 +47,19 @@ pub type Service = sc_service::PartialComponents<
 	),
 >;
 
+/// Extra parameters for configuring services
+#[derive(Clone)]
+pub struct NodeConfig {
+	/// RPC configuration from CLI
+	pub rpc_config: crate::rpc::RpcSecurityConfig,
+}
+
 /// Builds the partial components of a node (used for both full and light nodes).
 /// Returns the essential pieces to create the full node later.
-pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
+pub fn new_partial(
+	config: &Configuration,
+	node_config: NodeConfig,
+) -> Result<Service, ServiceError> {
 	// Setup optional telemetry (for Prometheus/Grafana dashboards).
 	let telemetry = config
 		.telemetry_endpoints
@@ -158,7 +168,11 @@ pub fn new_full<
 	N: sc_network::NetworkBackend<Block, <Block as sp_runtime::traits::Block>::Hash>,
 >(
 	config: Configuration,
-) -> Result<TaskManager, ServiceError> {
+	node_config: NodeConfig,
+) -> Result<TaskManager, ServiceError>
+where
+	N: sc_network::NetworkBackend<Block, <Block as sp_runtime::traits::Block>::Hash>,
+{
 	// Start with building partial components (client, pool, backend, etc.)
 	let sc_service::PartialComponents {
 		client,
@@ -169,7 +183,7 @@ pub fn new_full<
 		select_chain,
 		transaction_pool,
 		other: (block_import, grandpa_link, mut telemetry),
-	} = new_partial(&config)?;
+	} = new_partial(&config, node_config.clone())?;
 
 	// === Network Setup ===
 
@@ -261,9 +275,14 @@ pub fn new_full<
 	let rpc_extensions_builder = {
 		let client = client.clone();
 		let pool = transaction_pool.clone();
+		let rpc_config = node_config.rpc_config.clone();
 
 		Box::new(move |_| {
-			let deps = crate::rpc::FullDeps { client: client.clone(), pool: pool.clone() };
+			let deps = crate::rpc::FullDeps {
+				client: client.clone(),
+				pool: pool.clone(),
+				rpc_config: rpc_config.clone(),
+			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		})
 	};

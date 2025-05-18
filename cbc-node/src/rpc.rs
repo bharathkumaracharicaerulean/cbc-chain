@@ -7,6 +7,10 @@
 #![warn(missing_docs)] // Emit a warning if any public item is missing Rust doc comments.
 
 use std::sync::Arc;
+use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::Instant;
 
 use jsonrpsee::RpcModule; // JSON-RPC server abstraction from jsonrpsee (used in Substrate v3+)
 use sc_transaction_pool_api::TransactionPool; // Trait for interacting with the transaction pool
@@ -14,6 +18,73 @@ use cbc_runtime::{opaque::Block, AccountId, Balance, Nonce}; // Reuse CBC runtim
 use sp_api::ProvideRuntimeApi; // Trait that allows accessing runtime APIs from the client
 use sp_block_builder::BlockBuilder; // Trait for building blocks
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata}; // Block metadata for blockchain access
+
+/// Simple rate limiter implementation
+#[derive(Clone)]
+pub struct RateLimiter {
+	/// Rate limiting window in seconds
+	window: Duration,
+	/// Maximum requests per window
+	max_requests: u32,
+	/// Request history for each IP
+	requests: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+}
+
+impl RateLimiter {
+	/// Create a new rate limiter
+	pub fn new(window_secs: u64, max_requests: u32) -> Self {
+		Self {
+			window: Duration::from_secs(window_secs),
+			max_requests,
+			requests: Arc::new(Mutex::new(HashMap::new())),
+		}
+	}
+
+	/// Check if a request is allowed
+	pub fn check_rate_limit(&self, ip: &str) -> bool {
+		let now = Instant::now();
+		let mut requests = self.requests.lock().unwrap();
+		
+		// Get or create request history for this IP
+		let history = requests.entry(ip.to_string()).or_insert_with(Vec::new);
+		
+		// Remove old requests outside the window
+		history.retain(|&time| now.duration_since(time) <= self.window);
+		
+		// Check if under limit
+		if history.len() as u32 >= self.max_requests {
+			return false;
+		}
+		
+		// Add new request
+		history.push(now);
+		true
+	}
+}
+
+/// Configuration for RPC security settings
+#[derive(Clone, Debug)]
+pub struct RpcSecurityConfig {
+	/// Whether to enable CBC custom extensions
+	pub enable_cbc_extensions: bool,
+	/// Whether to expose unsafe RPC methods
+	pub expose_unsafe_methods: bool,
+	/// Rate limiting window in seconds
+	pub rate_limit_window: u64,
+	/// Maximum requests per window
+	pub rate_limit_requests: u32,
+}
+
+impl Default for RpcSecurityConfig {
+	fn default() -> Self {
+		Self {
+			enable_cbc_extensions: false,
+			expose_unsafe_methods: false,
+			rate_limit_window: 60,
+			rate_limit_requests: 100,
+		}
+	}
+}
 
 /// Full client dependencies for setting up RPC extensions.
 ///
@@ -25,6 +96,9 @@ pub struct FullDeps<C, P> {
 
 	/// Shared reference to the transaction pool.
 	pub pool: Arc<P>,
+
+	/// RPC security configuration
+	pub rpc_config: RpcSecurityConfig,
 }
 use jsonrpsee::core::{RpcResult};
 use jsonrpsee::proc_macros::rpc;
@@ -70,33 +144,32 @@ where
 	use substrate_frame_rpc_system::{System, SystemApiServer}; // System-level RPC (e.g. nonce, block hashes)
 
 	let mut module = RpcModule::new(()); // Create a new empty JSON-RPC module
-	let FullDeps { client, pool } = deps; // Destructure dependencies into local variables
+	let FullDeps { client, pool, rpc_config } = deps; // Destructure dependencies into local variables
 
-	// Merge system-level runtime APIs into the module (account nonce, chain head, etc.)
+	// Create rate limiter
+	let _rate_limiter = RateLimiter::new(
+		rpc_config.rate_limit_window,
+		rpc_config.rate_limit_requests,
+	);
+	
+	// Note: Rate limiting would typically be implemented at the transport layer
+	// or using a reverse proxy like nginx for production deployments
+
+	// Always enable safe methods
 	module.merge(System::new(client.clone(), pool).into_rpc())?;
+	module.merge(TransactionPayment::new(client.clone()).into_rpc())?;
 
-	// Merge transaction payment APIs (used to estimate fees for extrinsics)
-	module.merge(TransactionPayment::new(client).into_rpc())?;
+	// Only enable CBC custom RPCs if configured
+	if rpc_config.enable_cbc_extensions {
+		let chain_api = ChainApiImpl;
+		module.merge(ChainApiServer::into_rpc(chain_api))?;
+	}
 
-	// === You can define and merge custom RPCs here ===
-	// For example, if you want to expose a custom storage query or chain state logic:
-	//
-	// module.merge(YourCustomApi::new(client.clone()).into_rpc())?;
-	//
-	// Example:
-	// `YourRpcStruct` should have access to a runtime client.
-	// `YourRpcTrait` is your trait (defined with `#[jsonrpsee::rpc]`) that generates the server interface.
-
-	// === Optional: Extend RPCs with chainSpec info ===
-	// If needed, you can add a `/chain_spec` RPC endpoint using the commented template below:
-	//
-	// let chain_name = chain_spec.name().to_string(); // Get the human-readable chain name
-	// let genesis_hash = client.block_hash(0).ok().flatten().expect("Genesis block exists; qed"); // Fetch the genesis hash
-	// let properties = chain_spec.properties(); // Chain-specific metadata (token symbol, decimals, etc.)
-	// module.merge(ChainSpec::new(chain_name, genesis_hash, properties).into_rpc())?;
-	// Register the custom RPC
-	let chain_api = ChainApiImpl;
-	module.merge(ChainApiServer::into_rpc(chain_api))?;
+	// Only expose unsafe methods if configured
+	if rpc_config.expose_unsafe_methods {
+		// Add any unsafe methods here
+		// For example: module.merge(UnsafeDebugApi::new(client.clone()).into_rpc())?;
+	}
 
 	//  curl -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"chain_getChainName","params":[]}' http://localhost:9944
 	
