@@ -30,6 +30,9 @@ pub struct Cli {
     /// Enable CBC custom RPC extensions
     #[clap(long, help = "Enable CBC custom RPC extensions")]
     pub enable_cbc_extensions: bool,
+    
+    #[clap(long, help = "Write logs to the given file instead of stdout")]
+    pub log_file: Option<String>,
 
     /// Expose unsafe RPC methods
     #[clap(long, help = "Enable unsafe RPC methods (use with caution)")]

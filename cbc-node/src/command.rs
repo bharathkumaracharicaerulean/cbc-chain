@@ -3,8 +3,6 @@ use crate::{
 	benchmarking::{inherent_benchmark_data, RemarkBuilder, TransferKeepAliveBuilder}, // Benchmarking tools
 	chain_spec,      // Chain spec definitions
 	cli::{Cli, Subcommand}, // CLI definitions and subcommands
-	service,         // Node service creation utilities
-	rpc,             // RPC configuration
 };
 
 use frame_benchmarking_cli::{BenchmarkCmd, ExtrinsicFactory, SUBSTRATE_REFERENCE_HARDWARE}; // Benchmarking CLI tools
