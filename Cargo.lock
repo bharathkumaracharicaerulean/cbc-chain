@@ -1289,6 +1289,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cbc-tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "jsonrpsee",
+ "serde",
+ "serde_json",
+ "sp-core",
+ "tokio",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"

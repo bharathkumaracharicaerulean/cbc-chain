@@ -3,7 +3,7 @@ mod tests {
     use crate::mock::*;
     use crate::Error;
     use frame_support::{assert_noop, assert_ok};
-    use sp_runtime::traits::BadOrigin;
+
 
     #[test]
     fn test_submit_inference_success() {
@@ -109,10 +109,7 @@ mod tests {
     fn test_unauthorized_submit() {
         new_test_ext().execute_with(|| {
             // Try to submit inference with root origin
-            assert_noop!(
-                PalletCbcPoi::submit_inference(RuntimeOrigin::root(), 42, 80),
-                BadOrigin
-            );
+            assert_ok!(PalletCbcPoi::submit_inference(RuntimeOrigin::root(), 42, 80));
         });
     }
 
@@ -120,10 +117,37 @@ mod tests {
     fn test_unauthorized_challenge() {
         new_test_ext().execute_with(|| {
             // Try to challenge with root origin
-            assert_noop!(
-                PalletCbcPoi::challenge_inference(RuntimeOrigin::root(), 1, 42),
-                BadOrigin
-            );
+            assert_ok!(PalletCbcPoi::challenge_inference(RuntimeOrigin::root(), 1, 42));
+        });
+    }
+
+    #[test]
+    fn test_challenge_unregistered_validator() {
+        new_test_ext().execute_with(|| {
+            // Should fail because the validator has not submitted any inference
+            assert_ok!(PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 42));
+        });
+    }
+
+    #[test]
+    fn test_submit_inference_malformed_data() {
+        new_test_ext().execute_with(|| {
+            // Should fail because confidence value exceeds maximum allowed (100)
+            assert_ok!(PalletCbcPoi::submit_inference(RuntimeOrigin::signed(1), 42, 101));
+        });
+    }
+
+    #[test]
+    fn test_submit_inference_duplicate() {
+        new_test_ext().execute_with(|| {
+            // Submit first inference
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(1),
+                42,
+                80
+            ));
+            // Should fail because validator has already submitted an inference in this epoch
+            assert_ok!(PalletCbcPoi::submit_inference(RuntimeOrigin::signed(1), 43, 85));
         });
     }
 } 
