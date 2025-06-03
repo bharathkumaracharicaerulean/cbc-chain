@@ -13,7 +13,7 @@ members = [
     "cbc-pallets/pallet-cbc-pos",
     "cbc-runtime",
     "tools"
-]
+, "cbc-pallets/pallet-cbc-dcf"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -54,6 +54,7 @@ sp-io = { version = "40.0.0", default-features = false }
 sp-keyring = { version = "41.0.0", default-features = false }
 sp-runtime = { version = "41.1.0", default-features = false }
 sp-timestamp = { version = "36.0.0", default-features = false }
+serde = { version = "1.0.219", default-features = false }
 substrate-frame-rpc-system = { version = "43.0.0", default-features = false }
 substrate-build-script-utils = { version = "11.0.0", default-features = false }
 codec = { version = "3.7.4", default-features = false, package = "parity-scale-codec" }

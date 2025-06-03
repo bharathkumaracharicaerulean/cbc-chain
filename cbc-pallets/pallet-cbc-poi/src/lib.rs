@@ -9,8 +9,6 @@ mod mock;
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
 #[frame_support::pallet]
@@ -19,6 +17,7 @@ pub mod pallet {
     use frame_support::{pallet_prelude::*, storage::types::StorageMap};
     use frame_system::pallet_prelude::*;
     use scale_info::prelude::vec::Vec;
+    use frame_support::sp_runtime::traits::Saturating;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -102,6 +101,8 @@ pub mod pallet {
         InferenceChallenged { challenger: T::AccountId, challenged: T::AccountId, result: u32 },
         /// A challenge was resolved. [challenger, challenged, result, success]
         ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
+        /// A new epoch has started. [epoch_number]
+        EpochTransitioned { epoch_number: u32 },
     }
 
     #[pallet::error]
@@ -200,6 +201,82 @@ pub mod pallet {
             });
 
             Ok(())
+        }
+    }
+
+    impl<T: Config> Pallet<T> {
+        /// Calculate a validator's score based on their inference results and challenges
+        pub fn calculate_validator_score(validator: &T::AccountId) -> Option<u32> {
+            // Get the inference result
+            let (score, block_number) = Self::inference_results(validator)?;
+            
+            // Get current block number
+            let current_block = frame_system::Pallet::<T>::block_number();
+            
+            // Check if the inference is too old
+            let max_age = T::MaxInferenceAge::get();
+            let block_diff = current_block.saturating_sub(block_number.into());
+            
+            if block_diff > max_age.into() {
+                return None;
+            }
+            
+            // Count challenges
+            let mut challenge_count = 0;
+            for (_challenger, (challenged, _result, _epoch)) in Challenges::<T>::iter() {
+                if challenged == *validator {
+                    challenge_count += 1;
+                }
+            }
+            
+            // Adjust score based on challenges
+            let adjusted_score = score.saturating_sub(challenge_count * 10);
+            
+            Some(adjusted_score)
+        }
+
+        /// Handle epoch transition
+        fn handle_epoch_transition() {
+            let current_epoch = CurrentEpoch::<T>::get();
+            let new_epoch = current_epoch + 1;
+            
+            // Update epoch counter
+            CurrentEpoch::<T>::put(new_epoch);
+
+            // Emit epoch transition event
+            Self::deposit_event(Event::EpochTransitioned { epoch_number: new_epoch });
+
+            // Clear old inference results and challenges
+            let max_age = T::MaxInferenceAge::get();
+            
+            // Clear old inference results
+            for (account, (_, epoch)) in InferenceResults::<T>::iter() {
+                if current_epoch - epoch > max_age {
+                    InferenceResults::<T>::remove(account);
+                }
+            }
+
+            // Clear old challenges
+            for (challenger, (_, _, epoch)) in Challenges::<T>::iter() {
+                if current_epoch - epoch > max_age {
+                    Challenges::<T>::remove(challenger);
+                }
+            }
+        }
+    }
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_initialize(n: BlockNumberFor<T>) -> Weight {
+            // Check if we need to transition to a new epoch (every 10 blocks)
+            if n % 10u32.into() == 0u32.into() {
+                Self::handle_epoch_transition();
+            }
+            Weight::zero()
+        }
+
+        fn on_finalize(_n: BlockNumberFor<T>) {
+            // Any cleanup needed at the end of the block
         }
     }
 }

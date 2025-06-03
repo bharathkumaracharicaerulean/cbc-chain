@@ -6058,6 +6058,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-cbc-dcf"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "pallet-cbc-poi",
+ "pallet-cbc-pos",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-api",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-cbc-poi"
 version = "0.1.0"
 dependencies = [
