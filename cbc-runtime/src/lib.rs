@@ -203,6 +203,9 @@ mod runtime {
 
     #[runtime::pallet_index(9)]
     pub type PalletCbcPos = pallet_cbc_pos;
+
+    #[runtime::pallet_index(10)]
+    pub type PalletCbcDcf = pallet_cbc_dcf;
 }
 use sp_runtime::traits::parameter_types;
 
@@ -219,6 +222,9 @@ parameter_types! {
     pub const MaxValidators: u32 = 100;
     pub const ValidatorScoreDecay: u32 = 10;
     pub const MaxSlashingCount: u32 = 3;
+    pub const MinStake: Balance = 1000 * DOLLARS;
+    pub const DefaultPosWeight: u32 = 60;
+    pub const DefaultPoiWeight: u32 = 40;
 
     // Inference parameters
     pub const MinInferenceConfidence: u32 = 80;
@@ -226,7 +232,15 @@ parameter_types! {
     pub const ChallengeWindow: u32 = 5;
     pub const InferenceReward: u128 = 1000;
     pub const ChallengeReward: u128 = 500;
+    pub const BlocksPerEpoch: BlockNumber = 100;
+    pub const MinBlocksPerEpoch: BlockNumber = 50;
+    pub const MaxValidatorsPerEpoch: u32 = 50;
+    pub const MaxValidatorScore: u32 = 1000;
+    pub const ScoreHistoryLength: u32 = 10;
+    pub const BlockAuthorshipBoost: u32 = 50;
+    pub const InferenceAccuracyBoost: u32 = 30;
 }
 
 pub use pallet_cbc_poi;
 pub use pallet_cbc_pos;
+pub use pallet_cbc_dcf;

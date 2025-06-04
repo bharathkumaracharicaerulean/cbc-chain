@@ -8,11 +8,9 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use sp_runtime::{
-    traits::{Saturating, SaturatedConversion, AtLeast32BitUnsigned},
+    traits::{Saturating, AtLeast32BitUnsigned},
 };
 use sp_std::prelude::*;
-use pallet_cbc_pos as pos;
-use pallet_cbc_poi as poi;
 use serde::{Serialize, Deserialize};
 
 // Runtime API declaration
@@ -65,8 +63,20 @@ pub mod pallet {
         pub max_validators: u32,
     }
 
+    /// Trait for getting validator scores
+    pub trait ValidatorScoreProvider {
+        type AccountId;
+        fn get_validator_score(validator: &Self::AccountId) -> Option<u64>;
+    }
+
+    /// Trait for getting validator stake scores
+    pub trait ValidatorStakeScoreProvider {
+        type AccountId;
+        fn get_validator_stake_score(validator: &Self::AccountId) -> Option<u64>;
+    }
+
     #[pallet::config]
-    pub trait Config: frame_system::Config + pos::Config + poi::Config {
+    pub trait Config: frame_system::Config {
         /// The overarching event type.
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         
@@ -107,6 +117,20 @@ pub mod pallet {
 
         /// Weight information for the pallet
         type WeightInfo: WeightInfo;
+
+        /// Number of blocks per epoch
+        #[pallet::constant]
+        type BlocksPerEpoch: Get<u32>;
+
+        /// Minimum number of blocks required for epoch transition
+        #[pallet::constant]
+        type MinBlocksForEpoch: Get<u32>;
+
+        /// Provider for validator inference scores
+        type ValidatorInferenceScoreProvider: ValidatorScoreProvider<AccountId = Self::AccountId>;
+
+        /// Provider for validator stake scores
+        type ValidatorStakeScoreProvider: ValidatorStakeScoreProvider<AccountId = Self::AccountId>;
     }
 
     #[pallet::pallet]
@@ -169,6 +193,14 @@ pub mod pallet {
     #[pallet::getter(fn active_validators)]
     pub type ActiveValidators<T: Config> = StorageValue<_, BoundedVec<T::AccountId, <T as Config>::MaxValidators>, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn last_epoch_block)]
+    pub type LastEpochBlock<T: Config> = StorageValue<_, BlockNumberFor<T>, ValueQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn epoch_state)]
+    pub type EpochState<T: Config> = StorageValue<_, BoundedVec<(T::AccountId, u64), <T as Config>::MaxValidators>, ValueQuery>;
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -189,6 +221,12 @@ pub mod pallet {
             epoch: u32,
             validators: Vec<T::AccountId>,
         },
+        /// A new epoch has started
+        EpochTransitioned {
+            epoch: u32,
+            block_number: BlockNumberFor<T>,
+            active_validators: Vec<T::AccountId>,
+        },
     }
 
     #[pallet::error]
@@ -201,6 +239,10 @@ pub mod pallet {
         InvalidEpochConfig,
         /// Not enough validators for epoch
         NotEnoughValidators,
+        /// Epoch transition not allowed
+        EpochTransitionNotAllowed,
+        /// Invalid epoch state
+        InvalidEpochState,
     }
 
     #[pallet::call]
@@ -213,9 +255,9 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_signed(origin)?;
             
-            // Get validator score from POS pallet
-            let stake_score = pos::Pallet::<T>::validator_scores(&validator)
-                .ok_or(Error::<T>::ValidatorNotFound)? as u64;
+            // Get validator score using the trait
+            let stake_score = T::ValidatorStakeScoreProvider::get_validator_stake_score(&validator)
+                .ok_or(Error::<T>::ValidatorNotFound)?;
             
             ValidatorStakeScores::<T>::insert(&validator, stake_score);
             Self::update_final_score(&validator)?;
@@ -230,9 +272,9 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_signed(origin)?;
             
-            // Get inference score from POI pallet using the new calculate_validator_score function
-            let inference_score = poi::Pallet::<T>::calculate_validator_score(&validator)
-                .ok_or(Error::<T>::ValidatorNotFound)? as u64;
+            // Get inference score using the trait
+            let inference_score = T::ValidatorInferenceScoreProvider::get_validator_score(&validator)
+                .ok_or(Error::<T>::ValidatorNotFound)?;
             
             ValidatorInferenceScores::<T>::insert(&validator, inference_score);
             Self::update_final_score(&validator)?;
@@ -264,89 +306,74 @@ pub mod pallet {
 
     impl<T: Config> Pallet<T> {
         fn update_final_score(validator: &T::AccountId) -> DispatchResult {
-            let stake_score = ValidatorStakeScores::<T>::get(validator);
-            let inference_score = ValidatorInferenceScores::<T>::get(validator);
+            let stake_score = T::ValidatorStakeScoreProvider::get_validator_stake_score(validator)
+                .unwrap_or(0);
+            let inference_score = T::ValidatorInferenceScoreProvider::get_validator_score(validator)
+                .unwrap_or(0);
             
-            let pos_weight = if !PosWeight::<T>::exists() {
-                let weight = T::DefaultPosWeight::get();
-                PosWeight::<T>::put(weight);
-                weight
-            } else {
-                PosWeight::<T>::get()
-            };
-
-            let poi_weight = if !PoiWeight::<T>::exists() {
-                let weight = T::DefaultPoiWeight::get();
-                PoiWeight::<T>::put(weight);
-                weight
-            } else {
-                PoiWeight::<T>::get()
-            };
+            let pos_weight = PosWeight::<T>::get();
+            let poi_weight = PoiWeight::<T>::get();
             
-            // Calculate final score with proper order of operations
-            let final_score = ((stake_score as u128 * pos_weight as u128) + 
-                              (inference_score as u128 * poi_weight as u128)) / 100;
+            let final_score = (stake_score * pos_weight + inference_score * poi_weight) / 100;
             
-            ValidatorFinalScores::<T>::insert(
-                validator,
-                ValidatorScore {
-                    stake_weight: stake_score,
-                    inference_weight: inference_score,
-                    final_score: final_score as u64,
-                },
-            );
+            ValidatorFinalScores::<T>::insert(validator, ValidatorScore {
+                stake_weight: stake_score,
+                inference_weight: inference_score,
+                final_score,
+            });
             
             Self::deposit_event(Event::ValidatorScoreUpdated {
                 validator: validator.clone(),
                 stake_score,
                 inference_score,
-                final_score: final_score as u64,
+                final_score,
             });
             
             Ok(())
         }
 
-        /// Check if we should transition to a new epoch
-        fn should_transition_epoch(now: BlockNumberFor<T>, current_epoch: u32, epoch_config: &EpochConfig) -> bool {
-            let blocks_per_epoch: BlockNumberFor<T> = epoch_config.blocks_per_epoch.into();
-            let current_epoch_blocks: BlockNumberFor<T> = (current_epoch as u64).saturated_into();
-            let blocks_in_current_epoch = now.saturating_sub(current_epoch_blocks);
+        fn should_transition_epoch(now: BlockNumberFor<T>) -> bool {
+            let last_epoch = LastEpochBlock::<T>::get();
+            let blocks_since_last = now.saturating_sub(last_epoch);
             
-            blocks_in_current_epoch >= blocks_per_epoch
+            // Check if minimum blocks have passed and we're at an epoch boundary
+            blocks_since_last >= T::MinBlocksForEpoch::get().into() &&
+            blocks_since_last % T::BlocksPerEpoch::get().into() == 0u32.into()
         }
 
-        /// Transition to a new epoch
-        fn transition_epoch() -> Weight {
-            let validators = Self::active_validators();
-            if validators.len() < <T as Config>::MinActiveValidators::get() as usize {
-                return <T as Config>::WeightInfo::on_initialize(1);
-            }
-
-            let weight = Weight::zero();
-            let epoch_config = Self::epoch_config();
-            let current_epoch = Self::current_epoch();
-            let new_epoch = current_epoch.saturating_add(1);
-
-            // Select new validators based on scores
-            let mut new_validators = BoundedVec::new();
-            for validator in validators.iter() {
-                if new_validators.len() >= epoch_config.max_validators as usize {
-                    break;
-                }
-                new_validators.try_push(validator.clone()).expect("MaxValidators bound ensures this won't fail");
-            }
-
-            // Update storage
+        fn handle_epoch_transition(now: BlockNumberFor<T>) -> Weight {
+            let current_epoch = CurrentEpoch::<T>::get();
+            let new_epoch = current_epoch + 1;
+            
+            // Get current active validators
+            let active_validators = ActiveValidators::<T>::get();
+            
+            // Reset validator state
+            Self::reset_validator_state();
+            
+            // Update epoch state
             CurrentEpoch::<T>::put(new_epoch);
-            ActiveValidators::<T>::put(new_validators.clone());
-
-            // Emit event
-            Self::deposit_event(Event::EpochStarted {
+            LastEpochBlock::<T>::put(now);
+            
+            // Emit epoch transition event
+            Self::deposit_event(Event::EpochTransitioned {
                 epoch: new_epoch,
-                validators: new_validators.to_vec(),
+                block_number: now,
+                active_validators: active_validators.to_vec(),
             });
+            
+            // Return weight consumed
+            Weight::from_parts(10_000, 0)
+        }
 
-            weight
+        fn reset_validator_state() {
+            // Clear temporary scores with a high limit and no cursor
+            let _ = ValidatorStakeScores::<T>::clear(u32::MAX, None);
+            let _ = ValidatorInferenceScores::<T>::clear(u32::MAX, None);
+            let _ = ValidatorFinalScores::<T>::clear(u32::MAX, None);
+            
+            // Reset epoch state
+            EpochState::<T>::kill();
         }
 
         /// Check if an account is an active validator in the current epoch
@@ -358,22 +385,15 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
-            let mut weight = Weight::zero();
-
-            // Check if we need to transition to a new epoch
-            if Self::should_transition_epoch(now, Self::current_epoch(), &Self::epoch_config()) {
-                weight = weight.saturating_add(Self::transition_epoch());
+            if Self::should_transition_epoch(now) {
+                Self::handle_epoch_transition(now)
+            } else {
+                Weight::zero()
             }
-
-            weight
         }
 
         fn on_finalize(_n: BlockNumberFor<T>) {
-            // Update all validator scores at the end of each block
-            let validators = ValidatorSet::<T>::get();
-            for validator in validators.iter() {
-                let _ = Self::update_final_score(validator);
-            }
+            // Any cleanup needed at the end of the block
         }
     }
 

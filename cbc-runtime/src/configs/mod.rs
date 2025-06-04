@@ -21,12 +21,14 @@ use sp_version::RuntimeVersion;
 use super::{
     AccountId, Aura, Balance, Balances, Block, BlockNumber, Hash, Nonce, PalletInfo, Runtime,
     RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
-    System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION,
+    System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION, PalletCbcPoi, PalletCbcPos,
 };
 
 use crate::{
     MinValidatorScore, MinActiveValidators, MaxValidators, ValidatorScoreDecay, MaxSlashingCount,
     MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward,
+    BlocksPerEpoch, MinBlocksPerEpoch, MaxValidatorScore, ScoreHistoryLength,
+    BlockAuthorshipBoost, InferenceAccuracyBoost, MinStake, DefaultPosWeight, DefaultPoiWeight,
 };
 
 // === Constants ===
@@ -161,4 +163,26 @@ impl pallet_cbc_pos::Config for Runtime {
     type MaxValidators = MaxValidators;
     type ValidatorScoreDecay = ValidatorScoreDecay;
     type MaxSlashingCount = MaxSlashingCount;
+    type MaxValidatorScore = MaxValidatorScore;
+    type ScoreHistoryLength = ScoreHistoryLength;
+    type BlockAuthorshipBoost = BlockAuthorshipBoost;
+    type InferenceAccuracyBoost = InferenceAccuracyBoost;
+}
+
+impl pallet_cbc_dcf::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
+    type BlocksPerEpoch = BlocksPerEpoch;
+    type MinBlocksForEpoch = MinBlocksPerEpoch;
+    type MaxValidators = MaxValidators;
+    type MinValidatorScore = MinValidatorScore;
+    type ValidatorScoreDecay = ValidatorScoreDecay;
+    type MaxSlashingCount = MaxSlashingCount;
+    type MinStake = MinStake;
+    type Balance = Balance;
+    type DefaultPosWeight = DefaultPosWeight;
+    type DefaultPoiWeight = DefaultPoiWeight;
+    type MinActiveValidators = MinActiveValidators;
+    type ValidatorInferenceScoreProvider = PalletCbcPoi;
+    type ValidatorStakeScoreProvider = PalletCbcPos;
 }

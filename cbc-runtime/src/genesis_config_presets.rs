@@ -10,6 +10,21 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId; // Aura consensus authori
 use sp_consensus_grandpa::AuthorityId as GrandpaId; // Grandpa finality authority ID
 use sp_genesis_builder::{self, PresetId}; // Genesis builder utilities and PresetId for pre-defined configs
 use sp_keyring::Sr25519Keyring; // Keyring to easily access dev accounts
+use sp_core::{sr25519, Pair};
+use sp_runtime::traits::IdentifyAccount;
+
+/// Helper function to get an account ID from a seed
+fn get_account_id_from_seed<TPublic: Pair>(seed: &str) -> AccountId
+where
+	<TPublic::Public as IdentifyAccount>::AccountId: From<TPublic::Public>,
+	TPublic::Public: IdentifyAccount,
+	<TPublic::Public as IdentifyAccount>::AccountId: Into<AccountId>,
+{
+	let pair = TPublic::from_string(seed, None).expect("static seed is valid; qed");
+	TPublic::Public::from(pair.public())
+		.into_account()
+		.into()
+}
 
 /// Returns a genesis configuration in JSON format with the specified authorities,
 /// endowed accounts, and sudo (root) key.
@@ -19,19 +34,10 @@ fn testnet_genesis(
 	root: AccountId,                               // Root (sudo) key
 ) -> Value {
 	// Create initial validators list (Alice and Bob)
-	let initial_validators = vec![
+	let _initial_validators = vec![
 		Sr25519Keyring::Alice.to_account_id(),
 		Sr25519Keyring::Bob.to_account_id(),
 	];
-
-	// Create initial validator scores
-	let validator_scores = vec![100, 100];
-
-	// Create initial inference results
-	let inference_results = initial_validators
-		.iter()
-		.map(|acc| (acc.clone(), 42))
-		.collect::<Vec<_>>();
 
 	build_struct_json_patch!(RuntimeGenesisConfig {
 		// Configure initial balances for all endowed accounts with large amounts of tokens
@@ -54,16 +60,18 @@ fn testnet_genesis(
 		sudo: SudoConfig { key: Some(root) },
 		// Configure initial validators
 		pallet_cbc_pos: pallet_cbc_pos::GenesisConfig {
-			validators: initial_validators,
-			validator_scores,
-			current_epoch: 0,
+			validators: vec![
+				get_account_id_from_seed::<sr25519::Pair>("Alice"),
+				get_account_id_from_seed::<sr25519::Pair>("Bob"),
+				get_account_id_from_seed::<sr25519::Pair>("Charlie"),
+			],
+			validator_scores: vec![100, 90, 80],
 			slashing_count: vec![],
 		},
 		// Configure initial inference results
 		pallet_cbc_poi: pallet_cbc_poi::GenesisConfig {
-			inference_results,
+			inference_results: vec![],
 			challenges: vec![],
-			current_epoch: 0,
 		},
 	})
 }

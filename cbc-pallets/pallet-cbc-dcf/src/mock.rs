@@ -65,16 +65,18 @@ impl system::Config for Test {
 
 parameter_types! {
     pub const DcfPalletId: PalletId = PalletId(*b"cbc/dcf\x00");
-    pub const MaxValidators: u32 = 100;
+    pub const MaxValidators: u32 = 10;
     pub const DefaultPosWeight: u64 = 60;
     pub const DefaultPoiWeight: u64 = 40;
     pub const MinActiveValidators: u32 = 3;
-    pub const MinValidatorScore: u32 = 10;
-    pub const ValidatorScoreDecay: u32 = 1;
+    pub const MinValidatorScore: u32 = 50;
+    pub const ValidatorScoreDecay: u32 = 10;
     pub const MaxSlashingCount: u32 = 3;
-    pub const MinStake: u64 = 1000;
+    pub const MinStake: u128 = 1000;
     pub const InferenceReward: u128 = 100;
     pub const ChallengeReward: u128 = 50;
+    pub const BlocksPerEpoch: u32 = 100;
+    pub const MinBlocksForEpoch: u32 = 50;
 }
 
 impl Config for Test {
@@ -87,8 +89,10 @@ impl Config for Test {
     type ValidatorScoreDecay = ValidatorScoreDecay;
     type MaxSlashingCount = MaxSlashingCount;
     type MinStake = MinStake;
-    type Balance = u64;
+    type Balance = u128;
     type WeightInfo = ();
+    type BlocksPerEpoch = BlocksPerEpoch;
+    type MinBlocksForEpoch = MinBlocksForEpoch;
 }
 
 impl pallet_cbc_pos::Config for Test {

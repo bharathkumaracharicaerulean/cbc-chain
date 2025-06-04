@@ -1,7 +1,6 @@
-use crate as pallet_cbc_pos;
 use frame_support::{
     parameter_types,
-    traits::{ConstU32},
+    traits::Get,
 };
 use frame_system as system;
 use sp_core::H256;
@@ -9,6 +8,8 @@ use sp_runtime::{
     traits::{BlakeTwo256, IdentityLookup},
     BuildStorage,
 };
+use sp_std::convert::{TryFrom, TryInto};
+use crate as pallet_cbc_pos;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -23,6 +24,15 @@ frame_support::construct_runtime!(
 parameter_types! {
     pub const BlockHashCount: u64 = 250;
     pub const SS58Prefix: u8 = 42;
+    pub const MinValidatorScore: u32 = 50;
+    pub const MinActiveValidators: u32 = 3;
+    pub const MaxValidators: u32 = 10;
+    pub const ValidatorScoreDecay: u32 = 10;
+    pub const MaxSlashingCount: u32 = 3;
+    pub const MaxValidatorScore: u32 = 1000;
+    pub const ScoreHistoryLength: u32 = 10;
+    pub const BlockAuthorshipBoost: u32 = 50;
+    pub const InferenceAccuracyBoost: u32 = 30;
 }
 
 impl system::Config for Test {
@@ -61,11 +71,15 @@ impl system::Config for Test {
 impl pallet_cbc_pos::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type MinValidatorScore = ConstU32<50>;
-    type MinActiveValidators = ConstU32<3>;
-    type MaxValidators = ConstU32<10>;
-    type ValidatorScoreDecay = ConstU32<5>;
-    type MaxSlashingCount = ConstU32<3>;
+    type MinValidatorScore = MinValidatorScore;
+    type MinActiveValidators = MinActiveValidators;
+    type MaxValidators = MaxValidators;
+    type ValidatorScoreDecay = ValidatorScoreDecay;
+    type MaxSlashingCount = MaxSlashingCount;
+    type MaxValidatorScore = MaxValidatorScore;
+    type ScoreHistoryLength = ScoreHistoryLength;
+    type BlockAuthorshipBoost = BlockAuthorshipBoost;
+    type InferenceAccuracyBoost = InferenceAccuracyBoost;
 }
 
 // Build genesis storage according to the mock runtime.

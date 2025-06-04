@@ -17,13 +17,13 @@ pub mod pallet {
     use frame_support::{pallet_prelude::*, storage::types::StorageMap};
     use frame_system::pallet_prelude::*;
     use scale_info::prelude::vec::Vec;
-    use frame_support::sp_runtime::traits::Saturating;
+    use pallet_cbc_dcf::ValidatorScoreProvider;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: frame_system::Config {
+    pub trait Config: frame_system::Config + pallet_cbc_dcf::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         type WeightInfo: WeightInfo;
 
@@ -44,7 +44,6 @@ pub mod pallet {
     pub struct GenesisConfig<T: Config> {
         pub inference_results: Vec<(T::AccountId, u32)>,
         pub challenges: Vec<(T::AccountId, T::AccountId, u32)>,
-        pub current_epoch: u32,
     }
 
     #[pallet::genesis_build]
@@ -52,16 +51,13 @@ pub mod pallet {
         fn build(&self) {
             // Initialize inference results
             for (account, result) in &self.inference_results {
-                InferenceResults::<T>::insert(account, (*result, self.current_epoch));
+                InferenceResults::<T>::insert(account, (*result, 0)); // Start with epoch 0
             }
 
             // Initialize challenges
             for (challenger, challenged, result) in &self.challenges {
-                Challenges::<T>::insert(challenger, (challenged, *result, self.current_epoch));
+                Challenges::<T>::insert(challenger, (challenged, *result, 0)); // Start with epoch 0
             }
-
-            // Initialize current epoch
-            CurrentEpoch::<T>::put(self.current_epoch);
         }
     }
 
@@ -87,11 +83,6 @@ pub mod pallet {
         OptionQuery
     >;
 
-    /// Storage for the current inference epoch or round.
-    #[pallet::storage]
-    #[pallet::getter(fn current_epoch)]
-    pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
-
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -101,8 +92,6 @@ pub mod pallet {
         InferenceChallenged { challenger: T::AccountId, challenged: T::AccountId, result: u32 },
         /// A challenge was resolved. [challenger, challenged, result, success]
         ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
-        /// A new epoch has started. [epoch_number]
-        EpochTransitioned { epoch_number: u32 },
     }
 
     #[pallet::error]
@@ -125,7 +114,7 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Submit an inference result.
         #[pallet::call_index(0)]
-        #[pallet::weight(T::WeightInfo::submit_inference())]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::submit_inference())]
         pub fn submit_inference(
             origin: OriginFor<T>,
             result: u32,
@@ -145,7 +134,7 @@ pub mod pallet {
                 Error::<T>::ConfidenceTooLow
             );
 
-            let current_epoch = CurrentEpoch::<T>::get();
+            let current_epoch = pallet_cbc_dcf::Pallet::<T>::current_epoch();
 
             // Store the inference result with current epoch
             InferenceResults::<T>::insert(&who, (result, current_epoch));
@@ -158,7 +147,7 @@ pub mod pallet {
 
         /// Submit a challenge against an inference result.
         #[pallet::call_index(1)]
-        #[pallet::weight(T::WeightInfo::challenge_inference())]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::challenge_inference())]
         pub fn challenge_inference(
             origin: OriginFor<T>,
             challenged: T::AccountId,
@@ -170,17 +159,17 @@ pub mod pallet {
             let (stored_result, epoch) = InferenceResults::<T>::get(&challenged)
                 .ok_or(Error::<T>::InferenceNotFound)?;
 
-            let current_epoch = CurrentEpoch::<T>::get();
+            let current_epoch = pallet_cbc_dcf::Pallet::<T>::current_epoch();
 
             // Ensure the inference is not too old
             ensure!(
-                current_epoch - epoch <= T::MaxInferenceAge::get(),
+                current_epoch.saturating_sub(epoch) <= T::MaxInferenceAge::get(),
                 Error::<T>::InferenceTooOld
             );
 
             // Ensure we're within the challenge window
             ensure!(
-                current_epoch - epoch <= T::ChallengeWindow::get(),
+                current_epoch.saturating_sub(epoch) <= T::ChallengeWindow::get(),
                 Error::<T>::ChallengeWindowExpired
             );
 
@@ -208,16 +197,16 @@ pub mod pallet {
         /// Calculate a validator's score based on their inference results and challenges
         pub fn calculate_validator_score(validator: &T::AccountId) -> Option<u32> {
             // Get the inference result
-            let (score, block_number) = Self::inference_results(validator)?;
+            let (score, epoch) = Self::inference_results(validator)?;
             
-            // Get current block number
-            let current_block = frame_system::Pallet::<T>::block_number();
+            // Get current epoch
+            let current_epoch = pallet_cbc_dcf::Pallet::<T>::current_epoch();
             
             // Check if the inference is too old
             let max_age = T::MaxInferenceAge::get();
-            let block_diff = current_block.saturating_sub(block_number.into());
+            let epoch_diff = current_epoch.saturating_sub(epoch);
             
-            if block_diff > max_age.into() {
+            if epoch_diff > max_age {
                 return None;
             }
             
@@ -234,44 +223,19 @@ pub mod pallet {
             
             Some(adjusted_score)
         }
+    }
 
-        /// Handle epoch transition
-        fn handle_epoch_transition() {
-            let current_epoch = CurrentEpoch::<T>::get();
-            let new_epoch = current_epoch + 1;
-            
-            // Update epoch counter
-            CurrentEpoch::<T>::put(new_epoch);
+    impl<T: Config> ValidatorScoreProvider for Pallet<T> {
+        type AccountId = T::AccountId;
 
-            // Emit epoch transition event
-            Self::deposit_event(Event::EpochTransitioned { epoch_number: new_epoch });
-
-            // Clear old inference results and challenges
-            let max_age = T::MaxInferenceAge::get();
-            
-            // Clear old inference results
-            for (account, (_, epoch)) in InferenceResults::<T>::iter() {
-                if current_epoch - epoch > max_age {
-                    InferenceResults::<T>::remove(account);
-                }
-            }
-
-            // Clear old challenges
-            for (challenger, (_, _, epoch)) in Challenges::<T>::iter() {
-                if current_epoch - epoch > max_age {
-                    Challenges::<T>::remove(challenger);
-                }
-            }
+        fn get_validator_score(validator: &Self::AccountId) -> Option<u64> {
+            Self::calculate_validator_score(validator).map(|score| score as u64)
         }
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-        fn on_initialize(n: BlockNumberFor<T>) -> Weight {
-            // Check if we need to transition to a new epoch (every 10 blocks)
-            if n % 10u32.into() == 0u32.into() {
-                Self::handle_epoch_transition();
-            }
+        fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
             Weight::zero()
         }
 
