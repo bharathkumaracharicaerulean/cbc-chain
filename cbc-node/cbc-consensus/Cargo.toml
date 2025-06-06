@@ -18,7 +18,7 @@ sp-api.workspace = true
 sp-consensus.workspace = true
 sp-blockchain.workspace = true
 sc-consensus = { workspace = true, default-features = true }
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive", "std"] }
 futures = "0.3"
 async-trait = "0.1"
 log = "0.4"

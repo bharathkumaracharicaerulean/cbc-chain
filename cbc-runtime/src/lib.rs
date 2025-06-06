@@ -56,11 +56,12 @@ pub mod opaque {
     pub type Hash = <BlakeTwo256 as HashT>::Output;
 }
 
-// Define the session keys used for consensus mechanisms like Aura and Grandpa.
+// Define the session keys used for consensus mechanisms
 impl_opaque_keys! {
     pub struct SessionKeys {
-        pub aura: Aura, // Aura consensus key.
-        pub grandpa: Grandpa, // Grandpa finality key.
+        pub pos: PalletCbcPos, // POS consensus key
+        pub poi: PalletCbcPoi, // POI consensus key
+        pub dcf: PalletCbcDcf, // DCF consensus key
     }
 }
 
@@ -181,31 +182,25 @@ mod runtime {
     pub type Timestamp = pallet_timestamp; // Timestamp pallet.
 
     #[runtime::pallet_index(2)]
-    pub type Aura = pallet_aura; // Aura consensus pallet.
+    pub type PalletCbcPos = pallet_cbc_pos; // POS consensus pallet.
 
     #[runtime::pallet_index(3)]
-    pub type Grandpa = pallet_grandpa; // Grandpa finality pallet.
+    pub type PalletCbcPoi = pallet_cbc_poi; // POI consensus pallet.
 
     #[runtime::pallet_index(4)]
-    pub type Balances = pallet_balances; // Balances pallet.
+    pub type PalletCbcDcf = pallet_cbc_dcf; // DCF consensus pallet.
 
     #[runtime::pallet_index(5)]
-    pub type TransactionPayment = pallet_transaction_payment; // Transaction payment pallet.
+    pub type Balances = pallet_balances; // Balances pallet.
 
     #[runtime::pallet_index(6)]
-    pub type Sudo = pallet_sudo; // Sudo pallet for administrative tasks.
+    pub type TransactionPayment = pallet_transaction_payment; // Transaction payment pallet.
 
     #[runtime::pallet_index(7)]
-    pub type Template = cbc_pallet_template; // Custom template pallet.
+    pub type Sudo = pallet_sudo; // Sudo pallet for administrative tasks.
 
     #[runtime::pallet_index(8)]
-    pub type PalletCbcPoi = pallet_cbc_poi;
-
-    #[runtime::pallet_index(9)]
-    pub type PalletCbcPos = pallet_cbc_pos;
-
-    #[runtime::pallet_index(10)]
-    pub type PalletCbcDcf = pallet_cbc_dcf;
+    pub type Template = cbc_pallet_template; // Custom template pallet.
 }
 use sp_runtime::traits::parameter_types;
 

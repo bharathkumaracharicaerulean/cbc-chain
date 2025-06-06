@@ -6,8 +6,8 @@ use crate::{AccountId, BalancesConfig, RuntimeGenesisConfig, SudoConfig}; // Run
 use alloc::{vec, vec::Vec}; // Alloc crate for dynamic arrays
 use frame_support::build_struct_json_patch; // Macro to build partial JSON patches for genesis config
 use serde_json::Value; // JSON value type
-use sp_consensus_aura::sr25519::AuthorityId as AuraId; // Aura consensus authority ID
-use sp_consensus_grandpa::AuthorityId as GrandpaId; // Grandpa finality authority ID
+// use sp_consensus_aura::sr25519::AuthorityId as AuraId; // Aura consensus authority ID
+// use sp_consensus_grandpa::AuthorityId as GrandpaId; // Grandpa finality authority ID
 use sp_genesis_builder::{self, PresetId}; // Genesis builder utilities and PresetId for pre-defined configs
 use sp_keyring::Sr25519Keyring; // Keyring to easily access dev accounts
 use sp_core::{sr25519, Pair};
@@ -29,12 +29,12 @@ where
 /// Returns a genesis configuration in JSON format with the specified authorities,
 /// endowed accounts, and sudo (root) key.
 fn testnet_genesis(
-	initial_authorities: Vec<(AuraId, GrandpaId)>, // Validator authority pairs
+	// initial_authorities: Vec<(AuraId, GrandpaId)>, // Validator authority pairs
 	endowed_accounts: Vec<AccountId>,              // Accounts pre-funded with balance
 	root: AccountId,                               // Root (sudo) key
 ) -> Value {
 	// Create initial validators list (Alice and Bob)
-	let _initial_validators = vec![
+	let initial_validators = vec![
 		Sr25519Keyring::Alice.to_account_id(),
 		Sr25519Keyring::Bob.to_account_id(),
 	];
@@ -49,16 +49,16 @@ fn testnet_genesis(
 				.collect::<Vec<_>>(),
 		},
 		// Set Aura authorities from the provided initial authorities
-		aura: pallet_aura::GenesisConfig {
-			authorities: initial_authorities.iter().map(|x| (x.0.clone())).collect::<Vec<_>>(),
-		},
+		// aura: pallet_aura::GenesisConfig {
+		//     authorities: initial_authorities.iter().map(|x| x.0.clone()).collect(),
+		// },
 		// Set Grandpa authorities with weight (1 in this case)
-		grandpa: pallet_grandpa::GenesisConfig {
-			authorities: initial_authorities.iter().map(|x| (x.1.clone(), 1)).collect::<Vec<_>>(),
-		},
+		// grandpa: pallet_grandpa::GenesisConfig {
+		//     authorities: initial_authorities.iter().map(|x| (x.1.clone(), 1)).collect(),
+		// },
 		// Assign the sudo (root) key to the provided account
 		sudo: SudoConfig { key: Some(root) },
-		// Configure initial validators
+		// Configure initial validators for POS
 		pallet_cbc_pos: pallet_cbc_pos::GenesisConfig {
 			validators: vec![
 				get_account_id_from_seed::<sr25519::Pair>("Alice"),
@@ -68,10 +68,18 @@ fn testnet_genesis(
 			validator_scores: vec![100, 90, 80],
 			slashing_count: vec![],
 		},
-		// Configure initial inference results
+		// Configure initial inference results for POI
 		pallet_cbc_poi: pallet_cbc_poi::GenesisConfig {
 			inference_results: vec![],
 			challenges: vec![],
+		},
+		// Configure initial DCF settings
+		pallet_cbc_dcf: pallet_cbc_dcf::GenesisConfig {
+			validators: initial_validators,
+			validator_scores: vec![100, 90],
+			slashing_count: vec![],
+			epoch_number: 0,
+			epoch_start_block: 0,
 		},
 	})
 }
@@ -81,10 +89,10 @@ fn testnet_genesis(
 /// - Endows Alice, Bob, and their stash accounts with tokens.
 pub fn development_config_genesis() -> Value {
 	testnet_genesis(
-		vec![(
-			sp_keyring::Sr25519Keyring::Alice.public().into(),
-			sp_keyring::Ed25519Keyring::Alice.public().into(),
-		)],
+		// vec![(
+		//     sp_keyring::Sr25519Keyring::Alice.public().into(),
+		//     sp_keyring::Ed25519Keyring::Alice.public().into(),
+		// )],
 		vec![
 			Sr25519Keyring::Alice.to_account_id(),
 			Sr25519Keyring::Bob.to_account_id(),
@@ -99,16 +107,16 @@ pub fn development_config_genesis() -> Value {
 /// - Alice is the sudo key.
 pub fn local_config_genesis() -> Value {
 	testnet_genesis(
-		vec![
-			(
-				sp_keyring::Sr25519Keyring::Alice.public().into(),
-				sp_keyring::Ed25519Keyring::Alice.public().into(),
-			),
-			(
-				sp_keyring::Sr25519Keyring::Bob.public().into(),
-				sp_keyring::Ed25519Keyring::Bob.public().into(),
-			),
-		],
+		// vec![
+		//     (
+		//         sp_keyring::Sr25519Keyring::Alice.public().into(),
+		//         sp_keyring::Ed25519Keyring::Alice.public().into(),
+		//     ),
+		//     (
+		//         sp_keyring::Sr25519Keyring::Bob.public().into(),
+		//         sp_keyring::Ed25519Keyring::Bob.public().into(),
+		//     ),
+		// ],
 		// Filter out keys "One" and "Two" which are not intended to be endowed
 		Sr25519Keyring::iter()
 			.filter(|v| v != &Sr25519Keyring::One && v != &Sr25519Keyring::Two)

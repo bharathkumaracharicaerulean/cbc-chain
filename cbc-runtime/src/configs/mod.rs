@@ -13,15 +13,16 @@ use frame_support::{
 };
 use frame_system::limits::{BlockLength, BlockWeights};
 use pallet_transaction_payment::{ConstFeeMultiplier, FungibleAdapter, Multiplier};
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+// use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::{traits::One, Perbill};
 use sp_version::RuntimeVersion;
 
 // Local runtime modules and type aliases
 use super::{
-    AccountId, Aura, Balance, Balances, Block, BlockNumber, Hash, Nonce, PalletInfo, Runtime,
+    AccountId, /* Aura, */ Balance, Balances, Block, BlockNumber, Hash, Nonce, PalletInfo, Runtime,
     RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
-    System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION, PalletCbcPoi, PalletCbcPos,
+    System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION, PalletCbcPoi, PalletCbcPos, PalletCbcDcf,
+    /* Grandpa, */
 };
 
 use crate::{
@@ -70,29 +71,29 @@ impl frame_system::Config for Runtime {
 }
 
 // === AURA Consensus Configuration ===
-impl pallet_aura::Config for Runtime {
-    type AuthorityId = AuraId;
-    type DisabledValidators = ();
-    type MaxAuthorities = ConstU32<32>;
-    type AllowMultipleBlocksPerSlot = ConstBool<false>;
-    type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Runtime>;
-}
+// impl pallet_aura::Config for Runtime {
+//     type AuthorityId = AuraId;
+//     type DisabledValidators = ();
+//     type MaxAuthorities = ConstU32<32>;
+//     type AllowMultipleBlocksPerSlot = ConstBool<false>;
+//     type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Runtime>;
+// }
 
 // === GRANDPA Finality Configuration ===
-impl pallet_grandpa::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = ();
-    type MaxAuthorities = ConstU32<32>;
-    type MaxNominators = ConstU32<0>;
-    type MaxSetIdSessionEntries = ConstU64<0>;
-    type KeyOwnerProof = sp_core::Void;
-    type EquivocationReportSystem = ();
-}
+// impl pallet_grandpa::Config for Runtime {
+//     type RuntimeEvent = RuntimeEvent;
+//     type WeightInfo = ();
+//     type MaxAuthorities = ConstU32<32>;
+//     type MaxNominators = ConstU32<0>;
+//     type MaxSetIdSessionEntries = ConstU64<0>;
+//     type KeyOwnerProof = sp_core::Void;
+//     type EquivocationReportSystem = ();
+// }
 
 // === Timestamping Configuration ===
 impl pallet_timestamp::Config for Runtime {
     type Moment = u64;
-    type OnTimestampSet = Aura;
+    type OnTimestampSet = PalletCbcPos;
     type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
     type WeightInfo = ();
 }

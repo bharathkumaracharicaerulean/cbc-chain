@@ -121,7 +121,7 @@ pub fn run() -> sc_cli::Result<()> {
 				
 				// Custom logic to revert Grandpa finality info as well
 				let aux_revert = Box::new(|client, _, blocks| {
-					sc_consensus_grandpa::revert(client, blocks)?;
+					// sc_consensus_grandpa::revert(client, blocks)?;
 					Ok(())
 				});
 				Ok((cmd.run(client, backend, Some(aux_revert)), task_manager))

@@ -6,9 +6,9 @@ use frame_support::{
 	genesis_builder_helper::{build_state, get_preset},
 	weights::Weight,
 };
-use pallet_grandpa::AuthorityId as GrandpaId;
+// use pallet_grandpa::AuthorityId as GrandpaId;
 use sp_api::impl_runtime_apis;
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+// use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	traits::{Block as BlockT, NumberFor},
@@ -21,6 +21,7 @@ use sp_version::RuntimeVersion;
 use super::{
 	AccountId, Aura, Balance, Block, Executive, Grandpa, InherentDataExt, Nonce, Runtime,
 	RuntimeCall, RuntimeGenesisConfig, SessionKeys, System, TransactionPayment, VERSION,
+	PalletCbcPos, PalletCbcPoi, PalletCbcDcf,
 };
 
 // Begin API Implementations
@@ -89,14 +90,15 @@ impl_runtime_apis! {
 	}
 
 	// Aura Consensus API
-	impl sp_consensus_aura::AuraApi<Block, AuraId> for Runtime {
-		fn slot_duration() -> sp_consensus_aura::SlotDuration {
-			sp_consensus_aura::SlotDuration::from_millis(Aura::slot_duration())
-		}
-		fn authorities() -> Vec<AuraId> {
-			pallet_aura::Authorities::<Runtime>::get().into_inner()
-		}
-	}
+	// impl sp_consensus_aura::AuraApi<Block, AuraId> for Runtime {
+	//     fn slot_duration() -> sp_consensus_aura::SlotDuration {
+	//         sp_consensus_aura::SlotDuration::from_millis(Aura::slot_duration())
+	//     }
+	//
+	//     fn authorities() -> Vec<AuraId> {
+	//         pallet_aura::Authorities::<Runtime>::get().into_inner()
+	//     }
+	// }
 
 	// Session Keys API
 	impl sp_session::SessionKeys<Block> for Runtime {
@@ -109,26 +111,29 @@ impl_runtime_apis! {
 	}
 
 	// Grandpa Finality API
-	impl sp_consensus_grandpa::GrandpaApi<Block> for Runtime {
-		fn grandpa_authorities() -> sp_consensus_grandpa::AuthorityList {
-			Grandpa::grandpa_authorities()
-		}
-		fn current_set_id() -> sp_consensus_grandpa::SetId {
-			Grandpa::current_set_id()
-		}
-		fn submit_report_equivocation_unsigned_extrinsic(
-			_: sp_consensus_grandpa::EquivocationProof<
-				<Block as BlockT>::Hash,
-				NumberFor<Block>
-			>,
-			_: sp_consensus_grandpa::OpaqueKeyOwnershipProof
-		) -> Option<()> {
-			None
-		}
-		fn generate_key_ownership_proof(_: sp_consensus_grandpa::SetId, _: GrandpaId) -> Option<sp_consensus_grandpa::OpaqueKeyOwnershipProof> {
-			None
-		}
-	}
+	// impl sp_consensus_grandpa::GrandpaApi<Block> for Runtime {
+	//     fn grandpa_authorities() -> sp_consensus_grandpa::AuthorityList {
+	//         Grandpa::grandpa_authorities()
+	//     }
+	//
+	//     fn current_set_id() -> sp_consensus_grandpa::SetId {
+	//         Grandpa::current_set_id()
+	//     }
+	//
+	//     fn submit_report_equivocation_unsigned_extrinsic(
+	//         _: sp_consensus_grandpa::EquivocationProof<
+	//             <Block as sp_runtime::traits::Block>::Header,
+	//             sp_runtime::traits::NumberFor<Block>,
+	//         >,
+	//         _: sp_consensus_grandpa::OpaqueKeyOwnershipProof,
+	//     ) -> Option<()> {
+	//         None
+	//     }
+	//
+	//     fn generate_key_ownership_proof(_: sp_consensus_grandpa::SetId, _: GrandpaId) -> Option<sp_consensus_grandpa::OpaqueKeyOwnershipProof> {
+	//         None
+	//     }
+	// }
 
 	// Account Nonce API
 	impl frame_system_rpc_runtime_api::AccountNonceApi<Block, AccountId, Nonce> for Runtime {
@@ -230,6 +235,27 @@ impl_runtime_apis! {
 		}
 		fn preset_names() -> Vec<sp_genesis_builder::PresetId> {
 			crate::genesis_config_presets::preset_names()
+		}
+	}
+
+	// POS Consensus API
+	impl sp_consensus::ConsensusApi<Block> for Runtime {
+		fn consensus_authorities() -> Vec<AccountId> {
+			PalletCbcPos::authorities()
+		}
+	}
+
+	// POI Consensus API
+	impl sp_consensus::ConsensusApi<Block> for Runtime {
+		fn consensus_authorities() -> Vec<AccountId> {
+			PalletCbcPoi::authorities()
+		}
+	}
+
+	// DCF Consensus API
+	impl sp_consensus::ConsensusApi<Block> for Runtime {
+		fn consensus_authorities() -> Vec<AccountId> {
+			PalletCbcDcf::authorities()
 		}
 	}
 }

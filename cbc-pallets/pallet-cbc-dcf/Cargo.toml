@@ -21,7 +21,7 @@ sp-core.workspace = true
 sp-runtime.workspace = true
 sp-api.workspace = true
 
-serde.workspace = true
+serde = { workspace = true, features = ["derive", "std"] }
 
 [dev-dependencies]
 sp-core = { default-features = true, workspace = true }

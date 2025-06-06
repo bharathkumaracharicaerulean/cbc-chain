@@ -25,9 +25,9 @@ frame-system-benchmarking = { optional = true, workspace = true }               
 frame-system-rpc-runtime-api.workspace = true                                    # System runtime APIs for RPC
 frame-system.workspace = true                                                    # Core system pallet
 frame-try-runtime = { optional = true, workspace = true }                        # Optional try-runtime feature
-pallet-aura.workspace = true                                                     # Aura consensus pallet
+# pallet-aura.workspace = true                                                     # Aura consensus pallet
 pallet-balances.workspace = true                                                 # Balances pallet
-pallet-grandpa.workspace = true                                                  # Grandpa consensus pallet
+# pallet-grandpa.workspace = true                                                  # Grandpa consensus pallet
 pallet-sudo.workspace = true                                                     # Sudo pallet for superuser access
 cbc-pallet-template.workspace = true                                                 # Custom template pallet
 pallet-cbc-poi.workspace = true
@@ -37,13 +37,13 @@ pallet-transaction-payment-rpc-runtime-api.workspace = true                     
 pallet-transaction-payment.workspace = true                                      # Transaction fee pallet
 scale-info = { features = ["derive", "serde"], workspace = true }                # Type metadata generation with serde
 serde_json = { workspace = true, default-features = false, features = ["alloc"] }# JSON support with alloc only
-pallet-cbc-dcf = { path = "../cbc-pallets/pallet-cbc-dcf", default-features = false }
+pallet-cbc-dcf.workspace = true
 
 # Substrate primitives and runtime libraries
 sp-api.workspace = true                                                          # Substrate runtime API interface
 sp-block-builder.workspace = true                                                # Block building traits
-sp-consensus-aura = { features = ["serde"], workspace = true }                   # Aura consensus engine
-sp-consensus-grandpa = { features = ["serde"], workspace = true }                # Grandpa consensus engine
+# sp-consensus-aura = { features = ["serde"], workspace = true }                   # Aura consensus engine
+# sp-consensus-grandpa = { features = ["serde"], workspace = true }                # Grandpa consensus engine
 sp-core = { features = ["serde"], workspace = true }                             # Core Substrate types
 sp-genesis-builder.workspace = true                                              # Genesis block builder
 sp-inherents.workspace = true                                                    # Support for inherents (e.g., timestamp)
@@ -54,6 +54,7 @@ sp-session.workspace = true                                                     
 sp-storage.workspace = true                                                      # Runtime storage primitives
 sp-transaction-pool.workspace = true                                             # Transaction pool management
 sp-version = { features = ["serde"], workspace = true }                          # Runtime versioning support
+sp-consensus.workspace = true
 
 # Build dependencies used at compile time
 [build-dependencies]
@@ -74,9 +75,9 @@ std = [
 	"frame-system-rpc-runtime-api/std",
 	"frame-system/std",
 	"frame-try-runtime?/std",
-	"pallet-aura/std",
+	# "pallet-aura/std",
 	"pallet-balances/std",
-	"pallet-grandpa/std",
+	# "pallet-grandpa/std",
 	"pallet-sudo/std",
 	"cbc-pallet-template/std",
 	"pallet-cbc-poi/std",
@@ -88,8 +89,8 @@ std = [
 	"serde_json/std",
 	"sp-api/std",
 	"sp-block-builder/std",
-	"sp-consensus-aura/std",
-	"sp-consensus-grandpa/std",
+	# "sp-consensus-aura/std",
+	# "sp-consensus-grandpa/std",
 	"sp-core/std",
 	"sp-genesis-builder/std",
 	"sp-inherents/std",
@@ -110,7 +111,7 @@ runtime-benchmarks = [
 	"frame-system-benchmarking/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
 	"pallet-balances/runtime-benchmarks",
-	"pallet-grandpa/runtime-benchmarks",
+	# "pallet-grandpa/runtime-benchmarks",
 	"pallet-sudo/runtime-benchmarks",
 	"cbc-pallet-template/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
@@ -124,9 +125,8 @@ try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
 	"frame-try-runtime/try-runtime",
-	"pallet-aura/try-runtime",
-	"pallet-balances/try-runtime",
-	"pallet-grandpa/try-runtime",
+	# "pallet-aura/try-runtime",
+	# "pallet-grandpa/try-runtime",
 	"pallet-sudo/try-runtime",
 	"cbc-pallet-template/try-runtime",
 	"pallet-cbc-poi/try-runtime",
@@ -142,3 +142,4 @@ metadata-hash = ["substrate-wasm-builder/metadata-hash"]
 
 # Convenience feature for preparing a runtime for on-chain release
 on-chain-release-build = ["metadata-hash", "sp-api/disable-logging"]
+

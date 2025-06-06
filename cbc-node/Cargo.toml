@@ -54,10 +54,10 @@ sc-cli.default-features = true              # Substrate CLI utilities
 sc-cli.workspace = true                     # Use workspace version
 sc-client-api.default-features = true       # Substrate client API
 sc-client-api.workspace = true              # Use workspace version
-sc-consensus-aura.default-features = true   # AURA consensus algorithm
-sc-consensus-aura.workspace = true          # Use workspace version
-sc-consensus-grandpa.default-features = true # GRANDPA consensus algorithm
-sc-consensus-grandpa.workspace = true       # Use workspace version
+# sc-consensus-aura.default-features = true   # AURA consensus algorithm
+# sc-consensus-aura.workspace = true          # Use workspace version
+# sc-consensus-grandpa.default-features = true # GRANDPA consensus algorithm
+# sc-consensus-grandpa.workspace = true       # Use workspace version
 sc-consensus.default-features = true        # General consensus utilities
 sc-consensus.workspace = true               # Use workspace version
 sc-executor.default-features = true         # Substrate executor
@@ -85,8 +85,8 @@ sp-block-builder.default-features = true    # Block builder primitives
 sp-block-builder.workspace = true           # Use workspace version
 sp-blockchain.default-features = true       # Blockchain primitives
 sp-blockchain.workspace = true              # Use workspace version
-sp-consensus-aura.default-features = true   # AURA consensus primitives
-sp-consensus-aura.workspace = true          # Use workspace version
+# sp-consensus-aura.default-features = true   # AURA consensus primitives
+# sp-consensus-aura.workspace = true          # Use workspace version
 sp-core.default-features = true             # Core Substrate primitives
 sp-core.workspace = true                    # Use workspace version
 sp-genesis-builder.default-features = true  # Genesis block builder
@@ -101,6 +101,7 @@ sp-runtime.default-features = true          # Runtime primitives
 sp-runtime.workspace = true                 # Use workspace version
 sp-timestamp.default-features = true        # Timestamp pallet primitives
 sp-timestamp.workspace = true               # Use workspace version
+sp-consensus = { workspace = true }
 
 # === RPC System ===
 substrate-frame-rpc-system.default-features = true # FRAME RPC system
