@@ -9,7 +9,23 @@ mod mock;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
+
+use sp_std::prelude::*;
+
+// Runtime API declaration
+sp_api::decl_runtime_apis! {
+    pub trait PoiApi<AccountId>
+    where
+        AccountId: codec::Codec + Clone + Eq + sp_std::fmt::Debug,
+    {
+        fn get_inference_result(validator: AccountId) -> Option<(u32, u32)>;
+        fn get_challenge(validator: AccountId) -> Option<(AccountId, u32, u32)>;
+        fn get_current_epoch() -> u32;
+    }
+}
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -17,13 +33,12 @@ pub mod pallet {
     use frame_support::{pallet_prelude::*, storage::types::StorageMap};
     use frame_system::pallet_prelude::*;
     use scale_info::prelude::vec::Vec;
-    use pallet_cbc_dcf::ValidatorScoreProvider;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: frame_system::Config + pallet_cbc_dcf::Config {
+    pub trait Config: frame_system::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         type WeightInfo: WeightInfo;
 
@@ -44,6 +59,7 @@ pub mod pallet {
     pub struct GenesisConfig<T: Config> {
         pub inference_results: Vec<(T::AccountId, u32)>,
         pub challenges: Vec<(T::AccountId, T::AccountId, u32)>,
+        pub current_epoch: u32,
     }
 
     #[pallet::genesis_build]
@@ -51,13 +67,16 @@ pub mod pallet {
         fn build(&self) {
             // Initialize inference results
             for (account, result) in &self.inference_results {
-                InferenceResults::<T>::insert(account, (*result, 0)); // Start with epoch 0
+                InferenceResults::<T>::insert(account, (*result, self.current_epoch));
             }
 
             // Initialize challenges
             for (challenger, challenged, result) in &self.challenges {
-                Challenges::<T>::insert(challenger, (challenged, *result, 0)); // Start with epoch 0
+                Challenges::<T>::insert(challenger, (challenged, *result, self.current_epoch));
             }
+
+            // Initialize current epoch
+            CurrentEpoch::<T>::put(self.current_epoch);
         }
     }
 
@@ -82,6 +101,11 @@ pub mod pallet {
         (T::AccountId, u32, u32), // (challenged, result, epoch)
         OptionQuery
     >;
+
+    /// Storage for the current inference epoch or round.
+    #[pallet::storage]
+    #[pallet::getter(fn current_epoch)]
+    pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -114,7 +138,7 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Submit an inference result.
         #[pallet::call_index(0)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::submit_inference())]
+        #[pallet::weight(T::WeightInfo::submit_inference())]
         pub fn submit_inference(
             origin: OriginFor<T>,
             result: u32,
@@ -134,7 +158,7 @@ pub mod pallet {
                 Error::<T>::ConfidenceTooLow
             );
 
-            let current_epoch = pallet_cbc_dcf::Pallet::<T>::current_epoch();
+            let current_epoch = CurrentEpoch::<T>::get();
 
             // Store the inference result with current epoch
             InferenceResults::<T>::insert(&who, (result, current_epoch));
@@ -147,7 +171,7 @@ pub mod pallet {
 
         /// Submit a challenge against an inference result.
         #[pallet::call_index(1)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::challenge_inference())]
+        #[pallet::weight(T::WeightInfo::challenge_inference())]
         pub fn challenge_inference(
             origin: OriginFor<T>,
             challenged: T::AccountId,
@@ -159,17 +183,17 @@ pub mod pallet {
             let (stored_result, epoch) = InferenceResults::<T>::get(&challenged)
                 .ok_or(Error::<T>::InferenceNotFound)?;
 
-            let current_epoch = pallet_cbc_dcf::Pallet::<T>::current_epoch();
+            let current_epoch = CurrentEpoch::<T>::get();
 
             // Ensure the inference is not too old
             ensure!(
-                current_epoch.saturating_sub(epoch) <= T::MaxInferenceAge::get(),
+                current_epoch - epoch <= T::MaxInferenceAge::get(),
                 Error::<T>::InferenceTooOld
             );
 
             // Ensure we're within the challenge window
             ensure!(
-                current_epoch.saturating_sub(epoch) <= T::ChallengeWindow::get(),
+                current_epoch - epoch <= T::ChallengeWindow::get(),
                 Error::<T>::ChallengeWindowExpired
             );
 
@@ -190,57 +214,6 @@ pub mod pallet {
             });
 
             Ok(())
-        }
-    }
-
-    impl<T: Config> Pallet<T> {
-        /// Calculate a validator's score based on their inference results and challenges
-        pub fn calculate_validator_score(validator: &T::AccountId) -> Option<u32> {
-            // Get the inference result
-            let (score, epoch) = Self::inference_results(validator)?;
-            
-            // Get current epoch
-            let current_epoch = pallet_cbc_dcf::Pallet::<T>::current_epoch();
-            
-            // Check if the inference is too old
-            let max_age = T::MaxInferenceAge::get();
-            let epoch_diff = current_epoch.saturating_sub(epoch);
-            
-            if epoch_diff > max_age {
-                return None;
-            }
-            
-            // Count challenges
-            let mut challenge_count = 0;
-            for (_challenger, (challenged, _result, _epoch)) in Challenges::<T>::iter() {
-                if challenged == *validator {
-                    challenge_count += 1;
-                }
-            }
-            
-            // Adjust score based on challenges
-            let adjusted_score = score.saturating_sub(challenge_count * 10);
-            
-            Some(adjusted_score)
-        }
-    }
-
-    impl<T: Config> ValidatorScoreProvider for Pallet<T> {
-        type AccountId = T::AccountId;
-
-        fn get_validator_score(validator: &Self::AccountId) -> Option<u64> {
-            Self::calculate_validator_score(validator).map(|score| score as u64)
-        }
-    }
-
-    #[pallet::hooks]
-    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-        fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
-            Weight::zero()
-        }
-
-        fn on_finalize(_n: BlockNumberFor<T>) {
-            // Any cleanup needed at the end of the block
         }
     }
 }

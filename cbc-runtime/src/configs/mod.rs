@@ -1,5 +1,6 @@
-// This is free and unencumbered software released into the public domain.
-// For more information, please refer to <http://unlicense.org>
+// This file is part of the CBC Runtime.
+// It defines configuration settings for the runtime, including consensus parameters,
+// block weights, and other system-wide constants.
 
 // === Imports ===
 // Core Substrate and FRAME support crates
@@ -13,23 +14,19 @@ use frame_support::{
 };
 use frame_system::limits::{BlockLength, BlockWeights};
 use pallet_transaction_payment::{ConstFeeMultiplier, FungibleAdapter, Multiplier};
-// use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::{traits::One, Perbill};
 use sp_version::RuntimeVersion;
 
 // Local runtime modules and type aliases
 use super::{
-    AccountId, /* Aura, */ Balance, Balances, Block, BlockNumber, Hash, Nonce, PalletInfo, Runtime,
+    AccountId, Balance, Balances, Block, BlockNumber, Hash, Nonce, PalletInfo, Runtime,
     RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
-    System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION, PalletCbcPoi, PalletCbcPos, PalletCbcDcf,
-    /* Grandpa, */
+    System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION,
 };
 
 use crate::{
-    MinValidatorScore, MinActiveValidators, MaxValidators, ValidatorScoreDecay, MaxSlashingCount,
+    MinValidatorScore, MinActiveValidators, ValidatorScoreDecay, MaxSlashingCount,
     MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward,
-    BlocksPerEpoch, MinBlocksPerEpoch, MaxValidatorScore, ScoreHistoryLength,
-    BlockAuthorshipBoost, InferenceAccuracyBoost, MinStake, DefaultPosWeight, DefaultPoiWeight,
 };
 
 // === Constants ===
@@ -51,6 +48,18 @@ parameter_types! {
 
     // Substrate address prefix.
     pub const SS58Prefix: u8 = 42;
+
+    pub const MaxValidators: u32 = 100;
+    pub const MinStake: u128 = 1000;
+    pub const MaxStake: u128 = 1000000;
+    pub const EpochDuration: u32 = 100;
+    pub const SlashingPenalty: u32 = 10;
+    pub const RewardRate: u32 = 5;
+    pub const MaxInferenceResults: u32 = 1000;
+    pub const ChallengePeriod: u32 = 10;
+    pub const MaxChallenges: u32 = 100;
+    pub const PosWeight: u64 = 60;
+    pub const PoiWeight: u64 = 40;
 }
 
 // === FRAME System Configuration ===
@@ -70,30 +79,10 @@ impl frame_system::Config for Runtime {
     type MaxConsumers = ConstU32<16>;
 }
 
-// === AURA Consensus Configuration ===
-// impl pallet_aura::Config for Runtime {
-//     type AuthorityId = AuraId;
-//     type DisabledValidators = ();
-//     type MaxAuthorities = ConstU32<32>;
-//     type AllowMultipleBlocksPerSlot = ConstBool<false>;
-//     type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Runtime>;
-// }
-
-// === GRANDPA Finality Configuration ===
-// impl pallet_grandpa::Config for Runtime {
-//     type RuntimeEvent = RuntimeEvent;
-//     type WeightInfo = ();
-//     type MaxAuthorities = ConstU32<32>;
-//     type MaxNominators = ConstU32<0>;
-//     type MaxSetIdSessionEntries = ConstU64<0>;
-//     type KeyOwnerProof = sp_core::Void;
-//     type EquivocationReportSystem = ();
-// }
-
 // === Timestamping Configuration ===
 impl pallet_timestamp::Config for Runtime {
     type Moment = u64;
-    type OnTimestampSet = PalletCbcPos;
+    type OnTimestampSet = ();
     type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
     type WeightInfo = ();
 }
@@ -164,26 +153,21 @@ impl pallet_cbc_pos::Config for Runtime {
     type MaxValidators = MaxValidators;
     type ValidatorScoreDecay = ValidatorScoreDecay;
     type MaxSlashingCount = MaxSlashingCount;
-    type MaxValidatorScore = MaxValidatorScore;
-    type ScoreHistoryLength = ScoreHistoryLength;
-    type BlockAuthorshipBoost = BlockAuthorshipBoost;
-    type InferenceAccuracyBoost = InferenceAccuracyBoost;
+    type MinStake = ConstU128<1000>; // Minimum stake of 1000 units
+    type Balance = Balance;
 }
 
+// === CBC DCF Pallet Configuration ===
 impl pallet_cbc_dcf::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
-    type BlocksPerEpoch = BlocksPerEpoch;
-    type MinBlocksForEpoch = MinBlocksPerEpoch;
     type MaxValidators = MaxValidators;
+    type DefaultPosWeight = ConstU64<60>; // 60% weight for POS
+    type DefaultPoiWeight = ConstU64<40>; // 40% weight for POI
+    type MinActiveValidators = MinActiveValidators;
     type MinValidatorScore = MinValidatorScore;
     type ValidatorScoreDecay = ValidatorScoreDecay;
     type MaxSlashingCount = MaxSlashingCount;
-    type MinStake = MinStake;
+    type MinStake = ConstU128<1000>; // Minimum stake of 1000 units
     type Balance = Balance;
-    type DefaultPosWeight = DefaultPosWeight;
-    type DefaultPoiWeight = DefaultPoiWeight;
-    type MinActiveValidators = MinActiveValidators;
-    type ValidatorInferenceScoreProvider = PalletCbcPoi;
-    type ValidatorStakeScoreProvider = PalletCbcPos;
+    type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
 }

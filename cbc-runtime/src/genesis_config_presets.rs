@@ -6,38 +6,24 @@ use crate::{AccountId, BalancesConfig, RuntimeGenesisConfig, SudoConfig}; // Run
 use alloc::{vec, vec::Vec}; // Alloc crate for dynamic arrays
 use frame_support::build_struct_json_patch; // Macro to build partial JSON patches for genesis config
 use serde_json::Value; // JSON value type
-// use sp_consensus_aura::sr25519::AuthorityId as AuraId; // Aura consensus authority ID
-// use sp_consensus_grandpa::AuthorityId as GrandpaId; // Grandpa finality authority ID
 use sp_genesis_builder::{self, PresetId}; // Genesis builder utilities and PresetId for pre-defined configs
 use sp_keyring::Sr25519Keyring; // Keyring to easily access dev accounts
-use sp_core::{sr25519, Pair};
-use sp_runtime::traits::IdentifyAccount;
-
-/// Helper function to get an account ID from a seed
-fn get_account_id_from_seed<TPublic: Pair>(seed: &str) -> AccountId
-where
-	<TPublic::Public as IdentifyAccount>::AccountId: From<TPublic::Public>,
-	TPublic::Public: IdentifyAccount,
-	<TPublic::Public as IdentifyAccount>::AccountId: Into<AccountId>,
-{
-	let pair = TPublic::from_string(seed, None).expect("static seed is valid; qed");
-	TPublic::Public::from(pair.public())
-		.into_account()
-		.into()
-}
 
 /// Returns a genesis configuration in JSON format with the specified authorities,
 /// endowed accounts, and sudo (root) key.
 fn testnet_genesis(
-	// initial_authorities: Vec<(AuraId, GrandpaId)>, // Validator authority pairs
-	endowed_accounts: Vec<AccountId>,              // Accounts pre-funded with balance
-	root: AccountId,                               // Root (sudo) key
+	initial_validators: Vec<AccountId>, // Validator accounts
+	endowed_accounts: Vec<AccountId>,   // Accounts pre-funded with balance
+	root: AccountId,                    // Root (sudo) key
 ) -> Value {
-	// Create initial validators list (Alice and Bob)
-	let initial_validators = vec![
-		Sr25519Keyring::Alice.to_account_id(),
-		Sr25519Keyring::Bob.to_account_id(),
-	];
+	// Create initial validator scores
+	let validator_scores = vec![100; initial_validators.len()];
+
+	// Create initial inference results
+	let inference_results = initial_validators
+		.iter()
+		.map(|acc| (acc.clone(), 42))
+		.collect::<Vec<_>>();
 
 	build_struct_json_patch!(RuntimeGenesisConfig {
 		// Configure initial balances for all endowed accounts with large amounts of tokens
@@ -48,80 +34,56 @@ fn testnet_genesis(
 				.map(|k| (k, 1u128 << 61)) // Each gets 2^61 units
 				.collect::<Vec<_>>(),
 		},
-		// Set Aura authorities from the provided initial authorities
-		// aura: pallet_aura::GenesisConfig {
-		//     authorities: initial_authorities.iter().map(|x| x.0.clone()).collect(),
-		// },
-		// Set Grandpa authorities with weight (1 in this case)
-		// grandpa: pallet_grandpa::GenesisConfig {
-		//     authorities: initial_authorities.iter().map(|x| (x.1.clone(), 1)).collect(),
-		// },
 		// Assign the sudo (root) key to the provided account
 		sudo: SudoConfig { key: Some(root) },
-		// Configure initial validators for POS
+		// Configure initial validators
 		pallet_cbc_pos: pallet_cbc_pos::GenesisConfig {
-			validators: vec![
-				get_account_id_from_seed::<sr25519::Pair>("Alice"),
-				get_account_id_from_seed::<sr25519::Pair>("Bob"),
-				get_account_id_from_seed::<sr25519::Pair>("Charlie"),
-			],
-			validator_scores: vec![100, 90, 80],
+			validators: initial_validators.clone(),
+			validator_scores,
+			current_epoch: 0,
 			slashing_count: vec![],
 		},
-		// Configure initial inference results for POI
+		// Configure initial inference results
 		pallet_cbc_poi: pallet_cbc_poi::GenesisConfig {
-			inference_results: vec![],
+			inference_results,
 			challenges: vec![],
-		},
-		// Configure initial DCF settings
-		pallet_cbc_dcf: pallet_cbc_dcf::GenesisConfig {
-			validators: initial_validators,
-			validator_scores: vec![100, 90],
-			slashing_count: vec![],
-			epoch_number: 0,
-			epoch_start_block: 0,
+			current_epoch: 0,
 		},
 	})
 }
 
 /// Returns a basic development configuration suitable for running a single-node dev chain.
-/// - Uses Alice as the sole authority and sudo.
+/// - Uses Alice as the sole validator and sudo.
 /// - Endows Alice, Bob, and their stash accounts with tokens.
 pub fn development_config_genesis() -> Value {
+	let initial_validators = vec![Sr25519Keyring::Alice.to_account_id()];
+	let endowed_accounts = vec![
+		Sr25519Keyring::Alice.to_account_id(),
+		Sr25519Keyring::Bob.to_account_id(),
+	];
 	testnet_genesis(
-		// vec![(
-		//     sp_keyring::Sr25519Keyring::Alice.public().into(),
-		//     sp_keyring::Ed25519Keyring::Alice.public().into(),
-		// )],
-		vec![
-			Sr25519Keyring::Alice.to_account_id(),
-			Sr25519Keyring::Bob.to_account_id(),
-		],
-		sp_keyring::Sr25519Keyring::Alice.to_account_id(),
+		initial_validators,
+		endowed_accounts,
+		Sr25519Keyring::Alice.to_account_id(),
 	)
 }
 
 /// Returns a local testnet configuration:
-/// - Alice and Bob are set as authorities.
+/// - Alice and Bob are set as validators.
 /// - Endows all keyring accounts (except One and Two) with tokens.
 /// - Alice is the sudo key.
 pub fn local_config_genesis() -> Value {
+	let initial_validators = vec![
+		Sr25519Keyring::Alice.to_account_id(),
+		Sr25519Keyring::Bob.to_account_id(),
+	];
+	let endowed_accounts = Sr25519Keyring::iter()
+		.filter(|v| v != &Sr25519Keyring::One && v != &Sr25519Keyring::Two)
+		.map(|v| v.to_account_id())
+		.collect::<Vec<_>>();
 	testnet_genesis(
-		// vec![
-		//     (
-		//         sp_keyring::Sr25519Keyring::Alice.public().into(),
-		//         sp_keyring::Ed25519Keyring::Alice.public().into(),
-		//     ),
-		//     (
-		//         sp_keyring::Sr25519Keyring::Bob.public().into(),
-		//         sp_keyring::Ed25519Keyring::Bob.public().into(),
-		//     ),
-		// ],
-		// Filter out keys "One" and "Two" which are not intended to be endowed
-		Sr25519Keyring::iter()
-			.filter(|v| v != &Sr25519Keyring::One && v != &Sr25519Keyring::Two)
-			.map(|v| v.to_account_id())
-			.collect::<Vec<_>>(),
+		initial_validators,
+		endowed_accounts,
 		Sr25519Keyring::Alice.to_account_id(),
 	)
 }
@@ -129,25 +91,13 @@ pub fn local_config_genesis() -> Value {
 /// Fetches the JSON representation of the genesis config for the given `PresetId`.
 /// - Supports "dev" and "local" presets.
 /// - Returns None for unknown presets.
-pub fn get_preset(id: &PresetId) -> Option<Vec<u8>> {
-	let patch = match id.as_ref() {
-		sp_genesis_builder::DEV_RUNTIME_PRESET => development_config_genesis(),
-		sp_genesis_builder::LOCAL_TESTNET_RUNTIME_PRESET => local_config_genesis(),
-		_ => return None, // Unknown preset
-	};
-	// Serialize the generated config into JSON and return as byte array
-	Some(
-		serde_json::to_string(&patch)
-			.expect("serialization to json is expected to work. qed.")
-			.into_bytes(),
-	)
+pub fn get_preset(id: &Option<PresetId>) -> Option<Vec<u8>> {
+	// Implement your logic here, for now just return None or a default
+	None
 }
 
 /// Returns the list of preset names that are supported by this runtime.
 /// These identifiers can be used when launching the chain with a specific genesis preset.
 pub fn preset_names() -> Vec<PresetId> {
-	vec![
-		PresetId::from(sp_genesis_builder::DEV_RUNTIME_PRESET),
-		PresetId::from(sp_genesis_builder::LOCAL_TESTNET_RUNTIME_PRESET),
-	]
+	vec!["default".into()]
 }

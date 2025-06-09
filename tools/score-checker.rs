@@ -5,9 +5,6 @@ use jsonrpsee::core::client::ClientT;
 use jsonrpsee::rpc_params;
 use jsonrpsee::ws_client::WsClientBuilder;
 use anyhow::{Result, Context};
-use sp_core::storage::StorageKey;
-use sp_core::twox_128;
-use hex;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -83,38 +80,24 @@ async fn main() -> Result<()> {
 }
 
 async fn get_validators(client: &jsonrpsee::ws_client::WsClient) -> Result<Vec<String>> {
-    // Get validators from PoS pallet storage
-    let pallet_hash = twox_128(b"PalletCbcPos");
-    let storage_hash = twox_128(b"Validators");
-    let key = StorageKey([pallet_hash, storage_hash].concat());
-    
-    let params = rpc_params![format!("0x{}", hex::encode(key.0))];
+    // Get validators from DCF pallet storage
+    let params = rpc_params!["Dcf", "ActiveValidators", None::<()>];
     let response: Vec<String> = client.request("state_getStorage", params).await?;
     Ok(response)
 }
 
 async fn get_pos_score(client: &jsonrpsee::ws_client::WsClient, validator: &str) -> Result<u64> {
     // Get PoS score from storage
-    let pallet_hash = twox_128(b"PalletCbcPos");
-    let storage_hash = twox_128(b"ValidatorScores");
-    let validator_hash = twox_128(validator.as_bytes());
-    let key = StorageKey([pallet_hash, storage_hash, validator_hash].concat());
-    
-    let params = rpc_params![format!("0x{}", hex::encode(key.0))];
+    let params = rpc_params!["Dcf", "ValidatorStakeScores", validator];
     let response: Option<u64> = client.request("state_getStorage", params).await?;
     Ok(response.unwrap_or(0))
 }
 
 async fn get_poi_score(client: &jsonrpsee::ws_client::WsClient, validator: &str) -> Result<u64> {
     // Get PoI score from storage
-    let pallet_hash = twox_128(b"PalletCbcPoi");
-    let storage_hash = twox_128(b"InferenceResults");
-    let validator_hash = twox_128(validator.as_bytes());
-    let key = StorageKey([pallet_hash, storage_hash, validator_hash].concat());
-    
-    let params = rpc_params![format!("0x{}", hex::encode(key.0))];
-    let response: Option<(u32, u32)> = client.request("state_getStorage", params).await?;
-    Ok(response.map(|(score, _)| score as u64).unwrap_or(0))
+    let params = rpc_params!["Dcf", "ValidatorInferenceScores", validator];
+    let response: Option<u64> = client.request("state_getStorage", params).await?;
+    Ok(response.unwrap_or(0))
 }
 
 fn calculate_combined_score(pos_score: u64, poi_score: Option<u64>) -> u64 {

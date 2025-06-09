@@ -6,32 +6,13 @@
 
 use futures::FutureExt; // Needed for handling async functions that return futures.
 use sc_client_api::{Backend, BlockBackend}; // Traits for interacting with blockchain backends.
-// use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams}; // AURA consensus building blocks.
-// use sc_consensus_grandpa::SharedVoterState; // Used for GRANDPA consensus participation.
-use sc_service::{error::Error as ServiceError, Configuration, TaskManager, WarpSyncConfig}; // Core service types.
+use sc_service::{error::Error as ServiceError, Configuration, TaskManager}; // Core service types.
 use sc_telemetry::{Telemetry, TelemetryWorker}; // Telemetry for monitoring nodes.
 use sc_transaction_pool_api::OffchainTransactionPoolFactory; // For submitting transactions via offchain workers.
 use cbc_runtime::{self, apis::RuntimeApi, opaque::Block}; // Use CBC runtime types and APIs.
-// use sp_consensus_aura::sr25519::AuthorityPair as AuraPair; // AURA authority type.
 use std::{sync::Arc, time::Duration}; // Standard concurrency and time utilities.
-use sc_consensus::{
-	BasicQueue, BlockCheckParams, BlockImport, BlockImportParams, ForkChoiceStrategy, ImportResult,
-	LongestChain,
-};
-use sc_consensus_pos::{PosBlockImport, PosConsensusDataProvider};
-use sc_consensus_poi::{PoiBlockImport, PoiConsensusDataProvider};
-use sc_consensus_dcf::{DcfBlockImport, DcfConsensusDataProvider};
-use sc_executor::NativeElseWasmExecutor;
-use sc_network::NetworkService;
-use sc_network_sync::SyncingService;
-use sp_api::ProvideRuntimeApi;
-use sp_block_builder::BlockBuilder;
-use sp_blockchain::{HeaderBackend, HeaderMetadata};
-use sp_consensus::{BlockOrigin, Environment, Proposer, RecordProof};
-use sp_consensus_pos::PosApi;
-use sp_consensus_poi::PoiApi;
-use sp_consensus_dcf::DcfApi;
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT, Zero};
+use crate::consensus::dcf::start_dcf_consensus;
+use crate::consensus::types::ConsensusParams;
 
 // === Type Aliases for Readability ===
 
@@ -48,9 +29,6 @@ type FullBackend = sc_service::TFullBackend<Block>;
 /// Longest-chain selection strategy for forks.
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
-/// The interval (in blocks) to generate GRANDPA justifications.
-// const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
-
 /// Alias for the output of `new_partial()` — the essential building blocks of a node.
 pub type Service = sc_service::PartialComponents<
 	FullClient,
@@ -58,33 +36,13 @@ pub type Service = sc_service::PartialComponents<
 	FullSelectChain,
 	sc_consensus::DefaultImportQueue<Block>,
 	sc_transaction_pool::TransactionPoolHandle<Block, FullClient>,
-	(
-		// sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
-		// sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
-		Option<Telemetry>,
-	),
+	Option<Telemetry>,
 >;
 
-/// Builds a new partial node.
-pub fn new_partial(
-	config: &Configuration,
-) -> Result<
-	sc_service::PartialComponents<
-		FullClient,
-		FullBackend,
-		FullSelectChain,
-		sc_consensus::DefaultImportQueue<Block>,
-		sc_transaction_pool::FullPool<Block, FullClient>,
-		(
-			PosBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
-			PoiBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
-			DcfBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
-			GrandpaLink<Block>,
-			Option<Telemetry>,
-		),
-	>,
-	ServiceError,
-> {
+/// Builds the partial components of a node (used for both full and light nodes).
+/// Returns the essential pieces to create the full node later.
+pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
+	// Setup telemetry
 	let telemetry = config
 		.telemetry_endpoints
 		.clone()
@@ -94,67 +52,50 @@ pub fn new_partial(
 			let telemetry = worker.handle().new_telemetry(endpoints);
 			Ok((worker, telemetry))
 		})
-		.transpose()?
-		.map(|(worker, telemetry)| {
-			task_manager.spawn_handle().spawn(
-				"telemetry",
-				None,
-				worker.run(),
-			);
-			telemetry
-		});
+		.transpose()?;
 
+	// Create WASM executor for executing runtime logic.
+	let executor = sc_service::new_wasm_executor::<sp_io::SubstrateHostFunctions>(&config.executor);
+
+	// Build the core node components (client, backend, keystore, task manager).
 	let (client, backend, keystore_container, task_manager) =
 		sc_service::new_full_parts::<Block, RuntimeApi, _>(
 			config,
 			telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
+			executor,
 		)?;
-	let client = Arc::new(client);
 
+	let client = Arc::new(client); // Wrap the client in Arc for shared use
+
+	// Spawn telemetry worker if enabled
+	let telemetry = telemetry.map(|(worker, telemetry)| {
+		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
+		telemetry
+	});
+
+	// Longest chain fork choice rule (used by consensus).
 	let select_chain = sc_consensus::LongestChain::new(backend.clone());
 
-	let transaction_pool = sc_transaction_pool::BasicPool::new_full(
-		config.transaction_pool.clone(),
-		config.role.is_authority().into(),
-		config.prometheus_registry(),
-		task_manager.spawn_handle(),
-		client.clone(),
+	// Create the transaction pool, responsible for managing pending transactions.
+	let transaction_pool = Arc::from(
+		sc_transaction_pool::Builder::new(
+			task_manager.spawn_essential_handle(),
+			client.clone(),
+			config.role.is_authority().into(), // Enable pool if this node is an authority
+		)
+		.with_options(config.transaction_pool.clone())
+		.with_prometheus(config.prometheus_registry())
+		.build(),
 	);
 
-	let (grandpa_block_import, grandpa_link) = sc_finality_grandpa::block_import(
+	// Create DCF import queue
+	let import_queue = sc_consensus::DefaultImportQueue::new(
 		client.clone(),
-		&(client.clone() as Arc<_>),
-		select_chain.clone(),
-		telemetry.as_ref().map(|x| x.handle()),
-	)?;
-
-	let pos_block_import = PosBlockImport::new(
-		grandpa_block_import.clone(),
-		client.clone(),
-		select_chain.clone(),
-	);
-
-	let poi_block_import = PoiBlockImport::new(
-		grandpa_block_import.clone(),
-		client.clone(),
-		select_chain.clone(),
-	);
-
-	let dcf_block_import = DcfBlockImport::new(
-		grandpa_block_import,
-		client.clone(),
-		select_chain.clone(),
-	);
-
-	let import_queue = sc_consensus::BasicQueue::new(
-		pos_block_import.clone(),
-		Box::new(pos_block_import.clone()),
-		Box::new(poi_block_import.clone()),
-		Box::new(dcf_block_import.clone()),
-		&task_manager.spawn_essential_handle(),
+		task_manager.spawn_essential_handle(),
 		config.prometheus_registry(),
 	);
 
+	// Return all the components as a tuple for building the full node.
 	Ok(sc_service::PartialComponents {
 		client,
 		backend,
@@ -163,13 +104,7 @@ pub fn new_partial(
 		keystore_container,
 		select_chain,
 		transaction_pool,
-		other: (
-			pos_block_import,
-			poi_block_import,
-			dcf_block_import,
-			grandpa_link,
-			telemetry,
-		),
+		other: telemetry,
 	})
 }
 
@@ -183,6 +118,7 @@ pub fn new_full<
 >(
 	config: Configuration,
 ) -> Result<TaskManager, ServiceError> {
+	// Start with building partial components (client, pool, backend, etc.)
 	let sc_service::PartialComponents {
 		client,
 		backend,
@@ -191,142 +127,114 @@ pub fn new_full<
 		keystore_container,
 		select_chain,
 		transaction_pool,
-		other: (pos_block_import, poi_block_import, dcf_block_import, grandpa_link, mut telemetry),
+		other: telemetry,
 	} = new_partial(&config)?;
 
-	let finality_proof_provider = GrandpaFinalityProofProvider::new_for_service(
-		backend.clone(),
-		client.clone(),
-	);
+	// === Network Setup ===
 
-	let (network, system_rpc_tx, network_starter) =
+	// Generate a full network configuration from the node's base config.
+	let mut net_config = sc_network::config::FullNetworkConfiguration::<
+		Block,
+		<Block as sp_runtime::traits::Block>::Hash,
+		N,
+	>::new(&config.network, config.prometheus_registry().cloned());
+
+	let metrics = N::register_notification_metrics(config.prometheus_registry());
+
+	let peer_store_handle = net_config.peer_store_handle();
+
+	// === Build the network ===
+
+	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
+			net_config,
 			client: client.clone(),
 			transaction_pool: transaction_pool.clone(),
 			spawn_handle: task_manager.spawn_handle(),
 			import_queue,
-			on_demand: None,
 			block_announce_validator_builder: None,
-			warp_sync: None,
+			warp_sync_config: None,
+			block_relay: None,
+			metrics,
 		})?;
 
+	// === Offchain Workers ===
+
+	// If offchain workers are enabled, start them.
 	if config.offchain_worker.enabled {
-		sc_service::build_offchain_workers(
-			&config,
-			backend.clone(),
-			task_manager.spawn_handle(),
-			client.clone(),
-			network.clone(),
-		)?;
+		let offchain_workers =
+			sc_offchain::OffchainWorkers::new(sc_offchain::OffchainWorkerOptions {
+				runtime_api_provider: client.clone(),
+				is_validator: config.role.is_authority(),
+				keystore: Some(keystore_container.keystore()),
+				offchain_db: backend.offchain_storage(),
+				transaction_pool: Some(OffchainTransactionPoolFactory::new(
+					transaction_pool.clone(),
+				)),
+				network_provider: Arc::new(network.clone()),
+				enable_http_requests: true,
+				custom_extensions: |_| vec![], // Can inject custom extensions here.
+			})?;
+
+		task_manager.spawn_handle().spawn(
+			"offchain-workers-runner",
+			"offchain-worker",
+			offchain_workers.run(client.clone(), task_manager.spawn_handle()).boxed(),
+		);
 	}
 
-	let role = config.role.clone();
-	let force_authoring = config.force_authoring;
-	let name = config.network.node_name.clone();
-	let enable_grandpa = !config.disable_grandpa;
-	let prometheus_registry = config.prometheus_registry().cloned();
+	// === DCF Consensus Setup ===
+	let consensus_params = ConsensusParams {
+		author_selection_mode: crate::consensus::author_selection::AuthorSelectionMode::PoS,
+		finality_threshold: 32,
+		min_block_time: 1000,
+	};
 
-	let rpc_extensions_builder = {
+	// Start DCF consensus
+	task_manager.spawn_essential_handle().spawn(
+		"dcf-consensus",
+		None,
+		start_dcf_consensus(
+			client.clone(),
+			import_queue,
+			select_chain,
+			consensus_params,
+		),
+	);
+
+	// === RPC Setup ===
+
+	let rpc_builder = {
 		let client = client.clone();
+		let pool = transaction_pool.clone();
+
 		Box::new(move |deny_unsafe, _| {
-			let deps = rpc::FullDeps {
+			let deps = crate::rpc::FullDeps {
 				client: client.clone(),
-				pool: transaction_pool.clone(),
+				pool: pool.clone(),
 				deny_unsafe,
 			};
-			rpc::create_full(deps)
+			crate::rpc::create_full(deps)
 		})
 	};
+
+	// === Spawn all async services (RPC, networking, etc.) ===
 
 	let _rpc_handlers = sc_service::spawn_tasks(sc_service::SpawnTasksParams {
 		network: network.clone(),
 		client: client.clone(),
-		keystore: keystore_container.sync_keystore(),
+		keystore: keystore_container.keystore(),
 		task_manager: &mut task_manager,
 		transaction_pool: transaction_pool.clone(),
-		rpc_extensions_builder,
-		on_demand: None,
-		remote_blockchain: None,
+		rpc_builder,
 		backend,
 		system_rpc_tx,
+		tx_handler_controller,
+		sync_service,
 		config,
-		telemetry: telemetry.as_mut(),
+		telemetry: telemetry.as_ref().map(|x| x.handle()),
 	})?;
 
-	if role.is_authority() {
-		let proposer_factory = sc_basic_authorship::ProposerFactory::new(
-			task_manager.spawn_handle(),
-			client.clone(),
-			transaction_pool,
-			prometheus_registry.as_ref(),
-			telemetry.as_ref().map(|x| x.handle()),
-		);
-
-		let pos_client = client.clone();
-		let pos_backend = backend.clone();
-		let pos_consensus_data_provider = PosConsensusDataProvider::new(
-			pos_client.clone(),
-			pos_backend.clone(),
-		);
-
-		let poi_client = client.clone();
-		let poi_backend = backend.clone();
-		let poi_consensus_data_provider = PoiConsensusDataProvider::new(
-			poi_client.clone(),
-			poi_backend.clone(),
-		);
-
-		let dcf_client = client.clone();
-		let dcf_backend = backend.clone();
-		let dcf_consensus_data_provider = DcfConsensusDataProvider::new(
-			dcf_client.clone(),
-			dcf_backend.clone(),
-		);
-
-		let pos_consensus = sc_consensus_pos::start_pos_consensus(
-			task_manager.spawn_handle(),
-			client.clone(),
-			pos_consensus_data_provider,
-			proposer_factory.clone(),
-			network.clone(),
-		);
-
-		let poi_consensus = sc_consensus_poi::start_poi_consensus(
-			task_manager.spawn_handle(),
-			client.clone(),
-			poi_consensus_data_provider,
-			proposer_factory.clone(),
-			network.clone(),
-		);
-
-		let dcf_consensus = sc_consensus_dcf::start_dcf_consensus(
-			task_manager.spawn_handle(),
-			client.clone(),
-			dcf_consensus_data_provider,
-			proposer_factory,
-			network.clone(),
-		);
-
-		task_manager.spawn_essential_handle().spawn_blocking(
-			"pos-consensus",
-			Some("consensus"),
-			pos_consensus,
-		);
-
-		task_manager.spawn_essential_handle().spawn_blocking(
-			"poi-consensus",
-			Some("consensus"),
-			poi_consensus,
-		);
-
-		task_manager.spawn_essential_handle().spawn_blocking(
-			"dcf-consensus",
-			Some("consensus"),
-			dcf_consensus,
-		);
-	}
-
-	network_starter.start_network();
 	Ok(task_manager)
 }

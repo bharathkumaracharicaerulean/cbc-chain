@@ -14,20 +14,36 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
-use frame_support::{pallet_prelude::*, storage::types::StorageMap};
-use frame_system::pallet_prelude::*;
-use scale_info::prelude::vec::Vec;
-use pallet_cbc_dcf::ValidatorStakeScoreProvider;
+use sp_std::prelude::*;
+
+// Runtime API declaration
+sp_api::decl_runtime_apis! {
+    pub trait PosApi<AccountId, Balance> 
+    where
+        AccountId: codec::Codec + Clone + Eq + sp_std::fmt::Debug,
+        Balance: codec::Codec + Clone + Eq + sp_std::fmt::Debug + sp_runtime::traits::AtLeast32BitUnsigned,
+    {
+        fn get_validator_stake(validator: AccountId) -> Balance;
+        fn get_validator_score(validator: AccountId) -> u32;
+        fn get_active_validators() -> Vec<AccountId>;
+        fn get_slashing_count(validator: AccountId) -> u32;
+    }
+}
 
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
+    use frame_support::{pallet_prelude::*, storage::types::{StorageMap, StorageValue}};
+    use frame_system::pallet_prelude::*;
+    use scale_info::prelude::vec::Vec;
+    use sp_runtime::traits::AtLeast32BitUnsigned;
+    use codec::MaxEncodedLen;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: frame_system::Config + pallet_cbc_dcf::Config {
+    pub trait Config: frame_system::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         type WeightInfo: WeightInfo;
 
@@ -37,25 +53,24 @@ pub mod pallet {
         type MinActiveValidators: Get<u32>;
         /// Maximum number of validators allowed
         type MaxValidators: Get<u32>;
-        /// Score decay per epoch (in percentage, e.g., 10 means 10% decay)
+        /// Score decay per epoch
         type ValidatorScoreDecay: Get<u32>;
         /// Maximum slashing count before removal
         type MaxSlashingCount: Get<u32>;
-        /// Maximum score a validator can have
-        type MaxValidatorScore: Get<u32>;
-        /// Number of epochs to keep score history
-        type ScoreHistoryLength: Get<u32>;
-        /// Score boost for valid block authorship
-        type BlockAuthorshipBoost: Get<u32>;
-        /// Score boost for accurate inference
-        type InferenceAccuracyBoost: Get<u32>;
+        /// Minimum stake amount required for validators
+        type MinStake: Get<BalanceOf<Self>>;
+        /// The balance type
+        type Balance: Parameter + Member + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
     }
+
+    type BalanceOf<T> = <T as Config>::Balance;
 
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
         pub validators: Vec<T::AccountId>,
         pub validator_scores: Vec<u32>,
+        pub current_epoch: u32,
         pub slashing_count: Vec<(T::AccountId, u32)>,
     }
 
@@ -71,6 +86,9 @@ pub mod pallet {
             for (validator, score) in self.validators.iter().zip(self.validator_scores.iter()) {
                 ValidatorScores::<T>::insert(validator, score);
             }
+
+            // Initialize current epoch
+            CurrentEpoch::<T>::put(self.current_epoch);
 
             // Initialize slashing counts
             for (validator, count) in &self.slashing_count {
@@ -88,18 +106,16 @@ pub mod pallet {
     pub type ValidatorScores<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, u32>;
 
     #[pallet::storage]
+    #[pallet::getter(fn current_epoch)]
+    pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+    #[pallet::storage]
     #[pallet::getter(fn slashing_count)]
     pub type SlashingCount<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, u32>;
 
     #[pallet::storage]
-    #[pallet::getter(fn validator_score_history)]
-    pub type ValidatorScoreHistory<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        BoundedVec<(u32, u32), ConstU32<10>>,
-        ValueQuery,
-    >;
+    #[pallet::getter(fn stake)]
+    pub type Stake<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, ValueQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -108,8 +124,8 @@ pub mod pallet {
         ScoreSubmitted { validator: T::AccountId, score: u32 },
         ValidatorSlashed { validator: T::AccountId, slashing_count: u32 },
         ValidatorRemoved { validator: T::AccountId, reason: Vec<u8> },
-        ScoreBoosted { validator: T::AccountId, boost_type: Vec<u8>, amount: u32 },
-        ScoreDecayed { validator: T::AccountId, new_score: u32 },
+        StakeBonded { validator: T::AccountId, amount: BalanceOf<T> },
+        StakeUnbonded { validator: T::AccountId, amount: BalanceOf<T> },
     }
 
     #[pallet::error]
@@ -120,49 +136,49 @@ pub mod pallet {
         TooManyValidators,
         ScoreTooLow,
         MaxSlashingCountReached,
-        InvalidBoostAmount,
-        ScoreHistoryFull,
+        InsufficientStake,
+        InvalidStakeAmount,
     }
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::register_validator())]
         pub fn register_validator(origin: OriginFor<T>) -> DispatchResult {
-            let _who = ensure_signed(origin)?;
+            let who = ensure_signed(origin)?;
             
             // Check if we've reached max validators
             ensure!(
-                Validators::<T>::iter().count() < <T as pallet::Config>::MaxValidators::get() as usize,
+                Validators::<T>::iter().count() < T::MaxValidators::get() as usize,
                 Error::<T>::TooManyValidators
             );
 
-            ensure!(!Validators::<T>::contains_key(&_who), Error::<T>::ValidatorAlreadyRegistered);
-            Validators::<T>::insert(&_who, true);
-            Self::deposit_event(Event::ValidatorRegistered { validator: _who });
+            ensure!(!Validators::<T>::contains_key(&who), Error::<T>::ValidatorAlreadyRegistered);
+            Validators::<T>::insert(&who, true);
+            Self::deposit_event(Event::ValidatorRegistered { validator: who });
             Ok(())
         }
 
         #[pallet::call_index(1)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::submit_score())]
+        #[pallet::weight(T::WeightInfo::submit_score())]
         pub fn submit_score(origin: OriginFor<T>, validator: T::AccountId, score: u32) -> DispatchResult {
             let _who = ensure_signed(origin)?;
             ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
-            ensure!(score >= <T as pallet::Config>::MinValidatorScore::get(), Error::<T>::ScoreTooLow);
+            ensure!(score >= T::MinValidatorScore::get(), Error::<T>::ScoreTooLow);
             ValidatorScores::<T>::insert(&validator, score);
             Self::deposit_event(Event::ScoreSubmitted { validator, score });
             Ok(())
         }
 
         #[pallet::call_index(2)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::slash_validator())]
+        #[pallet::weight(T::WeightInfo::slash_validator())]
         pub fn slash_validator(origin: OriginFor<T>, validator: T::AccountId) -> DispatchResult {
             let _who = ensure_signed(origin)?;
             ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
             
             let count = SlashingCount::<T>::get(&validator).unwrap_or(0) + 1;
             
-            if count >= <T as pallet::Config>::MaxSlashingCount::get() {
+            if count >= T::MaxSlashingCount::get() {
                 // Remove validator if max slashing count reached
                 Validators::<T>::remove(&validator);
                 ValidatorScores::<T>::remove(&validator);
@@ -180,83 +196,39 @@ pub mod pallet {
         }
 
         #[pallet::call_index(3)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::boost_score())]
-        pub fn boost_score(
-            origin: OriginFor<T>,
-            validator: T::AccountId,
-            boost_type: Vec<u8>,
-            _amount: u32,
-        ) -> DispatchResult {
-            let _who = ensure_signed(origin)?;
-            ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
+        #[pallet::weight(T::WeightInfo::bond_stake())]
+        pub fn bond_stake(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
+            let who = ensure_signed(origin)?;
             
-            let current_score = ValidatorScores::<T>::get(&validator).unwrap_or(0);
-            let max_score = <T as pallet::Config>::MaxValidatorScore::get();
+            ensure!(amount >= T::MinStake::get(), Error::<T>::InsufficientStake);
+            ensure!(Validators::<T>::contains_key(&who), Error::<T>::ValidatorNotRegistered);
             
-            let boost_amount = match boost_type.as_slice() {
-                b"block" => <T as pallet::Config>::BlockAuthorshipBoost::get(),
-                b"inference" => <T as pallet::Config>::InferenceAccuracyBoost::get(),
-                _ => return Err(Error::<T>::InvalidBoostAmount.into()),
-            };
+            let current_stake = Stake::<T>::get(&who);
+            let new_stake = current_stake.checked_add(&amount).ok_or(Error::<T>::InvalidStakeAmount)?;
             
-            let new_score = current_score.saturating_add(boost_amount).min(max_score);
-            ValidatorScores::<T>::insert(&validator, new_score);
-            
-            // Update score history
-            let history = ValidatorScoreHistory::<T>::get(&validator);
-            let mut new_history = history.clone();
-            new_history.try_push((pallet_cbc_dcf::Pallet::<T>::current_epoch(), new_score))
-                .map_err(|_| Error::<T>::ScoreHistoryFull)?;
-            ValidatorScoreHistory::<T>::insert(&validator, new_history);
-            
-            Self::deposit_event(Event::ScoreBoosted { 
-                validator,
-                boost_type,
-                amount: boost_amount,
-            });
+            Stake::<T>::insert(&who, new_stake);
+            Self::deposit_event(Event::StakeBonded { validator: who, amount });
             
             Ok(())
         }
-    }
 
-    impl<T: Config> Pallet<T> {
-        /// Get the top validators based on their scores
-        pub fn get_top_validators(count: u32) -> Vec<T::AccountId> {
-            let mut validators: Vec<(T::AccountId, u32)> = ValidatorScores::<T>::iter()
-                .filter(|(_, score)| *score >= <T as pallet::Config>::MinValidatorScore::get())
-                .collect();
-                
-            // Sort by score in descending order first
-            validators.sort_by(|a, b| b.1.cmp(&a.1));
+        #[pallet::call_index(4)]
+        #[pallet::weight(T::WeightInfo::unbond_stake())]
+        pub fn unbond_stake(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
+            let who = ensure_signed(origin)?;
             
-            // Then sort by account ID for tiebreaking
-            validators.sort_by(|a, b| {
-                if a.1 == b.1 {
-                    // For tiebreaking, use the raw account ID comparison
-                    a.0.cmp(&b.0)
-                } else {
-                    b.1.cmp(&a.1)
-                }
-            });
+            ensure!(Validators::<T>::contains_key(&who), Error::<T>::ValidatorNotRegistered);
             
-            validators
-                .into_iter()
-                .take(count as usize)
-                .map(|(validator, _)| validator)
-                .collect()
-        }
-        
-        /// Get the current active validators
-        pub fn get_active_validators() -> Vec<T::AccountId> {
-            Self::get_top_validators(<T as pallet::Config>::MaxValidators::get())
-        }
-    }
-
-    impl<T: Config> ValidatorStakeScoreProvider for Pallet<T> {
-        type AccountId = T::AccountId;
-
-        fn get_validator_stake_score(validator: &Self::AccountId) -> Option<u64> {
-            Self::validator_scores(validator).map(|score| score as u64)
+            let current_stake = Stake::<T>::get(&who);
+            ensure!(current_stake >= amount, Error::<T>::InsufficientStake);
+            
+            let new_stake = current_stake.checked_sub(&amount).ok_or(Error::<T>::InvalidStakeAmount)?;
+            ensure!(new_stake >= T::MinStake::get(), Error::<T>::InsufficientStake);
+            
+            Stake::<T>::insert(&who, new_stake);
+            Self::deposit_event(Event::StakeUnbonded { validator: who, amount });
+            
+            Ok(())
         }
     }
 }

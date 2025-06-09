@@ -56,12 +56,10 @@ pub mod opaque {
     pub type Hash = <BlakeTwo256 as HashT>::Output;
 }
 
-// Define the session keys used for consensus mechanisms
+// Define the session keys used for consensus mechanisms like POS and POI.
 impl_opaque_keys! {
     pub struct SessionKeys {
-        pub pos: PalletCbcPos, // POS consensus key
-        pub poi: PalletCbcPoi, // POI consensus key
-        pub dcf: PalletCbcDcf, // DCF consensus key
+        pub dcf: sp_consensus_aura::sr25519::AuthorityId, // DCF consensus key using sr25519
     }
 }
 
@@ -80,11 +78,10 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 };
 
 mod block_times {
-    /// Defines the average expected block time in milliseconds. This value is used by the
-    /// `pallet_timestamp` and `pallet_aura` pallets to determine the block production interval.
+    /// Defines the average expected block time in milliseconds for DCF consensus
     pub const MILLI_SECS_PER_BLOCK: u64 = 6000;
 
-    // The slot duration is the minimum time between blocks. It is derived from the block time.
+    // The slot duration is the minimum time between blocks
     pub const SLOT_DURATION: u64 = MILLI_SECS_PER_BLOCK;
 }
 pub use block_times::*;
@@ -107,7 +104,10 @@ pub const DOLLARS: Balance = UNIT; // 1 DOLLAR equals 1 UNIT
 // Define the native runtime version for native execution.
 #[cfg(feature = "std")]
 pub fn native_version() -> NativeVersion {
-    NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
+    NativeVersion {
+        runtime_version: VERSION,
+        can_author_with: Default::default(),
+    }
 }
 
 // Type aliases for commonly used types in the runtime.
@@ -176,31 +176,31 @@ mod runtime {
     pub struct Runtime;
 
     #[runtime::pallet_index(0)]
-    pub type System = frame_system; // FRAME system pallet.
+    pub type System = frame_system;
 
     #[runtime::pallet_index(1)]
-    pub type Timestamp = pallet_timestamp; // Timestamp pallet.
+    pub type Timestamp = pallet_timestamp;
 
     #[runtime::pallet_index(2)]
-    pub type PalletCbcPos = pallet_cbc_pos; // POS consensus pallet.
+    pub type Balances = pallet_balances;
 
     #[runtime::pallet_index(3)]
-    pub type PalletCbcPoi = pallet_cbc_poi; // POI consensus pallet.
+    pub type TransactionPayment = pallet_transaction_payment;
 
     #[runtime::pallet_index(4)]
-    pub type PalletCbcDcf = pallet_cbc_dcf; // DCF consensus pallet.
+    pub type Sudo = pallet_sudo;
 
     #[runtime::pallet_index(5)]
-    pub type Balances = pallet_balances; // Balances pallet.
+    pub type Template = cbc_pallet_template;
 
     #[runtime::pallet_index(6)]
-    pub type TransactionPayment = pallet_transaction_payment; // Transaction payment pallet.
+    pub type PalletCbcPoi = pallet_cbc_poi;
 
     #[runtime::pallet_index(7)]
-    pub type Sudo = pallet_sudo; // Sudo pallet for administrative tasks.
+    pub type PalletCbcPos = pallet_cbc_pos;
 
     #[runtime::pallet_index(8)]
-    pub type Template = cbc_pallet_template; // Custom template pallet.
+    pub type Dcf = pallet_cbc_dcf;
 }
 use sp_runtime::traits::parameter_types;
 
@@ -217,9 +217,6 @@ parameter_types! {
     pub const MaxValidators: u32 = 100;
     pub const ValidatorScoreDecay: u32 = 10;
     pub const MaxSlashingCount: u32 = 3;
-    pub const MinStake: Balance = 1000 * DOLLARS;
-    pub const DefaultPosWeight: u32 = 60;
-    pub const DefaultPoiWeight: u32 = 40;
 
     // Inference parameters
     pub const MinInferenceConfidence: u32 = 80;
@@ -227,15 +224,15 @@ parameter_types! {
     pub const ChallengeWindow: u32 = 5;
     pub const InferenceReward: u128 = 1000;
     pub const ChallengeReward: u128 = 500;
-    pub const BlocksPerEpoch: BlockNumber = 100;
-    pub const MinBlocksPerEpoch: BlockNumber = 50;
-    pub const MaxValidatorsPerEpoch: u32 = 50;
-    pub const MaxValidatorScore: u32 = 1000;
-    pub const ScoreHistoryLength: u32 = 10;
-    pub const BlockAuthorshipBoost: u32 = 50;
-    pub const InferenceAccuracyBoost: u32 = 30;
+
+    // DCF parameters
+    pub const DcfMaxValidators: u32 = 100;
+    pub const DefaultPosWeight: u64 = 60; // 60% weight for POS score
+    pub const DefaultPoiWeight: u64 = 40; // 40% weight for POI score
+    pub const EpochDuration: BlockNumber = 24 * HOURS; // 24 hours per epoch
+    pub const MinStake: Balance = 1000 * DOLLARS; // Minimum stake required
+    pub const MaxValidatorsPerEpoch: u32 = 50; // Maximum validators per epoch
 }
 
 pub use pallet_cbc_poi;
 pub use pallet_cbc_pos;
-pub use pallet_cbc_dcf;

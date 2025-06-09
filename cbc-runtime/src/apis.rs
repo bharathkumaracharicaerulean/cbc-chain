@@ -6,9 +6,7 @@ use frame_support::{
 	genesis_builder_helper::{build_state, get_preset},
 	weights::Weight,
 };
-// use pallet_grandpa::AuthorityId as GrandpaId;
 use sp_api::impl_runtime_apis;
-// use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	traits::{Block as BlockT, NumberFor},
@@ -17,11 +15,10 @@ use sp_runtime::{
 };
 use sp_version::RuntimeVersion;
 
-// Local Imports (You should replace these with actual paths if your layout is different)
+// Local Imports
 use super::{
-	AccountId, Aura, Balance, Block, Executive, Grandpa, InherentDataExt, Nonce, Runtime,
+	AccountId, Balance, Block, Executive, InherentDataExt, Nonce, Runtime,
 	RuntimeCall, RuntimeGenesisConfig, SessionKeys, System, TransactionPayment, VERSION,
-	PalletCbcPos, PalletCbcPoi, PalletCbcDcf,
 };
 
 // Begin API Implementations
@@ -89,17 +86,6 @@ impl_runtime_apis! {
 		}
 	}
 
-	// Aura Consensus API
-	// impl sp_consensus_aura::AuraApi<Block, AuraId> for Runtime {
-	//     fn slot_duration() -> sp_consensus_aura::SlotDuration {
-	//         sp_consensus_aura::SlotDuration::from_millis(Aura::slot_duration())
-	//     }
-	//
-	//     fn authorities() -> Vec<AuraId> {
-	//         pallet_aura::Authorities::<Runtime>::get().into_inner()
-	//     }
-	// }
-
 	// Session Keys API
 	impl sp_session::SessionKeys<Block> for Runtime {
 		fn generate_session_keys(seed: Option<Vec<u8>>) -> Vec<u8> {
@@ -109,31 +95,6 @@ impl_runtime_apis! {
 			SessionKeys::decode_into_raw_public_keys(&encoded)
 		}
 	}
-
-	// Grandpa Finality API
-	// impl sp_consensus_grandpa::GrandpaApi<Block> for Runtime {
-	//     fn grandpa_authorities() -> sp_consensus_grandpa::AuthorityList {
-	//         Grandpa::grandpa_authorities()
-	//     }
-	//
-	//     fn current_set_id() -> sp_consensus_grandpa::SetId {
-	//         Grandpa::current_set_id()
-	//     }
-	//
-	//     fn submit_report_equivocation_unsigned_extrinsic(
-	//         _: sp_consensus_grandpa::EquivocationProof<
-	//             <Block as sp_runtime::traits::Block>::Header,
-	//             sp_runtime::traits::NumberFor<Block>,
-	//         >,
-	//         _: sp_consensus_grandpa::OpaqueKeyOwnershipProof,
-	//     ) -> Option<()> {
-	//         None
-	//     }
-	//
-	//     fn generate_key_ownership_proof(_: sp_consensus_grandpa::SetId, _: GrandpaId) -> Option<sp_consensus_grandpa::OpaqueKeyOwnershipProof> {
-	//         None
-	//     }
-	// }
 
 	// Account Nonce API
 	impl frame_system_rpc_runtime_api::AccountNonceApi<Block, AccountId, Nonce> for Runtime {
@@ -171,6 +132,94 @@ impl_runtime_apis! {
 		}
 		fn query_length_to_fee(length: u32) -> Balance {
 			TransactionPayment::length_to_fee(length)
+		}
+	}
+
+	// POS API
+	impl pallet_cbc_pos::PosApi<Block, AccountId, Balance> for Runtime {
+		fn get_validator_stake(validator: AccountId) -> Balance {
+			pallet_cbc_pos::Pallet::<Runtime>::stake(&validator)
+		}
+
+		fn get_validator_score(validator: AccountId) -> u32 {
+			pallet_cbc_pos::Pallet::<Runtime>::validator_scores(&validator)
+				.unwrap_or_default()
+		}
+
+		fn get_active_validators() -> Vec<AccountId> {
+			// Use ValidatorSet from pallet_cbc_pos if available, otherwise fallback to an empty vec
+			// If not available, you may need to maintain such a list in storage
+			// For now, let's assume pallet_cbc_pos::Pallet::<Runtime>::validator_set() exists
+			#[allow(unused_mut)]
+			let mut validators = Vec::new();
+			#[cfg(feature = "std")] {
+				// For std builds, you might want to use all accounts, but that's not efficient
+			}
+			#[cfg(not(feature = "std"))] {
+				// Try to use a storage value if available
+				// If not, return empty
+			}
+			// Try to use the DCF pallet's ValidatorSet if available
+			validators = pallet_cbc_dcf::Pallet::<Runtime>::validator_set().to_vec();
+			validators.to_vec()
+		}
+
+		fn get_slashing_count(validator: AccountId) -> u32 {
+			pallet_cbc_pos::Pallet::<Runtime>::slashing_count(&validator)
+				.unwrap_or_default()
+		}
+	}
+
+	// POI API
+	impl pallet_cbc_poi::PoiApi<Block, AccountId> for Runtime {
+		fn get_inference_result(validator: AccountId) -> Option<(u32, u32)> {
+			pallet_cbc_poi::Pallet::<Runtime>::inference_results(&validator)
+		}
+
+		fn get_challenge(validator: AccountId) -> Option<(AccountId, u32, u32)> {
+			pallet_cbc_poi::Pallet::<Runtime>::challenges(&validator)
+		}
+
+		fn get_current_epoch() -> u32 {
+			pallet_cbc_poi::Pallet::<Runtime>::current_epoch()
+		}
+	}
+
+	// DCF API
+	impl pallet_cbc_dcf::DcfApi<Block, AccountId> for Runtime {
+		fn get_validator_scores() -> Vec<(AccountId, u64)> {
+			// Use ActiveValidators or ValidatorSet to get all validator accounts
+			let validators = pallet_cbc_dcf::Pallet::<Runtime>::validator_set();
+			validators
+				.iter()
+				.map(|validator| {
+					let score = pallet_cbc_dcf::Pallet::<Runtime>::validator_final_scores(validator);
+					(validator.clone(), score.final_score)
+				})
+				.collect()
+		}
+
+		fn get_current_epoch() -> u32 {
+			pallet_cbc_dcf::Pallet::<Runtime>::current_epoch()
+		}
+
+		fn get_validator_stake_score(validator: AccountId) -> u64 {
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_stake_scores(&validator)
+		}
+
+		fn get_validator_inference_score(validator: AccountId) -> u64 {
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_inference_scores(&validator)
+		}
+
+		fn get_consensus_weights() -> (u64, u64) {
+			(
+				pallet_cbc_dcf::Pallet::<Runtime>::pos_weight(),
+				pallet_cbc_dcf::Pallet::<Runtime>::poi_weight()
+			)
+		}
+
+		fn is_validator_active(validator: AccountId) -> bool {
+			pallet_cbc_dcf::Pallet::<Runtime>::is_active_validator(&validator)
 		}
 	}
 
@@ -231,31 +280,10 @@ impl_runtime_apis! {
 			build_state::<RuntimeGenesisConfig>(config)
 		}
 		fn get_preset(id: &Option<sp_genesis_builder::PresetId>) -> Option<Vec<u8>> {
-			get_preset::<RuntimeGenesisConfig>(id, crate::genesis_config_presets::get_preset)
+			crate::genesis_config_presets::get_preset(id)
 		}
 		fn preset_names() -> Vec<sp_genesis_builder::PresetId> {
 			crate::genesis_config_presets::preset_names()
-		}
-	}
-
-	// POS Consensus API
-	impl sp_consensus::ConsensusApi<Block> for Runtime {
-		fn consensus_authorities() -> Vec<AccountId> {
-			PalletCbcPos::authorities()
-		}
-	}
-
-	// POI Consensus API
-	impl sp_consensus::ConsensusApi<Block> for Runtime {
-		fn consensus_authorities() -> Vec<AccountId> {
-			PalletCbcPoi::authorities()
-		}
-	}
-
-	// DCF Consensus API
-	impl sp_consensus::ConsensusApi<Block> for Runtime {
-		fn consensus_authorities() -> Vec<AccountId> {
-			PalletCbcDcf::authorities()
 		}
 	}
 }

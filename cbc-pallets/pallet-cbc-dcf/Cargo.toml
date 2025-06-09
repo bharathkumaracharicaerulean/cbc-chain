@@ -20,8 +20,9 @@ sp-std.workspace = true
 sp-core.workspace = true
 sp-runtime.workspace = true
 sp-api.workspace = true
-
-serde = { workspace = true, features = ["derive", "std"] }
+pallet-cbc-pos = { path = "../pallet-cbc-pos", default-features = false }
+pallet-cbc-poi = { path = "../pallet-cbc-poi", default-features = false }
+serde.workspace = true
 
 [dev-dependencies]
 sp-core = { default-features = true, workspace = true }
@@ -40,6 +41,8 @@ std = [
 	"sp-core/std",
 	"sp-runtime/std",
 	"sp-api/std",
+	"pallet-cbc-pos/std",
+	"pallet-cbc-poi/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

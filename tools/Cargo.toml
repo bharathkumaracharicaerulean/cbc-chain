@@ -6,14 +6,12 @@ authors = ["CBC-Chain Team"]
 description = "Tools for CBC-Chain development and maintenance"
 
 [dependencies]
-serde = { version = "1.0.219", features = ["derive", "std"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.132"
 tokio = { version = "1.44.2", features = ["full"] }
 jsonrpsee = { version = "0.24.8", features = ["ws-client"] }
 clap = { version = "4.5.13", features = ["derive"] }
 anyhow = "1.0.86"
-sp-core = { version = "36.1.0", default-features = false }
-hex = "0.4.3"
 
 [[bin]]
 name = "score-checker"

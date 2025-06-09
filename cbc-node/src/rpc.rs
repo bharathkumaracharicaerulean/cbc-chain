@@ -14,6 +14,11 @@ use cbc_runtime::{opaque::Block, AccountId, Balance, Nonce}; // Reuse CBC runtim
 use sp_api::ProvideRuntimeApi; // Trait that allows accessing runtime APIs from the client
 use sp_block_builder::BlockBuilder; // Trait for building blocks
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata}; // Block metadata for blockchain access
+use jsonrpc_core::{Error as RpcError, ErrorCode, Result};
+use jsonrpc_derive::rpc;
+use sp_runtime::traits::Block as BlockT;
+
+use cbc_runtime::api::DcfApi;
 
 /// Full client dependencies for setting up RPC extensions.
 ///
@@ -76,4 +81,100 @@ where
 	// module.merge(ChainSpec::new(chain_name, genesis_hash, properties).into_rpc())?;
 
 	Ok(module) // Return the composed module with all active RPCs
+}
+
+/// DCF RPC API
+#[rpc]
+pub trait DcfRpcApi<BlockHash, AccountId> {
+	/// Get validator score for an account
+	#[rpc(name = "dcf_getValidatorScore")]
+	fn get_validator_score(&self, account: AccountId, at: Option<BlockHash>) -> Result<(u64, u64, u64)>;
+
+	/// Get current epoch number
+	#[rpc(name = "dcf_getCurrentEpoch")]
+	fn get_current_epoch(&self, at: Option<BlockHash>) -> Result<u32>;
+
+	/// Get inference history for an account
+	#[rpc(name = "dcf_getInferenceHistory")]
+	fn get_inference_history(&self, account: AccountId, at: Option<BlockHash>) -> Result<Vec<(u64, u64, u32)>>;
+}
+
+/// DCF RPC API implementation
+pub struct DcfRpc<C, B> {
+	client: Arc<C>,
+	_phantom: std::marker::PhantomData<B>,
+}
+
+impl<C, B> DcfRpc<C, B> {
+	pub fn new(client: Arc<C>) -> Self {
+		Self {
+			client,
+			_phantom: Default::default(),
+		}
+	}
+}
+
+impl<C, Block> DcfRpcApi<<Block as BlockT>::Hash, <Block as BlockT>::AccountId> for DcfRpc<C, Block>
+where
+	Block: BlockT,
+	C: ProvideRuntimeApi<Block> + HeaderBackend<Block> + Send + Sync + 'static,
+	C::Api: DcfApi<<Block as BlockT>::AccountId, <Block as BlockT>::Number>,
+{
+	fn get_validator_score(
+		&self,
+		account: <Block as BlockT>::AccountId,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> Result<(u64, u64, u64)> {
+		let api = self.client.runtime_api();
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		api.get_validator_score(at, account)
+			.map_err(|e| RpcError {
+				code: ErrorCode::ServerError(1),
+				message: "Failed to get validator score".into(),
+				data: Some(format!("{:?}", e).into()),
+			})
+	}
+
+	fn get_current_epoch(&self, at: Option<<Block as BlockT>::Hash>) -> Result<u32> {
+		let api = self.client.runtime_api();
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		Ok(api.get_current_epoch(at))
+	}
+
+	fn get_inference_history(
+		&self,
+		account: <Block as BlockT>::AccountId,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> Result<Vec<(u64, u64, u32)>> {
+		let api = self.client.runtime_api();
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		Ok(api.get_inference_history(at, account))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use sp_core::sr25519::Public;
+	use sp_runtime::testing::{Block as RawBlock, ExtrinsicWrapper};
+
+	type Block = RawBlock<ExtrinsicWrapper<u32>>;
+
+	#[test]
+	fn test_get_validator_score() {
+		// Add test implementation
+	}
+
+	#[test]
+	fn test_get_current_epoch() {
+		// Add test implementation
+	}
+
+	#[test]
+	fn test_get_inference_history() {
+		// Add test implementation
+	}
 }
