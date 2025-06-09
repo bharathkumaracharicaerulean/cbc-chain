@@ -22,6 +22,7 @@ use sp_runtime::{
     traits::{BlakeTwo256, IdentifyAccount, Verify},
     MultiAddress, MultiSignature,
 };
+use sp_application_crypto::ed25519::AppPublic as DcfPublic;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion; // Used for native runtime versioning.
 use sp_version::RuntimeVersion; // Defines the runtime version.
@@ -59,7 +60,7 @@ pub mod opaque {
 // Define the session keys used for consensus mechanisms like POS and POI.
 impl_opaque_keys! {
     pub struct SessionKeys {
-        pub dcf: sp_consensus_aura::sr25519::AuthorityId, // DCF consensus key using sr25519
+        pub dcf: DcfPublic, // DCF consensus key using ed25519
     }
 }
 

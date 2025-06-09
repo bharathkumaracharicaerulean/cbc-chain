@@ -41,6 +41,7 @@ serde_json = { workspace = true, default-features = false, features = ["alloc"] 
 
 # Substrate primitives and runtime libraries
 sp-api.workspace = true                                                          # Substrate runtime API interface
+sp-application-crypto.workspace = true                                           # Application-specific crypto types
 sp-block-builder.workspace = true                                                # Block building traits
 sp-consensus-aura = { features = ["serde"], workspace = true }                   # Aura consensus engine
 sp-consensus-grandpa = { features = ["serde"], workspace = true }                # Grandpa consensus engine
@@ -88,6 +89,7 @@ std = [
 	"scale-info/std",
 	"serde_json/std",
 	"sp-api/std",
+	"sp-application-crypto/std",
 	"sp-block-builder/std",
 	"sp-consensus-aura/std",
 	"sp-consensus-grandpa/std",
