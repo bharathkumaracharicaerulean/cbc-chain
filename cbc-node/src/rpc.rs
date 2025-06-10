@@ -6,15 +6,14 @@
 
 #![warn(missing_docs)] // Emit a warning if any public item is missing Rust doc comments.
 
+use jsonrpc_core::{IoHandler, Metadata, Middleware, NoopMiddleware};
+use jsonrpc_http_server::{ServerBuilder, hyper, AccessControlAllowOrigin};
+use sc_rpc_api::DenyUnsafe;
+use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::sync::Arc;
-
-use jsonrpsee::RpcModule; // JSON-RPC server abstraction from jsonrpsee (used in Substrate v3+)
-use sc_transaction_pool_api::TransactionPool; // Trait for interacting with the transaction pool
-use cbc_runtime::{opaque::Block, AccountId, Balance, Nonce}; // Reuse CBC runtime types
-use sp_api::ProvideRuntimeApi; // Trait that allows accessing runtime APIs from the client
-use sp_block_builder::BlockBuilder; // Trait for building blocks
-use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata}; // Block metadata for blockchain access
-use sp_runtime::traits::Block as BlockT;
+use cbc_runtime::{opaque::Block, apis::RuntimeApi};
+use sc_transaction_pool_api::TransactionPool;
+use substrate_frame_rpc_system::{System, SystemApi};
 
 /// Full client dependencies for setting up RPC extensions.
 ///
@@ -23,9 +22,7 @@ use sp_runtime::traits::Block as BlockT;
 pub struct FullDeps<C, P> {
 	/// Shared reference to the full Substrate client.
 	pub client: Arc<C>,
-
-	/// Shared reference to the transaction pool.
-	pub pool: Arc<P>,
+	pub deny_unsafe: DenyUnsafe,
 }
 
 /// Creates a complete RPC module with all CBC-specific runtime extensions.
@@ -36,28 +33,39 @@ pub struct FullDeps<C, P> {
 /// - `P`: The transaction pool type (must implement basic transaction pool operations)
 pub fn create_full<C, P>(
 	deps: FullDeps<C, P>, // Struct containing dependencies (client + transaction pool)
-) -> Result<RpcModule<()>, Box<dyn std::error::Error + Send + Sync>> // Returns a JSON-RPC module or an error
-where
-	C: ProvideRuntimeApi<Block>, // Client must provide access to runtime APIs
-	C: HeaderBackend<Block> + HeaderMetadata<Block, Error = BlockChainError> + 'static, // Client must allow block header access and metadata lookup
-	C: Send + Sync + 'static, // Must be thread-safe and have a static lifetime
-	C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Nonce>, // Runtime must support the AccountNonce API
-	C::Api: pallet_transaction_payment_rpc::TransactionPaymentRuntimeApi<Block, Balance>, // Runtime must support TransactionPayment API
-	C::Api: BlockBuilder<Block>, // Runtime must support block building (for dry-run/validation)
-	P: TransactionPool + 'static, // Transaction pool must implement required trait and be thread-safe
+) -> jsonrpc_core::IoHandler<sc_rpc::Metadata> where
+	C: sp_api::ProvideRuntimeApi<Block> + sp_blockchain::HeaderBackend<Block> + Send + Sync + 'static,
+	C::Api: RuntimeApi<Block>,
+	P: TransactionPool + 'static,
 {
-	// Import traits required for JSON-RPC server creation.
-	use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer}; // API to query fee information
-	use substrate_frame_rpc_system::{System, SystemApiServer}; // System-level RPC (e.g. nonce, block hashes)
+	let mut io = IoHandler::default();
+	let FullDeps {
+		client,
+		deny_unsafe,
+	} = deps;
 
-	let mut module = RpcModule::new(()); // Create a new empty JSON-RPC module
-	let FullDeps { client, pool } = deps; // Destructure dependencies into local variables
+	io.extend_with(
+		SystemApi::to_delegate(System::new(client.clone(), deny_unsafe))
+	);
 
-	// Merge system-level runtime APIs into the module (account nonce, chain head, etc.)
-	module.merge(System::new(client.clone(), pool).into_rpc())?;
+	io
+}
 
-	// Merge transaction payment APIs (used to estimate fees for extrinsics)
-	module.merge(TransactionPayment::new(client).into_rpc())?;
+pub fn start_http(
+	addr: std::net::SocketAddr,
+	cors: Option<Vec<String>>,
+	io: IoHandler<Metadata>,
+) -> std::io::Result<ServerBuilder> {
+	let middleware = NoopMiddleware;
+	let cors = cors.map(|cors| {
+		let mut cors = cors.into_iter()
+			.map(|origin| AccessControlAllowOrigin::Value(origin.parse().unwrap()))
+			.collect::<Vec<_>>();
+		cors.push(AccessControlAllowOrigin::Null);
+		cors
+	});
 
-	Ok(module) // Return the composed module with all active RPCs
+	ServerBuilder::new(io, middleware, cors)
+		.threads(4)
+		.start_http(&addr)
 }

@@ -5,28 +5,27 @@
 //! and RPC interfaces. It's a critical part of the node runtime.
 
 use futures::FutureExt; // Needed for handling async functions that return futures.
-use sc_client_api::{Backend, BlockBackend}; // Traits for interacting with blockchain backends.
+use sc_client_api::Backend;
 use sc_service::{error::Error as ServiceError, Configuration, TaskManager}; // Core service types.
 use sc_telemetry::{Telemetry, TelemetryWorker}; // Telemetry for monitoring nodes.
 use sc_transaction_pool_api::OffchainTransactionPoolFactory; // For submitting transactions via offchain workers.
-use cbc_runtime::{self, apis::RuntimeApi, opaque::Block}; // Use CBC runtime types and APIs.
+use cbc_runtime::{opaque::Block, RuntimeApi};
 use std::{sync::Arc, time::Duration}; // Standard concurrency and time utilities.
+use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
 // Import DCF consensus components
 use cbc_consensus::{
 	DcfConsensus,
-	DcfConfig,
 	DcfBlockImport,
-	DcfBlockProducer,
 	ValidatorSet,
-	ValidatorSetConfig,
 	AuthorSelection,
-	AuthorSelectionConfig,
-	AuthorSelectionCriteria,
 	EpochManager,
 	ProposerFactory,
 	ImportQueue,
 	FinalityEngine,
+	AuthorSelectionMode,
+	ConsensusParams,
+	EpochConfig,
 };
 
 // === Type Aliases for Readability ===
@@ -104,9 +103,22 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 	);
 
 	// Create DCF import queue
-	let dcf_config = DcfConfig::default();
-	let dcf_consensus = DcfConsensus::new(client.clone(), dcf_config);
-	let import_queue = DcfBlockImport::new(dcf_consensus);
+	let dcf_config = DcfConfig {
+		author_selection: AuthorSelection::new(AuthorSelectionMode::RoundRobin),
+		params: ConsensusParams {
+			author_selection_mode: AuthorSelectionMode::RoundRobin,
+			finality_threshold: 2,
+			block_time: std::time::Duration::from_secs(6),
+			max_block_size: 1024 * 1024,
+			max_transactions_per_block: 1000,
+		},
+	};
+	let dcf_consensus = DcfConsensus::new(
+		client.clone(),
+		dcf_config.author_selection,
+		dcf_config.params,
+	);
+	let import_queue = DcfBlockImport::new(Arc::new(dcf_consensus));
 
 	// Return all the components as a tuple for building the full node.
 	Ok(sc_service::PartialComponents {
@@ -126,22 +138,32 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 /// offchain workers, and RPC server.
 ///
 /// `N` is the type of network backend (e.g., Libp2p or Litep2p).
-pub fn new_full<
-	N: sc_network::NetworkBackend<Block, <Block as sp_runtime::traits::Block>::Hash>,
->(
-	config: Configuration,
-) -> Result<TaskManager, ServiceError> {
-	// Start with building partial components
-	let sc_service::PartialComponents {
-		client,
-		backend,
-		mut task_manager,
-		import_queue,
-		keystore_container,
-		select_chain,
-		transaction_pool,
-		other: telemetry,
-	} = new_partial(&config)?;
+pub async fn new_full(config: Configuration) -> Result<NewFull<Block, FullClient, FullBackend>, ServiceError> {
+	let (client, backend, keystore_container, task_manager) =
+		sc_service::new_full_parts::<Block, RuntimeApi, _>(
+			&config,
+			None,
+		)?;
+	let client = Arc::new(client);
+
+	let dcf_config = DcfConfig {
+		author_selection: AuthorSelection::new(AuthorSelectionMode::RoundRobin),
+		params: ConsensusParams {
+			author_selection_mode: AuthorSelectionMode::RoundRobin,
+			finality_threshold: 2,
+			block_time: std::time::Duration::from_secs(6),
+			max_block_size: 1024 * 1024,
+			max_transactions_per_block: 1000,
+		},
+	};
+
+	let dcf_consensus = DcfConsensus::new(
+		client.clone(),
+		dcf_config.author_selection,
+		dcf_config.params,
+	);
+
+	let import_queue = DcfBlockImport::new(Arc::new(dcf_consensus));
 
 	// === Network Setup ===
 	let mut net_config = sc_network::config::FullNetworkConfiguration::<
@@ -192,45 +214,52 @@ pub fn new_full<
 	}
 
 	// === DCF Consensus Setup ===
-	let dcf_config = DcfConfig::default();
-	let dcf_consensus = DcfConsensus::new(client.clone(), dcf_config);
+	let dcf_config = DcfConfig {
+		author_selection: AuthorSelection::new(AuthorSelectionMode::RoundRobin),
+		params: ConsensusParams {
+			author_selection_mode: AuthorSelectionMode::RoundRobin,
+			finality_threshold: 2,
+			block_time: std::time::Duration::from_secs(6),
+			max_block_size: 1024 * 1024,
+			max_transactions_per_block: 1000,
+		},
+	};
+	let dcf_consensus = DcfConsensus::new(
+		client.clone(),
+		dcf_config.author_selection,
+		dcf_config.params,
+	);
 	
 	// Setup validator set
-	let validator_set_config = ValidatorSetConfig::default();
-	let validator_set = ValidatorSet::new(validator_set_config);
-	
-	// Setup author selection
-	let author_selection_config = AuthorSelectionConfig::default();
-	let author_selection = AuthorSelection::new(author_selection_config);
-	
-	// Setup epoch manager
-	let epoch_manager = EpochManager::new(
-		client.clone(),
-		validator_set.clone(),
-		author_selection.clone(),
+	let validator_set_config = ValidatorSetConfig {
+		max_validators: 100,
+		min_stake: 1000,
+	};
+	let validator_set = ValidatorSet::new(
+		validator_set_config.max_validators,
+		validator_set_config.min_stake,
 	);
-	
+
+	// Setup epoch manager
+	let epoch_config = EpochConfig {
+		epoch_length: 100,
+		min_validators: 4,
+		max_validators: 100,
+		min_stake: 1000,
+	};
+	let epoch_manager = EpochManager::new(epoch_config);
+
 	// Setup proposer factory
 	let proposer_factory = ProposerFactory::new(
-		client.clone(),
-		transaction_pool.clone(),
-		epoch_manager.clone(),
+		dcf_config.author_selection,
+		dcf_config.params.block_time,
 	);
-	
+
 	// Setup finality engine
-	let finality_engine = FinalityEngine::new(
-		client.clone(),
-		dcf_consensus.clone(),
-		epoch_manager.clone(),
-	);
-	
-	// Configure block import queue with DCF consensus
-	let import_queue = ImportQueue::new(
-		client.clone(),
-		dcf_consensus.clone(),
-		finality_engine.clone(),
-		epoch_manager.clone(),
-	);
+	let finality_engine = FinalityEngine::new(dcf_config.params.finality_threshold);
+
+	// Setup import queue
+	let import_queue = ImportQueue::new(validator_set);
 	
 	// Start consensus tasks
 	task_manager.spawn_essential_handle().spawn(

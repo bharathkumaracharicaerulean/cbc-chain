@@ -3,13 +3,13 @@
 // External Crates
 use alloc::vec::Vec;
 use frame_support::{
-	genesis_builder_helper::{build_state, get_preset},
+	genesis_builder_helper::{build_state},
 	weights::Weight,
 };
 use sp_api::impl_runtime_apis;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
-	traits::{Block as BlockT, NumberFor},
+	traits::{Block as BlockT},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult,
 };
@@ -150,8 +150,6 @@ impl_runtime_apis! {
 			// Use ValidatorSet from pallet_cbc_pos if available, otherwise fallback to an empty vec
 			// If not available, you may need to maintain such a list in storage
 			// For now, let's assume pallet_cbc_pos::Pallet::<Runtime>::validator_set() exists
-			#[allow(unused_mut)]
-			let mut validators = Vec::new();
 			#[cfg(feature = "std")] {
 				// For std builds, you might want to use all accounts, but that's not efficient
 			}
@@ -160,8 +158,7 @@ impl_runtime_apis! {
 				// If not, return empty
 			}
 			// Try to use the DCF pallet's ValidatorSet if available
-			validators = pallet_cbc_dcf::Pallet::<Runtime>::validator_set().to_vec();
-			validators.to_vec()
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_set().to_vec()
 		}
 
 		fn get_slashing_count(validator: AccountId) -> u32 {

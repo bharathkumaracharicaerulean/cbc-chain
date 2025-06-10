@@ -1,15 +1,18 @@
 use sc_service::ChainType; // Import the ChainType enum to specify the type of blockchain (e.g., Development, Local, etc.)
 use cbc_runtime::WASM_BINARY; // Import the WASM binary for the runtime, which is required to build the chain specification.
 use sp_core::sr25519;
-use cbc_consensus::types::{
-    DcfConfig,
-    ValidatorSetConfig,
-    AuthorSelectionConfig,
-    AuthorSelectionCriteria,
-    ProposerConfig,
-    FinalityConfig,
+use cbc_consensus::{
+    ConsensusParams,
+    EpochConfig,
+    AuthorSelectionMode,
+    ValidatorSet,
+    AuthorSelection,
 };
-// use hex_literal::hex; // TODO: Uncomment when hex_literal is available
+use hex_literal::hex;
+use sp_runtime::traits::{IdentifyAccount, Verify};
+use sc_chain_spec::ChainSpecExtension;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Specialized `ChainSpec`. 
 /// This is a type alias for the CBC `GenericChainSpec`, which is used to define the configuration of a blockchain.
@@ -38,37 +41,25 @@ pub fn development_chain_spec() -> Result<ChainSpec, String> {
     let validator1 = sr25519::Public::from_raw(hex!("d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"));
     let validator2 = sr25519::Public::from_raw(hex!("8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48"));
 
-    // Configure DCF consensus parameters
-    let dcf_config = DcfConfig {
-        finality_blocks: 32,
-        min_stake: 1000,
-        min_inference_confidence: 80,
+    // Example consensus parameters
+    let consensus_params = ConsensusParams {
+        author_selection_mode: AuthorSelectionMode::Hybrid,
+        finality_threshold: 10,
+        block_time: 6000,
+        max_block_size: 1024 * 1024,
+        max_transactions_per_block: 1000,
     };
-
-    let validator_set_config = ValidatorSetConfig {
+    let epoch_config = EpochConfig {
+        epoch_length: 1000,
+        min_validators: 2,
         max_validators: 100,
         min_stake: 1000,
-        cooldown_period: 100,
-        blocks_per_epoch: 1000,
     };
 
-    let author_selection_config = AuthorSelectionConfig {
-        criteria: AuthorSelectionCriteria::Hybrid,
-        min_stake: 1000,
-        cooldown_period: 10,
-    };
-
-    let proposer_config = ProposerConfig {
-        max_block_size: 1024 * 1024, // 1MB
-        max_block_weight: 1_000_000,
-        max_transactions: 1000,
-        block_time: 6000, // 6 seconds
-    };
-
-    let finality_config = FinalityConfig {
-        finality_blocks: 10,
-        max_finality_time: 60000, // 1 minute
-    };
+    let initial_validators = vec![
+        (validator1, 1000, 90),
+        (validator2, 1000, 85),
+    ];
 
     Ok(
         ChainSpec::builder(wasm_binary, None)
@@ -77,30 +68,9 @@ pub fn development_chain_spec() -> Result<ChainSpec, String> {
             .with_chain_type(ChainType::Development)
             .with_genesis_config_preset_name(sp_genesis_builder::DEV_RUNTIME_PRESET)
             .with_properties(|properties| {
-                // Add consensus configuration
-                properties.insert("dcf".to_string(), serde_json::to_value(dcf_config).unwrap());
-                properties.insert("validator_set".to_string(), serde_json::to_value(validator_set_config).unwrap());
-                properties.insert("author_selection".to_string(), serde_json::to_value(author_selection_config).unwrap());
-                properties.insert("proposer".to_string(), serde_json::to_value(proposer_config).unwrap());
-                properties.insert("finality".to_string(), serde_json::to_value(finality_config).unwrap());
-                
-                // Add initial validator set
-                let initial_validators = vec![
-                    (validator1, 1000, 90), // (public_key, stake, inference_score)
-                    (validator2, 1000, 85),
-                ];
+                properties.insert("consensus_params".to_string(), serde_json::to_value(consensus_params).unwrap());
+                properties.insert("epoch_config".to_string(), serde_json::to_value(epoch_config).unwrap());
                 properties.insert("initial_validators".to_string(), serde_json::to_value(initial_validators).unwrap());
-                
-                // Add consensus parameters
-                let consensus_params = serde_json::json!({
-                    "block_time": 6000,
-                    "epoch_length": 1000,
-                    "finality_threshold": 0.67,
-                    "max_validators_per_epoch": 100,
-                    "min_stake_requirement": 1000,
-                    "inference_threshold": 80
-                });
-                properties.insert("consensus_params".to_string(), consensus_params);
             })
             .build()
     )
@@ -121,37 +91,25 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
     let validator2 = sr25519::Public::from_raw(hex!("8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48"));
     let validator3 = sr25519::Public::from_raw(hex!("90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22"));
 
-    // Configure DCF consensus parameters for local testnet
-    let dcf_config = DcfConfig {
-        finality_blocks: 16, // Faster finality for local testing
-        min_stake: 500, // Lower stake requirement for testing
-        min_inference_confidence: 70, // Lower confidence requirement for testing
+    let consensus_params = ConsensusParams {
+        author_selection_mode: AuthorSelectionMode::Hybrid,
+        finality_threshold: 5,
+        block_time: 3000,
+        max_block_size: 512 * 1024,
+        max_transactions_per_block: 500,
     };
-
-    let validator_set_config = ValidatorSetConfig {
-        max_validators: 50, // Smaller validator set for local testing
+    let epoch_config = EpochConfig {
+        epoch_length: 500,
+        min_validators: 2,
+        max_validators: 50,
         min_stake: 500,
-        cooldown_period: 50,
-        blocks_per_epoch: 500,
     };
 
-    let author_selection_config = AuthorSelectionConfig {
-        criteria: AuthorSelectionCriteria::Hybrid,
-        min_stake: 500,
-        cooldown_period: 5,
-    };
-
-    let proposer_config = ProposerConfig {
-        max_block_size: 512 * 1024, // 512KB for local testing
-        max_block_weight: 500_000,
-        max_transactions: 500,
-        block_time: 3000, // 3 seconds for faster block production
-    };
-
-    let finality_config = FinalityConfig {
-        finality_blocks: 5,
-        max_finality_time: 30000, // 30 seconds for faster finality
-    };
+    let initial_validators = vec![
+        (validator1, 1000, 90),
+        (validator2, 1000, 85),
+        (validator3, 1000, 80),
+    ];
 
     Ok(
         ChainSpec::builder(wasm_binary, None)
@@ -160,11 +118,9 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
             .with_chain_type(ChainType::Local)
             .with_genesis_config_preset_name(sp_genesis_builder::LOCAL_TESTNET_RUNTIME_PRESET)
             .with_properties(|properties| {
-                properties.insert("dcf".to_string(), serde_json::to_value(dcf_config).unwrap());
-                properties.insert("validator_set".to_string(), serde_json::to_value(validator_set_config).unwrap());
-                properties.insert("author_selection".to_string(), serde_json::to_value(author_selection_config).unwrap());
-                properties.insert("proposer".to_string(), serde_json::to_value(proposer_config).unwrap());
-                properties.insert("finality".to_string(), serde_json::to_value(finality_config).unwrap());
+                properties.insert("consensus_params".to_string(), serde_json::to_value(consensus_params).unwrap());
+                properties.insert("epoch_config".to_string(), serde_json::to_value(epoch_config).unwrap());
+                properties.insert("initial_validators".to_string(), serde_json::to_value(initial_validators).unwrap());
             })
             .build()
     )
