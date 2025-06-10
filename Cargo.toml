@@ -46,6 +46,7 @@ sc-telemetry = { version = "28.1.0", default-features = false }
 sc-transaction-pool = { version = "39.0.0", default-features = false }
 sc-transaction-pool-api = { version = "39.0.0", default-features = false }
 sp-api = { version = "36.0.1", default-features = false }
+sp-application-crypto = { version = "40.1.0", default-features = false }
 sp-block-builder = { version = "36.0.0", default-features = false }
 sp-blockchain = { version = "39.0.0", default-features = false }
 sp-consensus = { version = "0.42.0", default-features = false }

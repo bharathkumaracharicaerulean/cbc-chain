@@ -3,7 +3,7 @@
 [package]
 # Basic package metadata
 name = "cbc-node"                     # Name of the package
-description = "cbc-node."             # Short description of the package
+description = "CBC Chain Node"             # Short description of the package
 version = "0.1.0"                     # Version of the package
 license = "Unlicense"                 # License under which the package is distributed
 authors.workspace = true              # Authors are inherited from the workspace
@@ -23,6 +23,7 @@ targets = ["x86_64-unknown-linux-gnu"] # Target platforms for which documentatio
 # === CLI and Command-Line Parsing ===
 clap = { features = ["derive"], workspace = true } # Command-line argument parsing library
 
+
 # === Benchmarking ===
 frame-benchmarking-cli.default-features = true    # CLI tools for runtime benchmarking
 frame-benchmarking-cli.workspace = true          # Use workspace version
@@ -40,7 +41,7 @@ futures = { features = ["thread-pool"], workspace = true } # Asynchronous progra
 
 # === JSON-RPC ===
 jsonrpsee = { features = ["server"], workspace = true }    # JSON-RPC server implementation
-
+serde_json = { workspace = true }
 # === Pallet Transaction Payment ===
 pallet-transaction-payment-rpc.default-features = true # RPC for transaction payment pallet
 pallet-transaction-payment-rpc.workspace = true       # Use workspace version
@@ -77,6 +78,7 @@ sc-transaction-pool.workspace = true        # Use workspace version
 
 # === Runtime ===
 cbc-runtime.workspace = true                # CBC runtime
+cbc-consensus = { path = "src/cbc-consensus" } # CBC consensus implementation
 
 # === Substrate Primitives ===
 sp-api.default-features = true              # Substrate API primitives

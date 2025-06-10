@@ -29,60 +29,48 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 
-// Core consensus engine
+/// Core consensus engine implementation
 pub mod dcf;
 
-// Validator and author selection
+/// Validator and author selection
 pub mod author_selection;
 pub mod validator_set;
 
-// Block production and import
+/// Block production and import
 pub mod proposer_factory;
 pub mod import_queue;
 
-// Epoch management
+/// Epoch management
 pub mod epoch_manager;
 
-// Core types and error handling
+/// Core types and error handling
 pub mod types;
 pub mod error;
 
-// Monitoring and finality
+/// Monitoring and finality
 pub mod metrics;
 pub mod finality;
 
 // Re-export commonly used types from dcf
 pub use dcf::{
     DcfBlockImport,
-    DcfBlockProducer,
-    DcfConfig,
     DcfConsensus,
-    DcfConsensusError,
 };
 
 // Re-export commonly used types from types module
 pub use types::{
     ValidatorInfo,
     ValidatorMetrics,
-    EpochInfo,
     EpochConfig,
-    AuthorSelectionCriteria,
-    BlockStats,
-    FinalityConfig,
-    ConsensusMetrics,
-    Block,
+    AuthorSelectionMode,
+    ConsensusParams,
+    BlockT,
 };
 
 // Re-export commonly used error types
 pub use error::{
     ConsensusError,
-    ConsensusResult,
-    BlockValidationError,
-    EpochTransitionError,
-    AuthorSelectionError,
-    BlockImportError,
-    FinalityError,
-    ValidatorSetError,
+    Result,
 };
 
 // Re-export commonly used types from other modules
@@ -92,6 +80,6 @@ pub use proposer_factory::ProposerFactory;
 pub use import_queue::ImportQueue;
 pub use epoch_manager::EpochManager;
 pub use finality::FinalityEngine;
-pub use metrics::ConsensusMetricsCollector;
+pub use metrics::ConsensusMetrics;
 
 

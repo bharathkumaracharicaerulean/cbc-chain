@@ -16,6 +16,8 @@ sp-core.workspace = true
 sp-runtime.workspace = true
 sp-api.workspace = true
 sp-blockchain.workspace = true
+sp-consensus = { workspace = true }
+sp-inherents = { workspace = true }
 sc-consensus = { workspace = true, default-features = true }
 serde = { workspace = true, features = ["derive", "std"] }
 futures = "0.3"

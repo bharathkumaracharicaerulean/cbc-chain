@@ -1,101 +1,82 @@
-#![allow(unused_imports)]
-//! Block proposer factory module
-//!
-//! This module provides the block proposer factory that creates and submits new blocks
-//! to the chain.
+//! Block proposer factory implementation
+//! 
+//! This module handles the creation of block proposers and block headers.
 
-use crate::types::{ValidatorInfo, BlockStats, ProposerConfig};
-use crate::error::{ConsensusError, BlockValidationError};
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
-use sp_core::ed25519::Public;
-use std::sync::Arc;
+use crate::error::{ConsensusError, Result};
+use crate::types::ValidatorInfo;
+use crate::author_selection::AuthorSelection;
+use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait};
+use sp_runtime::traits::Zero;
 use std::time::{Duration, Instant};
+use std::marker::PhantomData;
 
-/// Block proposer factory
-pub struct ProposerFactory<Block: BlockT> {
-    /// Proposer configuration
-    config: ProposerConfig,
-    /// Block statistics
-    stats: BlockStats,
-    /// Last block time
-    last_block_time: Instant,
-    /// Phantom data for Block
-    _marker: std::marker::PhantomData<Block>,
+/// Factory for creating block proposers and headers
+pub struct ProposerFactory<B: BlockTrait> {
+    author_selection: AuthorSelection,
+    min_block_time: Duration,
+    last_block_time: Option<Instant>,
+    _phantom: PhantomData<B>,
 }
 
-impl<Block: BlockT> ProposerFactory<Block> {
-    /// Create a new proposer factory
-    pub fn new(config: ProposerConfig) -> Self {
+impl<B: BlockTrait> ProposerFactory<B> {
+    /// Create a new proposer factory with the specified parameters
+    pub fn new(author_selection: AuthorSelection, min_block_time: Duration) -> Self {
         Self {
-            config,
-            stats: BlockStats::default(),
-            last_block_time: Instant::now(),
-            _marker: std::marker::PhantomData,
+            author_selection,
+            min_block_time,
+            last_block_time: None,
+            _phantom: PhantomData,
         }
     }
 
-    /// Create a new block
-    pub fn create_block(
-        &mut self,
-        parent_hash: <Block as BlockT>::Hash,
-        number: u32,
-        author: Public,
-    ) -> Result<Block, ConsensusError> {
-        // Validate author
-        if author == Public::default() {
-            return Err(ConsensusError::BlockValidation(BlockValidationError::InvalidAuthor));
+    /// Create a new block with the specified parent hash and slot
+    pub fn create_block(&mut self, parent_hash: B::Hash, slot: u64) -> Result<(B::Header, ValidatorInfo)> {
+        // Check if enough time has passed since last block
+        if let Some(last_time) = self.last_block_time {
+            if last_time.elapsed() < self.min_block_time {
+                return Err(ConsensusError::Proposer(
+                    "Not enough time since last block".into(),
+                ));
+            }
         }
 
+        // Select block author
+        let author = self.author_selection.select_author(slot)?;
+
         // Create block header
-        let header = Block::Header::new(
-            number.into(),
+        let number = <<B as BlockTrait>::Header as HeaderTrait>::Number::zero();
+        let header = B::Header::new(
+            number,
             parent_hash,
+            Default::default(), // state root will be set by runtime
+            Default::default(), // extrinsics root will be set by runtime
+            Default::default(), // digest will be set by runtime
+        );
+
+        self.last_block_time = Some(Instant::now());
+        Ok((header, author.clone()))
+    }
+
+    /// Update the author selection with new validators
+    pub fn update_author_selection(&mut self, validators: Vec<ValidatorInfo>) {
+        self.author_selection.update_validators(validators);
+    }
+
+    /// Set the minimum time between blocks
+    pub fn set_min_block_time(&mut self, min_block_time: Duration) {
+        self.min_block_time = min_block_time;
+    }
+
+    /// Create a new block proposer
+    pub fn create_proposer(&self) -> Result<B::Header> {
+        let number = <<B as BlockTrait>::Header as HeaderTrait>::Number::zero();
+        let header = B::Header::new(
+            number,
+            Default::default(),
             Default::default(),
             Default::default(),
             Default::default(),
         );
-
-        // Create block
-        let block = Block::new(header, Vec::new());
-
-        // Update statistics
-        self.update_stats(0);
-
-        Ok(block)
-    }
-
-    /// Update block statistics
-    pub fn update_stats(&mut self, transaction_count: u32) {
-        let now = Instant::now();
-        let block_time = now.duration_since(self.last_block_time).as_secs_f64();
-        self.stats.avg_block_time = (self.stats.avg_block_time * self.stats.total_blocks as f64
-            + block_time)
-            / (self.stats.total_blocks + 1) as f64;
-        self.stats.total_blocks += 1;
-        self.stats.total_transactions += transaction_count as u64;
-        self.stats.avg_transactions_per_block = self.stats.total_transactions as f64
-            / self.stats.total_blocks as f64;
-        self.last_block_time = now;
-    }
-
-    /// Get block statistics
-    pub fn get_stats(&self) -> &BlockStats {
-        &self.stats
-    }
-
-    /// Get proposer configuration
-    pub fn get_config(&self) -> &ProposerConfig {
-        &self.config
-    }
-
-    /// Update proposer configuration
-    pub fn update_config(&mut self, config: ProposerConfig) {
-        self.config = config;
+        Ok(header)
     }
 }
-
-impl<Block: BlockT> Default for ProposerFactory<Block> {
-    fn default() -> Self {
-        Self::new(ProposerConfig::default())
-    }
-} 

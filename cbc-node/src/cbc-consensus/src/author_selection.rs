@@ -1,132 +1,93 @@
-#![allow(unused_imports)]
-//! Author selection module
-//!
-//! This module implements the validator selection logic for the CBC consensus,
-//! combining Proof of Stake (PoS) and Proof of Inference (PoI) scores to select
-//! the next block author.
+//! Author selection implementation for the consensus engine
+//! 
+//! This module handles the selection of block authors based on different strategies.
 
-use crate::types::{ValidatorInfo, AuthorSelectionConfig, AuthorSelectionCriteria};
-use crate::error::{ConsensusError, AuthorSelectionError};
-use sp_core::ed25519::Public;
-use std::collections::HashMap;
+use crate::types::{AuthorSelectionMode, ValidatorInfo};
+use crate::error::{ConsensusError, Result};
 
-/// Author selection service
+/// Author selection engine that implements different selection strategies
 pub struct AuthorSelection {
-    /// Author selection configuration
-    config: AuthorSelectionConfig,
-    /// Validators
+    mode: AuthorSelectionMode,
+    current_index: usize,
     validators: Vec<ValidatorInfo>,
-    /// Validators in cooldown
-    cooldown: HashMap<Public, u32>,
 }
 
 impl AuthorSelection {
-    /// Create a new author selection service
-    pub fn new(config: AuthorSelectionConfig) -> Self {
+    /// Create a new author selection engine with the specified mode
+    pub fn new(mode: AuthorSelectionMode) -> Self {
         Self {
-            config,
+            mode,
+            current_index: 0,
             validators: Vec::new(),
-            cooldown: HashMap::new(),
         }
     }
 
-    /// Set validators
-    pub fn set_validators(&mut self, validators: Vec<ValidatorInfo>) {
+    /// Update the list of validators
+    pub fn update_validators(&mut self, validators: Vec<ValidatorInfo>) {
         self.validators = validators;
+        self.current_index = 0;
     }
 
-    /// Select next block author
-    pub fn select_author(&self) -> Result<&ValidatorInfo, ConsensusError> {
-        // Filter eligible validators
-        let eligible: Vec<_> = self.validators
+    /// Select the next block author based on the current mode
+    pub fn select_author(&mut self, slot: u64) -> Result<&ValidatorInfo> {
+        if self.validators.is_empty() {
+            return Err(ConsensusError::AuthorSelection("No validators available".into()));
+        }
+
+        match self.mode {
+            AuthorSelectionMode::RoundRobin => self.select_round_robin_author(slot),
+            AuthorSelectionMode::PoS => self.select_pos_author(),
+            AuthorSelectionMode::Hybrid => self.select_hybrid_author(),
+            AuthorSelectionMode::StakeWeighted => self.select_stake_weighted_author(),
+            AuthorSelectionMode::PerformanceBased => self.select_performance_based_author(),
+        }
+    }
+
+    fn select_pos_author(&self) -> Result<&ValidatorInfo> {
+        self.validators
             .iter()
-            .filter(|v| self.is_eligible(v))
-            .collect();
-
-        if eligible.is_empty() {
-            return Err(ConsensusError::AuthorSelection(AuthorSelectionError::NoValidators));
-        }
-
-        // Select author based on criteria
-        match self.config.criteria {
-            AuthorSelectionCriteria::ProofOfStake => {
-                eligible.iter()
-                    .max_by_key(|v| v.stake)
-                    .map(|v| *v)
-                    .ok_or_else(|| ConsensusError::AuthorSelection(AuthorSelectionError::NoValidators))
-            }
-            AuthorSelectionCriteria::ProofOfInference => {
-                eligible.iter()
-                    .max_by_key(|v| v.metrics.blocks_produced)
-                    .map(|v| *v)
-                    .ok_or_else(|| ConsensusError::AuthorSelection(AuthorSelectionError::NoValidators))
-            }
-            AuthorSelectionCriteria::Hybrid => {
-                eligible.iter()
-                    .max_by_key(|v| {
-                        let stake_score = v.stake as u128;
-                        let performance_score = v.metrics.blocks_produced as u128;
-                        stake_score + performance_score
-                    })
-                    .map(|v| *v)
-                    .ok_or_else(|| ConsensusError::AuthorSelection(AuthorSelectionError::NoValidators))
-            }
-        }
+            .max_by_key(|v| v.stake)
+            .ok_or_else(|| ConsensusError::AuthorSelection("No validators available".into()))
     }
 
-    /// Check if validator is eligible
-    fn is_eligible(&self, validator: &ValidatorInfo) -> bool {
-        // Check if validator is in cooldown
-        if self.cooldown.contains_key(&validator.public_key) {
-            return false;
-        }
+    fn select_hybrid_author(&self) -> Result<&ValidatorInfo> {
+        const STAKE_WEIGHT: f64 = 0.7;
+        const PERFORMANCE_WEIGHT: f64 = 0.3;
 
-        // Check eligibility based on criteria
-        match self.config.criteria {
-            AuthorSelectionCriteria::ProofOfStake => {
-                validator.stake >= self.config.min_stake
-            }
-            AuthorSelectionCriteria::ProofOfInference => {
-                validator.metrics.blocks_produced > 0
-            }
-            AuthorSelectionCriteria::Hybrid => {
-                validator.stake >= self.config.min_stake &&
-                validator.metrics.blocks_produced > 0
-            }
-        }
+        self.validators
+            .iter()
+            .max_by(|a, b| {
+                let score_a = (a.stake as f64 * STAKE_WEIGHT) + (a.performance_score as f64 * PERFORMANCE_WEIGHT);
+                let score_b = (b.stake as f64 * STAKE_WEIGHT) + (b.performance_score as f64 * PERFORMANCE_WEIGHT);
+                score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .ok_or_else(|| ConsensusError::AuthorSelection("No validators available".into()))
     }
 
-    /// Add validator to cooldown
-    pub fn add_to_cooldown(&mut self, public_key: Public) {
-        self.cooldown.insert(public_key, self.config.cooldown_period);
+    fn select_round_robin_author(&mut self, slot: u64) -> Result<&ValidatorInfo> {
+        let index = (slot as usize) % self.validators.len();
+        self.validators
+            .get(index)
+            .ok_or_else(|| ConsensusError::AuthorSelection("No validators available".into()))
     }
 
-    /// Update cooldown periods
-    pub fn update_cooldown(&mut self) {
-        self.cooldown.retain(|_, count| {
-            let _ = *count > 0;
-            *count -= 1;
-            *count > 0
-        });
+    fn select_stake_weighted_author(&self) -> Result<&ValidatorInfo> {
+        self.validators
+            .iter()
+            .max_by_key(|v| v.stake)
+            .ok_or_else(|| ConsensusError::AuthorSelection("No validators available".into()))
     }
 
-    /// Get author selection configuration
-    pub fn get_config(&self) -> &AuthorSelectionConfig {
-        &self.config
+    fn select_performance_based_author(&self) -> Result<&ValidatorInfo> {
+        self.validators
+            .iter()
+            .max_by_key(|v| v.performance_score)
+            .ok_or_else(|| ConsensusError::AuthorSelection("No validators available".into()))
     }
 
-    /// Update author selection configuration
-    pub fn update_config(&mut self, config: AuthorSelectionConfig) {
-        self.config = config;
+    /// Set the author selection mode
+    pub fn set_mode(&mut self, mode: AuthorSelectionMode) {
+        self.mode = mode;
+        self.current_index = 0;
     }
 }
-
-impl Default for AuthorSelection {
-    fn default() -> Self {
-        Self::new(AuthorSelectionConfig {
-            criteria: AuthorSelectionCriteria::Hybrid,
-            min_stake: 1000,
-            cooldown_period: 10,
-        })
-    }
-} 
