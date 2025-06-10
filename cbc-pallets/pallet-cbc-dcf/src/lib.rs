@@ -377,9 +377,10 @@ pub mod pallet {
         }
 
         /// Get the expected block author for the current block
+        #[allow(unused_variables)]
         pub fn get_expected_author(block_number: BlockNumberFor<T>) -> Option<T::AccountId> {
             let epoch_config = Self::epoch_config();
-            let current_epoch = Self::current_epoch();
+            let _current_epoch = Self::current_epoch();
             
             // Calculate block position within epoch
             let blocks_per_epoch: BlockNumberFor<T> = epoch_config.blocks_per_epoch.into();
@@ -545,6 +546,7 @@ pub mod pallet {
         }
         
         /// Check if a validator can re-enter the active set
+        #[allow(dead_code)]
         fn check_validator_reentry(validator: &T::AccountId) -> DispatchResult {
             let score = ValidatorFinalScores::<T>::get(validator);
             
@@ -772,64 +774,5 @@ pub enum InferenceErrorSeverity {
     High,   // Major error, significant impact
     Medium, // Moderate error
     Low,    // Minor error
-}
-
-#[cfg(feature = "runtime")]
-impl_runtime_apis! {
-    impl DcfApi<Block, AccountId> for Runtime {
-        fn get_validator_scores() -> Vec<(AccountId, u64)> {
-            let validators = Pallet::<Runtime>::validator_set();
-            validators
-                .iter()
-                .map(|v| {
-                    let score = Pallet::<Runtime>::validator_final_scores(v);
-                    (v.clone(), score.final_score)
-                })
-                .collect()
-        }
-
-        fn get_current_epoch() -> u32 {
-            Pallet::<Runtime>::current_epoch()
-        }
-
-        fn get_validator_stake_score(validator: AccountId) -> u64 {
-            Pallet::<Runtime>::validator_stake_scores(&validator)
-        }
-
-        fn get_validator_inference_score(validator: AccountId) -> u64 {
-            Pallet::<Runtime>::validator_inference_scores(&validator)
-        }
-
-        fn get_consensus_weights() -> (u64, u64) {
-            (
-                Pallet::<Runtime>::pos_weight(),
-                Pallet::<Runtime>::poi_weight()
-            )
-        }
-
-        fn is_validator_active(validator: AccountId) -> bool {
-            Pallet::<Runtime>::is_active_validator(&validator)
-        }
-
-        fn get_expected_author(block_number: u32) -> Option<AccountId> {
-            Pallet::<Runtime>::get_expected_author(block_number)
-        }
-
-        fn get_validator_score_history(validator: AccountId) -> Vec<u64> {
-            Pallet::<Runtime>::validator_score_history(&validator).to_vec()
-        }
-
-        fn get_validator_participation(validator: AccountId) -> (u32, u32) {
-            Pallet::<Runtime>::validator_participation(&validator)
-        }
-
-        fn get_active_validators() -> Vec<AccountId> {
-            Pallet::<Runtime>::active_validators().to_vec()
-        }
-
-        fn get_validator_last_active(validator: AccountId) -> u32 {
-            Pallet::<Runtime>::validator_last_active(&validator)
-        }
-    }
 }
 

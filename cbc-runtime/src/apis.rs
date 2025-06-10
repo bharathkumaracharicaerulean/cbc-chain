@@ -218,6 +218,27 @@ impl_runtime_apis! {
 		fn is_validator_active(validator: AccountId) -> bool {
 			pallet_cbc_dcf::Pallet::<Runtime>::is_active_validator(&validator)
 		}
+
+		fn get_expected_author(block_number: u32) -> Option<AccountId> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_expected_author(block_number.into())
+		}
+
+		fn get_validator_score_history(validator: AccountId) -> Vec<u64> {
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_score_history(&validator)
+				.into()
+		}
+
+		fn get_validator_participation(validator: AccountId) -> (u32, u32) {
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_participation(&validator)
+		}
+
+		fn get_active_validators() -> Vec<AccountId> {
+			pallet_cbc_dcf::Pallet::<Runtime>::active_validators().to_vec()
+		}
+
+		fn get_validator_last_active(validator: AccountId) -> u32 {
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_last_active(&validator)
+		}
 	}
 
 	// Runtime Benchmarking API
