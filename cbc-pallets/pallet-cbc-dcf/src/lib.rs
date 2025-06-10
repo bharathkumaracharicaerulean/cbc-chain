@@ -9,6 +9,7 @@ use frame_support::{
 use frame_system::pallet_prelude::*;
 use sp_runtime::{
     traits::{Saturating, SaturatedConversion, AtLeast32BitUnsigned},
+    DigestItem,
 };
 use sp_std::prelude::*;
 use pallet_cbc_pos as pos;
@@ -27,6 +28,11 @@ sp_api::decl_runtime_apis! {
         fn get_validator_inference_score(validator: AccountId) -> u64;
         fn get_consensus_weights() -> (u64, u64);
         fn is_validator_active(validator: AccountId) -> bool;
+        fn get_expected_author(block_number: u32) -> Option<AccountId>;
+        fn get_validator_score_history(validator: AccountId) -> Vec<u64>;
+        fn get_validator_participation(validator: AccountId) -> (u32, u32);
+        fn get_active_validators() -> Vec<AccountId>;
+        fn get_validator_last_active(validator: AccountId) -> u32;
     }
 }
 
@@ -48,6 +54,10 @@ pub mod pallet {
         pub stake_weight: u64,
         pub inference_weight: u64,
         pub final_score: u64,
+        pub last_epoch_active: u32,
+        pub participation_count: u32,
+        pub missed_blocks: u32,
+        pub authored_blocks: u32,
     }
 
     /// Configuration for epoch transitions
@@ -166,6 +176,36 @@ pub mod pallet {
     #[pallet::getter(fn active_validators)]
     pub type ActiveValidators<T: Config> = StorageValue<_, BoundedVec<T::AccountId, <T as Config>::MaxValidators>, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn validator_score_history)]
+    pub type ValidatorScoreHistory<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<u64, ConstU32<10>>, // Store last 10 epochs of scores
+        ValueQuery,
+    >;
+
+    #[pallet::storage]
+    #[pallet::getter(fn validator_participation)]
+    pub type ValidatorParticipation<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        (u32, u32), // (authored_blocks, missed_blocks)
+        ValueQuery,
+    >;
+
+    #[pallet::storage]
+    #[pallet::getter(fn validator_last_active)]
+    pub type ValidatorLastActive<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        u32,
+        ValueQuery,
+    >;
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -185,6 +225,29 @@ pub mod pallet {
         EpochStarted {
             epoch: u32,
             validators: Vec<T::AccountId>,
+        },
+        /// Validator score decayed
+        ValidatorScoreDecayed {
+            validator: T::AccountId,
+            old_score: u64,
+            new_score: u64,
+        },
+        /// Validator score boosted
+        ValidatorScoreBoosted {
+            validator: T::AccountId,
+            old_score: u64,
+            new_score: u64,
+            reason: ScoreBoostReason,
+        },
+        /// Validator ejected from active set
+        ValidatorEjected {
+            validator: T::AccountId,
+            reason: EjectionReason,
+        },
+        /// Validator re-entered active set
+        ValidatorReEntered {
+            validator: T::AccountId,
+            score: u64,
         },
     }
 
@@ -287,6 +350,10 @@ pub mod pallet {
                     stake_weight: stake_score,
                     inference_weight: inference_score,
                     final_score,
+                    last_epoch_active: 0,
+                    participation_count: 0,
+                    missed_blocks: 0,
+                    authored_blocks: 0,
                 },
             );
             
@@ -309,57 +376,314 @@ pub mod pallet {
             blocks_in_current_epoch >= blocks_per_epoch
         }
 
-        /// Transition to a new epoch
-        fn transition_epoch() -> Weight {
-            let validators = Self::active_validators();
-            if validators.len() < <T as Config>::MinActiveValidators::get() as usize {
-                return <T as Config>::WeightInfo::on_initialize(1);
-            }
-
-            let weight = Weight::zero();
+        /// Get the expected block author for the current block
+        pub fn get_expected_author(block_number: BlockNumberFor<T>) -> Option<T::AccountId> {
             let epoch_config = Self::epoch_config();
             let current_epoch = Self::current_epoch();
-            let new_epoch = current_epoch.saturating_add(1);
-
-            // Select new validators based on scores
-            let mut new_validators = BoundedVec::new();
-            for validator in validators.iter() {
-                if new_validators.len() >= epoch_config.max_validators as usize {
-                    break;
-                }
-                new_validators.try_push(validator.clone()).expect("MaxValidators bound ensures this won't fail");
+            
+            // Calculate block position within epoch
+            let blocks_per_epoch: BlockNumberFor<T> = epoch_config.blocks_per_epoch.into();
+            let block_in_epoch = block_number % blocks_per_epoch;
+            
+            // Get active validators for current epoch
+            let active_validators = Self::active_validators();
+            if active_validators.is_empty() {
+                return None;
             }
-
-            // Update storage
+            
+            // Select validator based on block position
+            let validator_count: BlockNumberFor<T> = (active_validators.len() as u32).into();
+            let validator_index = (block_in_epoch % validator_count).saturated_into::<usize>();
+            Some(active_validators[validator_index].clone())
+        }
+        
+        /// Handle epoch transition
+        fn handle_epoch_transition() -> Weight {
+            let _current_epoch = Self::current_epoch();
+            let new_epoch = _current_epoch.saturating_add(1);
+            
+            // Apply score decay to all validators
+            let validators = Self::validator_set();
+            for validator in validators.iter() {
+                let _ = Self::apply_score_decay(validator, _current_epoch);
+            }
+            
+            // Select new active validators based on scores
+            let mut validator_scores: Vec<_> = validators
+                .iter()
+                .map(|v| (v.clone(), ValidatorFinalScores::<T>::get(v).final_score))
+                .collect();
+            
+            // Sort by score in descending order
+            validator_scores.sort_by(|a, b| b.1.cmp(&a.1));
+            
+            // Take top validators up to max_validators
+            let new_active_validators: BoundedVec<_, _> = validator_scores
+                .into_iter()
+                .take(<T as Config>::MaxValidators::get() as usize)
+                .map(|(v, _)| v)
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("We know this is bounded by MaxValidators");
+            
+            // Update active validators
+            ActiveValidators::<T>::put(new_active_validators.clone());
+            
+            // Update current epoch
             CurrentEpoch::<T>::put(new_epoch);
-            ActiveValidators::<T>::put(new_validators.clone());
-
-            // Emit event
+            
+            // Reset temporary state
+            for validator in validators.iter() {
+                ValidatorParticipation::<T>::insert(validator, (0, 0)); // Reset authored and missed blocks
+            }
+            
+            // Emit epoch transition event
             Self::deposit_event(Event::EpochStarted {
                 epoch: new_epoch,
-                validators: new_validators.to_vec(),
+                validators: new_active_validators.to_vec(),
             });
-
-            weight
+            
+            // Return weight consumed
+            <T as Config>::WeightInfo::on_initialize()
         }
 
         /// Check if an account is an active validator in the current epoch
         pub fn is_active_validator(account: &T::AccountId) -> bool {
             Self::active_validators().contains(account)
         }
+
+        /// Apply score decay to a validator's score
+        fn apply_score_decay(validator: &T::AccountId, current_epoch: u32) -> DispatchResult {
+            let mut score = ValidatorFinalScores::<T>::get(validator);
+            let last_active = ValidatorLastActive::<T>::get(validator);
+            
+            // Calculate epochs since last activity
+            let inactive_epochs = current_epoch.saturating_sub(last_active);
+            
+            if inactive_epochs > 0 {
+                let decay_rate = <T as Config>::ValidatorScoreDecay::get();
+                let decay_amount = score.final_score.saturating_mul(decay_rate as u64) / 100u64;
+                
+                let old_score = score.final_score;
+                score.final_score = score.final_score.saturating_sub(decay_amount);
+                
+                // Update storage
+                ValidatorFinalScores::<T>::insert(validator, score.clone());
+                
+                // Emit event
+                Self::deposit_event(Event::ValidatorScoreDecayed {
+                    validator: validator.clone(),
+                    old_score,
+                    new_score: score.final_score,
+                });
+                
+                // Check if validator should be ejected
+                if score.final_score < <T as Config>::MinValidatorScore::get() as u64 {
+                    Self::eject_validator(validator, EjectionReason::ScoreBelowThreshold)?;
+                }
+            }
+            
+            Ok(())
+        }
+        
+        /// Boost a validator's score
+        fn boost_score(
+            validator: &T::AccountId,
+            amount: u64,
+            reason: ScoreBoostReason,
+        ) -> DispatchResult {
+            let mut score = ValidatorFinalScores::<T>::get(validator);
+            let old_score = score.final_score;
+            
+            score.final_score = score.final_score.saturating_add(amount);
+            score.last_epoch_active = Self::current_epoch();
+            
+            // Update storage
+            ValidatorFinalScores::<T>::insert(validator, score.clone());
+            ValidatorLastActive::<T>::insert(validator, Self::current_epoch());
+            
+            // Update score history
+            let history = ValidatorScoreHistory::<T>::get(validator);
+            let mut new_history = Vec::new();
+            if history.len() >= 10 {
+                new_history.extend_from_slice(&history[1..]);
+            } else {
+                new_history.extend_from_slice(&history);
+            }
+            new_history.push(score.final_score);
+            let bounded_history: BoundedVec<u64, ConstU32<10>> = new_history.try_into().expect("We know this is bounded by 10");
+            ValidatorScoreHistory::<T>::insert(validator, bounded_history);
+            
+            // Emit event
+            Self::deposit_event(Event::ValidatorScoreBoosted {
+                validator: validator.clone(),
+                old_score,
+                new_score: score.final_score,
+                reason,
+            });
+            
+            Ok(())
+        }
+        
+        /// Eject a validator from the active set
+        fn eject_validator(validator: &T::AccountId, reason: EjectionReason) -> DispatchResult {
+            let mut active_validators = ActiveValidators::<T>::get();
+            
+            // Remove validator from active set
+            if let Some(pos) = active_validators.iter().position(|v| v == validator) {
+                active_validators.remove(pos);
+                ActiveValidators::<T>::put(active_validators);
+                
+                // Emit event
+                Self::deposit_event(Event::ValidatorEjected {
+                    validator: validator.clone(),
+                    reason,
+                });
+            }
+            
+            Ok(())
+        }
+        
+        /// Check if a validator can re-enter the active set
+        fn check_validator_reentry(validator: &T::AccountId) -> DispatchResult {
+            let score = ValidatorFinalScores::<T>::get(validator);
+            
+            if score.final_score >= <T as Config>::MinValidatorScore::get() as u64 {
+                let active_validators = ActiveValidators::<T>::get();
+                
+                // Check if we have space for more validators
+                if active_validators.len() < <T as Config>::MaxValidators::get() as usize {
+                    let mut new_validators = active_validators.to_vec();
+                    new_validators.push(validator.clone());
+                    let bounded_validators: BoundedVec<_, _> = new_validators.try_into().expect("We know this is bounded by MaxValidators");
+                    ActiveValidators::<T>::put(bounded_validators);
+                    
+                    // Emit event
+                    Self::deposit_event(Event::ValidatorReEntered {
+                        validator: validator.clone(),
+                        score: score.final_score,
+                    });
+                }
+            }
+            
+            Ok(())
+        }
+        
+        /// Record block authorship
+        fn record_block_authorship(validator: &T::AccountId) -> DispatchResult {
+            let mut participation = ValidatorParticipation::<T>::get(validator);
+            participation.0 = participation.0.saturating_add(1);
+            ValidatorParticipation::<T>::insert(validator, participation);
+            
+            // Boost score for valid authorship
+            Self::boost_score(
+                validator,
+                10, // Fixed boost amount for authorship
+                ScoreBoostReason::ValidBlockAuthored,
+            )
+        }
+        
+        /// Record missed block
+        fn record_missed_block(validator: &T::AccountId) -> DispatchResult {
+            let mut participation = ValidatorParticipation::<T>::get(validator);
+            participation.1 = participation.1.saturating_add(1);
+            ValidatorParticipation::<T>::insert(validator, participation);
+            
+            // Apply penalty for missed block
+            let mut score = ValidatorFinalScores::<T>::get(validator);
+            score.final_score = score.final_score.saturating_sub(5); // Fixed penalty amount
+            ValidatorFinalScores::<T>::insert(validator, score);
+            
+            Ok(())
+        }
+
+        /// Handle valid inference result
+        pub fn handle_valid_inference(
+            validator: &T::AccountId,
+            confidence: u32,
+        ) -> DispatchResult {
+            // Calculate boost based on confidence
+            let boost_amount = if confidence >= 90 {
+                20 // High confidence boost
+            } else if confidence >= 70 {
+                15 // Medium confidence boost
+            } else {
+                10 // Low confidence boost
+            };
+            
+            // Boost validator's score
+            Self::boost_score(
+                validator,
+                boost_amount,
+                ScoreBoostReason::ValidInference,
+            )
+        }
+        
+        /// Handle invalid/challenged inference
+        pub fn handle_invalid_inference(
+            validator: &T::AccountId,
+            severity: InferenceErrorSeverity,
+        ) -> DispatchResult {
+            let penalty = match severity {
+                InferenceErrorSeverity::High => 30,
+                InferenceErrorSeverity::Medium => 20,
+                InferenceErrorSeverity::Low => 10,
+            };
+            
+            // Apply penalty to score
+            let mut score = ValidatorFinalScores::<T>::get(validator);
+            let _old_score = score.final_score;
+            let new_score = score.final_score.saturating_sub(penalty);
+            score.final_score = new_score;
+            ValidatorFinalScores::<T>::insert(validator, score.clone());
+            
+            // Check if validator should be ejected
+            if new_score < <T as Config>::MinValidatorScore::get() as u64 {
+                Self::eject_validator(validator, EjectionReason::ScoreBelowThreshold)?;
+            }
+            
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
-            let mut weight = Weight::zero();
-
-            // Check if we need to transition to a new epoch
-            if Self::should_transition_epoch(now, Self::current_epoch(), &Self::epoch_config()) {
-                weight = weight.saturating_add(Self::transition_epoch());
+            let epoch_config = Self::epoch_config();
+            let current_epoch = Self::current_epoch();
+            
+            // Check if we should transition to a new epoch
+            if Self::should_transition_epoch(now, current_epoch, &epoch_config) {
+                Self::handle_epoch_transition()
+            } else {
+                // Validate block author
+                if let Some(expected_author) = Self::get_expected_author(now) {
+                    let actual_author = frame_system::Pallet::<T>::digest()
+                        .logs()
+                        .iter()
+                        .find_map(|log| {
+                            if let DigestItem::Consensus(_, data) = log {
+                                // Convert Vec<u8> to AccountId
+                                let account_id = T::AccountId::decode(&mut &data[..]).ok()?;
+                                Some(account_id)
+                            } else {
+                                None
+                            }
+                        });
+                    
+                    if let Some(actual) = actual_author {
+                        if actual != expected_author {
+                            // Record missed block for expected author
+                            let _ = Self::record_missed_block(&expected_author);
+                        } else {
+                            // Record successful authorship
+                            let _ = Self::record_block_authorship(&actual);
+                        }
+                    }
+                }
+                
+                <T as Config>::WeightInfo::on_initialize()
             }
-
-            weight
         }
 
         fn on_finalize(_n: BlockNumberFor<T>) {
@@ -405,6 +729,10 @@ pub mod pallet {
                         stake_weight: *score as u64,
                         inference_weight: *score as u64,
                         final_score,
+                        last_epoch_active: 0,
+                        participation_count: 0,
+                        missed_blocks: 0,
+                        authored_blocks: 0,
                     },
                 );
             }
@@ -424,4 +752,84 @@ pub mod pallet {
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
+
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
+pub enum ScoreBoostReason {
+    ValidBlockAuthored,
+    ValidInference,
+    ManualBoost,
+}
+
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
+pub enum EjectionReason {
+    ScoreBelowThreshold,
+    MaxSlashingReached,
+    ManualEjection,
+}
+
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
+pub enum InferenceErrorSeverity {
+    High,   // Major error, significant impact
+    Medium, // Moderate error
+    Low,    // Minor error
+}
+
+#[cfg(feature = "runtime")]
+impl_runtime_apis! {
+    impl DcfApi<Block, AccountId> for Runtime {
+        fn get_validator_scores() -> Vec<(AccountId, u64)> {
+            let validators = Pallet::<Runtime>::validator_set();
+            validators
+                .iter()
+                .map(|v| {
+                    let score = Pallet::<Runtime>::validator_final_scores(v);
+                    (v.clone(), score.final_score)
+                })
+                .collect()
+        }
+
+        fn get_current_epoch() -> u32 {
+            Pallet::<Runtime>::current_epoch()
+        }
+
+        fn get_validator_stake_score(validator: AccountId) -> u64 {
+            Pallet::<Runtime>::validator_stake_scores(&validator)
+        }
+
+        fn get_validator_inference_score(validator: AccountId) -> u64 {
+            Pallet::<Runtime>::validator_inference_scores(&validator)
+        }
+
+        fn get_consensus_weights() -> (u64, u64) {
+            (
+                Pallet::<Runtime>::pos_weight(),
+                Pallet::<Runtime>::poi_weight()
+            )
+        }
+
+        fn is_validator_active(validator: AccountId) -> bool {
+            Pallet::<Runtime>::is_active_validator(&validator)
+        }
+
+        fn get_expected_author(block_number: u32) -> Option<AccountId> {
+            Pallet::<Runtime>::get_expected_author(block_number)
+        }
+
+        fn get_validator_score_history(validator: AccountId) -> Vec<u64> {
+            Pallet::<Runtime>::validator_score_history(&validator).to_vec()
+        }
+
+        fn get_validator_participation(validator: AccountId) -> (u32, u32) {
+            Pallet::<Runtime>::validator_participation(&validator)
+        }
+
+        fn get_active_validators() -> Vec<AccountId> {
+            Pallet::<Runtime>::active_validators().to_vec()
+        }
+
+        fn get_validator_last_active(validator: AccountId) -> u32 {
+            Pallet::<Runtime>::validator_last_active(&validator)
+        }
+    }
+}
 

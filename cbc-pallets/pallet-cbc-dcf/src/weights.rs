@@ -10,7 +10,7 @@ use sp_std::marker::PhantomData;
 
 /// Weight functions needed for the pallet.
 pub trait WeightInfo {
-    fn on_initialize(n: u32) -> Weight;
+    fn on_initialize() -> Weight;
     fn update_validator_stake_score() -> Weight;
     fn update_validator_inference_score() -> Weight;
     fn update_consensus_weights() -> Weight;
@@ -20,8 +20,8 @@ pub trait WeightInfo {
 pub struct SubstrateWeight<T>(PhantomData<T>);
 
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
-    fn on_initialize(n: u32) -> Weight {
-        Weight::from_parts(10_000 * n as u64, 0)
+    fn on_initialize() -> Weight {
+        Weight::from_parts(10_000, 0)
             .saturating_add(T::DbWeight::get().reads(2))
             .saturating_add(T::DbWeight::get().writes(2))
     }
@@ -47,7 +47,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 // For backwards compatibility and tests
 impl WeightInfo for () {
-    fn on_initialize(_n: u32) -> Weight {
+    fn on_initialize() -> Weight {
         Weight::from_parts(10_000, 0)
     }
 
