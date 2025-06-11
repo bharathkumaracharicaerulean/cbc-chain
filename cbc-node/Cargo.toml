@@ -23,6 +23,13 @@ targets = ["x86_64-unknown-linux-gnu"] # Target platforms for which documentatio
 # === CLI and Command-Line Parsing ===
 clap = { features = ["derive"], workspace = true } # Command-line argument parsing library
 
+# === new packages ===
+hex-literal = { workspace = true }
+sc-chain-spec = { workspace = true }
+jsonrpsee-core = { workspace = true, features = ["server"] }
+jsonrpsee-http-server = { workspace = true }
+sc-rpc-api = { workspace = true }
+sc-rpc = { workspace = true }
 
 # === Benchmarking ===
 frame-benchmarking-cli.default-features = true    # CLI tools for runtime benchmarking

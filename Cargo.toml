@@ -84,3 +84,9 @@ sp-version = { version = "39.0.0", default-features = false }
 substrate-wasm-builder = { version = "26.0.0", default-features = false }
 sp-std = { version = "14.0.0", default-features = false }
 serde = { version = "1.0.219", default-features=false }
+sc-chain-spec = { version = "42.0.0", default-features = false }
+hex-literal ={ version = "1.0.0", default-features = false }
+jsonrpsee-core = { version = "0.25.1", default-features = false }
+jsonrpsee-http-server = { version = "0.15.1", default-features = false }
+sc-rpc-api = { version = "0.48.0", default-features = false }
+sc-rpc = { version = "44.0.0", default-features = false }

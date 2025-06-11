@@ -6,8 +6,9 @@
 
 #![warn(missing_docs)] // Emit a warning if any public item is missing Rust doc comments.
 
-use jsonrpc_core::{IoHandler, Metadata, Middleware, NoopMiddleware};
-use jsonrpc_http_server::{ServerBuilder, hyper, AccessControlAllowOrigin};
+use jsonrpsee_core::server::{RpcModule, Middleware, NoopMiddleware};
+use jsonrpsee_http_server::server::{HttpServerBuilder, AccessControlAllowOrigin};
+
 use sc_rpc_api::DenyUnsafe;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::sync::Arc;
@@ -33,7 +34,7 @@ pub struct FullDeps<C, P> {
 /// - `P`: The transaction pool type (must implement basic transaction pool operations)
 pub fn create_full<C, P>(
 	deps: FullDeps<C, P>, // Struct containing dependencies (client + transaction pool)
-) -> jsonrpc_core::IoHandler<sc_rpc::Metadata> where
+) -> jsonrpsee_core::IoHandler<sc_rpc::Metadata> where
 	C: sp_api::ProvideRuntimeApi<Block> + sp_blockchain::HeaderBackend<Block> + Send + Sync + 'static,
 	C::Api: RuntimeApi<Block>,
 	P: TransactionPool + 'static,
@@ -55,7 +56,7 @@ pub fn start_http(
 	addr: std::net::SocketAddr,
 	cors: Option<Vec<String>>,
 	io: IoHandler<Metadata>,
-) -> std::io::Result<ServerBuilder> {
+) -> std::io::Result<HttpServerBuilder> {
 	let middleware = NoopMiddleware;
 	let cors = cors.map(|cors| {
 		let mut cors = cors.into_iter()
@@ -65,7 +66,7 @@ pub fn start_http(
 		cors
 	});
 
-	ServerBuilder::new(io, middleware, cors)
+	HttpServerBuilder::new(io, middleware, cors)
 		.threads(4)
 		.start_http(&addr)
 }
