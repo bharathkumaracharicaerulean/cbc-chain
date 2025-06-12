@@ -9,7 +9,8 @@ use sc_client_api::Backend;
 use sc_service::{error::Error as ServiceError, Configuration, TaskManager}; // Core service types.
 use sc_telemetry::{Telemetry, TelemetryWorker}; // Telemetry for monitoring nodes.
 use sc_transaction_pool_api::OffchainTransactionPoolFactory; // For submitting transactions via offchain workers.
-use cbc_runtime::{opaque::Block, RuntimeApi};
+use cbc_runtime::{opaque::Block};
+use cbc_runtime::apis::RuntimeApi;
 use std::{sync::Arc, time::Duration}; // Standard concurrency and time utilities.
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 

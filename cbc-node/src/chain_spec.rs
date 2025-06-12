@@ -11,7 +11,7 @@ use cbc_consensus::{
 use hex_literal::hex;
 use sp_runtime::traits::{IdentifyAccount, Verify};
 use sc_chain_spec::ChainSpecExtension;
-use serde::{Deserialize, Serialize};
+use sp_runtime::serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Specialized `ChainSpec`. 

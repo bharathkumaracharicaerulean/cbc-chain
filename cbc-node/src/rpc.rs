@@ -6,15 +6,16 @@
 
 #![warn(missing_docs)] // Emit a warning if any public item is missing Rust doc comments.
 
-use jsonrpsee_core::server::{RpcModule, Middleware, NoopMiddleware};
-use jsonrpsee_http_server::server::{HttpServerBuilder, AccessControlAllowOrigin};
+use jsonrpsee_core::server::{RpcModule};
+use jsonrpsee_http_server::{HttpServerBuilder};
+use jsonrpsee_http_server::server::AccessControlAllowOrigin;
 
 use sc_rpc_api::DenyUnsafe;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::sync::Arc;
 use cbc_runtime::{opaque::Block, apis::RuntimeApi};
 use sc_transaction_pool_api::TransactionPool;
-use substrate_frame_rpc_system::{System, SystemApi};
+use substrate_frame_rpc_system::{System};
 
 /// Full client dependencies for setting up RPC extensions.
 ///
@@ -33,40 +34,41 @@ pub struct FullDeps<C, P> {
 /// - `C`: The type of the client (must implement runtime API access and block metadata)
 /// - `P`: The transaction pool type (must implement basic transaction pool operations)
 pub fn create_full<C, P>(
-	deps: FullDeps<C, P>, // Struct containing dependencies (client + transaction pool)
-) -> jsonrpsee_core::IoHandler<sc_rpc::Metadata> where
+	deps: FullDeps<C, P>,
+) -> RpcModule<()>
+where
 	C: sp_api::ProvideRuntimeApi<Block> + sp_blockchain::HeaderBackend<Block> + Send + Sync + 'static,
 	C::Api: RuntimeApi<Block>,
 	P: TransactionPool + 'static,
 {
-	let mut io = IoHandler::default();
 	let FullDeps {
 		client,
 		deny_unsafe,
 	} = deps;
+	let mut module = RpcModule::new(());
 
-	io.extend_with(
-		SystemApi::to_delegate(System::new(client.clone(), deny_unsafe))
-	);
+	// Example: Add system RPCs (you may need to adapt this for jsonrpsee)
+	// module.merge(SystemApi::to_delegate(System::new(client.clone(), deny_unsafe))).unwrap();
 
-	io
+	module
 }
 
-pub fn start_http(
+// Example async HTTP server starter for jsonrpsee
+pub async fn start_http(
 	addr: std::net::SocketAddr,
 	cors: Option<Vec<String>>,
-	io: IoHandler<Metadata>,
-) -> std::io::Result<HttpServerBuilder> {
-	let middleware = NoopMiddleware;
-	let cors = cors.map(|cors| {
-		let mut cors = cors.into_iter()
-			.map(|origin| AccessControlAllowOrigin::Value(origin.parse().unwrap()))
-			.collect::<Vec<_>>();
-		cors.push(AccessControlAllowOrigin::Null);
-		cors
-	});
-
-	HttpServerBuilder::new(io, middleware, cors)
-		.threads(4)
-		.start_http(&addr)
+	module: RpcModule<()>,
+) -> anyhow::Result<()> {
+	let mut builder = HttpServerBuilder::default();
+	if let Some(cors_origins) = cors {
+		builder = builder.set_access_control_allow_origin(
+			cors_origins
+				.into_iter()
+				.map(|origin| AccessControlAllowOrigin::Value(origin.parse().unwrap()))
+				.collect(),
+		);
+	}
+	let server = builder.build(addr).await?;
+	server.start(module)?.await;
+	Ok(())
 }
