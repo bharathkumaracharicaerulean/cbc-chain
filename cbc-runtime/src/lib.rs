@@ -218,6 +218,7 @@ parameter_types! {
     pub const MaxValidators: u32 = 100;
     pub const ValidatorScoreDecay: u32 = 10;
     pub const MaxSlashingCount: u32 = 3;
+   
 
     // Inference parameters
     pub const MinInferenceConfidence: u32 = 80;
@@ -233,7 +234,20 @@ parameter_types! {
     pub const EpochDuration: BlockNumber = 24 * HOURS; // 24 hours per epoch
     pub const MinStake: Balance = 1000 * DOLLARS; // Minimum stake required
     pub const MaxValidatorsPerEpoch: u32 = 50; // Maximum validators per epoch
+    pub const MaxValidatorScore: u32 = 100;
+
+    // Block authorship and inference boosting parameters
+    pub const BlockAuthorshipBoost: u32 = 10;
+    pub const MissedBlockPenalty: u32 = 5;
+    pub const InferenceBoostLow: u32 = 2;
+    pub const InferenceBoostMedium: u32 = 5;
+    pub const InferenceBoostHigh: u32 = 10;
+    pub const InferencePenaltyLow: u32 = 1;
+    pub const InferencePenaltyMedium: u32 = 3;
+    pub const InferencePenaltyHigh: u32 = 7;
 }
 
 pub use pallet_cbc_poi;
 pub use pallet_cbc_pos;
+
+

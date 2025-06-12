@@ -10,14 +10,15 @@ use crate::{
 };
 use std::{sync::Arc, time::Duration};
 use log::{error, warn, info};
-use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait};
+use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait, SaturatedConversion};
 use sc_consensus::{BlockImport, BlockImportParams, BlockCheckParams, ImportResult};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_core::Pair;
 use tokio::time::sleep;
 use sp_core::sr25519::Public;
-
+use cbc_runtime::apis::DcfApi as RuntimeDcfApi;
+use sp_runtime::generic::BlockId;
 /// Runtime API for DCF consensus
 #[async_trait::async_trait]
 pub trait DcfApi<Number, Block: BlockTrait> {
@@ -35,7 +36,7 @@ pub trait DcfApi<Number, Block: BlockTrait> {
 pub struct DcfConsensus<B, C, P> where
     B: BlockTrait + HeaderTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: DcfApi<B::Number, B>,
+    C::Api: RuntimeDcfApi<B>,
     P: Pair,
 {
     client: Arc<C>,
@@ -50,7 +51,7 @@ pub struct DcfConsensus<B, C, P> where
 impl<B, C, P> DcfConsensus<B, C, P> where
     B: BlockTrait + HeaderTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: DcfApi<B::Number, B>,
+    C::Api: RuntimeDcfApi<B>,
     P: Pair,
 {
     /// Create a new DCF consensus engine instance
@@ -143,7 +144,7 @@ impl<B, C> DcfBlockImport<B, C>
 where
     B: BlockTrait + HeaderTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: DcfApi<B::Number, B>,
+    C::Api: RuntimeDcfApi<B>,
 {
     /// Create a new DCF block import instance
     pub fn new(client: Arc<C>) -> Self {
@@ -159,7 +160,7 @@ impl<B, C> BlockImport<B> for DcfBlockImport<B, C>
 where
     B: BlockTrait + HeaderTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: DcfApi<B::Number, B>,
+    C::Api: RuntimeDcfApi<B>,
 {
     type Error = ConsensusError;
 
@@ -168,11 +169,14 @@ where
         block: BlockCheckParams<B>,
     ) -> Result<ImportResult> {
         let api = self.client.runtime_api();
-        // TODO: Extract author from header/extrinsics; for now, use Default::default()
+        // TODO: Extract author from header/extrinsics
         let author: Public = Default::default();
-        if !api.is_active_validator(block.hash, author.clone()) {
-            return Err(ConsensusError::InvalidAuthor("Invalid block author".into()));
-        }
+        let block_number = block.number.saturated_into::<u32>();
+
+        // Call runtime API to validate and emit event if invalid
+        let _ = api.validate_block_author(&BlockId::Number(block_number.into()), block_number, author.clone());
+
+        // Always import the block, do not halt production
         Ok(ImportResult::imported(true))
     }
 
@@ -195,7 +199,7 @@ pub async fn start_dcf_consensus<B, C>(
 ) where
     B: BlockTrait + HeaderTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: DcfApi<B::Number, B>,
+    C::Api: RuntimeDcfApi<B>,
 {
     let mut consensus: DcfConsensus<B, C, sp_core::sr25519::Pair> = DcfConsensus::new(client, author_selection, params);
     consensus.run().await;

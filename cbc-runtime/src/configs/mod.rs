@@ -26,7 +26,11 @@ use super::{
 
 use crate::{
     MinValidatorScore, MinActiveValidators, ValidatorScoreDecay, MaxSlashingCount,
-    MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward,
+    MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward, MaxValidatorScore,
+    BlockAuthorshipBoost, MissedBlockPenalty,
+    InferenceBoostLow, InferenceBoostMedium, InferenceBoostHigh,
+    InferencePenaltyLow, InferencePenaltyMedium, InferencePenaltyHigh,
+
 };
 
 // === Constants ===
@@ -165,9 +169,17 @@ impl pallet_cbc_dcf::Config for Runtime {
     type DefaultPoiWeight = ConstU64<40>; // 40% weight for POI
     type MinActiveValidators = MinActiveValidators;
     type MinValidatorScore = MinValidatorScore;
+    type MaxValidatorScore = MaxValidatorScore;
+    type BlockAuthorshipBoost = BlockAuthorshipBoost;
+    type MissedBlockPenalty = MissedBlockPenalty;
+    type InferenceBoostLow = InferenceBoostLow;
+    type InferenceBoostMedium = InferenceBoostMedium;
+    type InferenceBoostHigh = InferenceBoostHigh;
+    type InferencePenaltyLow = InferencePenaltyLow;
+    type InferencePenaltyMedium = InferencePenaltyMedium;
+    type InferencePenaltyHigh = InferencePenaltyHigh;
     type ValidatorScoreDecay = ValidatorScoreDecay;
-    type MaxSlashingCount = MaxSlashingCount;
-    type MinStake = ConstU128<1000>; // Minimum stake of 1000 units
+    type MinStake = MinStake;
     type Balance = Balance;
     type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
 }

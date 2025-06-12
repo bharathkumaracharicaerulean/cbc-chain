@@ -185,7 +185,6 @@ impl_runtime_apis! {
 	// DCF API
 	impl pallet_cbc_dcf::DcfApi<Block, AccountId> for Runtime {
 		fn get_validator_scores() -> Vec<(AccountId, u64)> {
-			// Use ActiveValidators or ValidatorSet to get all validator accounts
 			let validators = pallet_cbc_dcf::Pallet::<Runtime>::validator_set();
 			validators
 				.iter()
@@ -238,6 +237,10 @@ impl_runtime_apis! {
 
 		fn get_validator_last_active(validator: AccountId) -> u32 {
 			pallet_cbc_dcf::Pallet::<Runtime>::validator_last_active(&validator)
+		}
+
+		fn validate_block_author(block_number: u32, author: AccountId) {
+			pallet_cbc_dcf::Pallet::<Runtime>::validate_block_author(block_number, author)
 		}
 	}
 

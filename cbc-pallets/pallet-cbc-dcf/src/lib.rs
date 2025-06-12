@@ -34,6 +34,7 @@ sp_api::decl_runtime_apis! {
         fn get_validator_participation(validator: AccountId) -> (u32, u32);
         fn get_active_validators() -> Vec<AccountId>;
         fn get_validator_last_active(validator: AccountId) -> u32;
+        fn validate_block_author(block_number: u32, author: AccountId);
     }
 }
 
@@ -272,6 +273,11 @@ pub mod pallet {
         ValidatorReEntered {
             validator: T::AccountId,
             score: u64,
+        },
+        /// Invalid block author detected
+        InvalidAuthor {
+            block_number: u32,
+            author: T::AccountId,
         },
     }
 
@@ -602,8 +608,12 @@ pub mod pallet {
             <T as Config>::WeightInfo::on_initialize()
         }
 
+        pub fn is_active_validator(author: &T::AccountId) -> bool {
+            Self::active_validators().contains(author)
+        }
+
         // Get the expected block author for a given block number
-        fn get_expected_author(now: BlockNumberFor<T>) -> Option<T::AccountId> {
+        pub fn get_expected_author(now: BlockNumberFor<T>) -> Option<T::AccountId> {
             let validators = ActiveValidators::<T>::get();
             if validators.is_empty() {
                 return None;
@@ -714,6 +724,23 @@ pub mod pallet {
             // Set initial weights
             PosWeight::<T>::put(T::DefaultPosWeight::get());
             PoiWeight::<T>::put(T::DefaultPoiWeight::get());
+        }
+    }
+
+    impl<T: Config> Pallet<T> {
+        /// Called by consensus engine to validate block author.
+        pub fn validate_block_author(block_number: u32, author: T::AccountId) {
+            if !Self::is_validator_active(&author) {
+                Self::deposit_event(Event::InvalidAuthor {
+                    block_number,
+                    author,
+                });
+            }
+        }
+
+        /// Helper to check if validator is active
+        pub fn is_validator_active(author: &T::AccountId) -> bool {
+            Self::active_validators().contains(author)
         }
     }
 }
