@@ -6,25 +6,26 @@ authors = ["CBC Team"]
 description = "Consensus mechanism for CBC blockchain"
 
 [dependencies]
-codec = { features = ["derive"], workspace = true }
-frame-benchmarking = { optional = true, workspace = true }
-frame-support.workspace = true
-frame-system.workspace = true
-scale-info = { features = ["derive"], workspace = true }
-sp-std.workspace = true
-sp-core.workspace = true
-sp-runtime.workspace = true
-sp-api.workspace = true
-sp-blockchain.workspace = true
+codec = { features = ["derive", "std"], workspace = true }
+frame-benchmarking = { optional = true, features = ["std"], workspace = true }
+frame-support = { features = ["std"], workspace = true }
+frame-system = { features = ["std"], workspace = true }
+scale-info = { features = ["derive", "std"], workspace = true }
+sp-std = { features = ["std"], workspace = true }
+sp-core = { features = ["std"], workspace = true }
+sp-runtime = { features = ["std"], workspace = true }
+sp-api = { features = ["std"], workspace = true }
+sp-blockchain = { workspace = true }
 sp-consensus = { workspace = true }
-sp-inherents = { workspace = true }
+sp-inherents = { features = ["std"], workspace = true }
 sc-consensus = { workspace = true, default-features = true }
 serde = { workspace = true, features = ["derive", "std"] }
-futures = "0.3"
-async-trait = "0.1"
+cbc-runtime = { features = ["std"], workspace = true }
+tokio = { version = "1.37", features = ["rt", "macros", "time"] }
 log = "0.4"
 thiserror = "1.0"
-tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+pallet-cbc-dcf = { workspace = true }
 
 
 [dev-dependencies]

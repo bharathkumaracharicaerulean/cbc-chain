@@ -1210,11 +1210,12 @@ name = "cbc-consensus"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "cbc-runtime",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "futures",
  "log",
+ "pallet-cbc-dcf",
  "parity-scale-codec",
  "sc-consensus",
  "scale-info",
