@@ -231,6 +231,11 @@ pub mod pallet {
         ValueQuery,
     >;
 
+    #[pallet::storage]
+    #[pallet::getter(fn governance_mode_enabled)]
+    /// If true, restrict epoch advancement and score setting to sudo (Root).
+    pub type GovernanceModeEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -279,6 +284,10 @@ pub mod pallet {
             block_number: u32,
             author: T::AccountId,
         },
+        /// Governance mode toggled
+        GovernanceModeToggled {
+            enabled: bool,
+        },
     }
 
     #[pallet::error]
@@ -291,36 +300,47 @@ pub mod pallet {
         InvalidEpochConfig,
         /// Not enough validators for epoch
         NotEnoughValidators,
+        /// Operation not allowed in governance mode
+        NotAllowedInGovernanceMode,
     }
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
+        /// Update the stake score of a validator based on their current stake.
+        /// This is typically called by the POS pallet.
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_validator_stake_score(
             origin: OriginFor<T>,
             validator: T::AccountId,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
-            
-            // Get stake score from POS pallet
+            // Restrict to Root if governance mode is enabled
+            if GovernanceModeEnabled::<T>::get() {
+                ensure_root(origin)?;
+            } else {
+                ensure_signed(origin)?;
+            }
             let stake = pos::Pallet::<T>::stake(&validator);
             let stake_score = stake.saturated_into::<u64>();
-            
             ValidatorStakeScores::<T>::insert(&validator, stake_score);
             Self::update_final_score(&validator)?;
             Ok(())
         }
 
         #[pallet::call_index(1)]
+        /// Update the inference score of a validator based on the latest inference result.
+        /// This is typically called by the POI pallet.
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_validator_inference_score(
             origin: OriginFor<T>,
             validator: T::AccountId,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
-            
-            // Get inference score from POI pallet
+            // Restrict to Root if governance mode is enabled
+            if GovernanceModeEnabled::<T>::get() {
+                ensure_root(origin)?;
+            } else {
+                ensure_signed(origin)?;
+            }
             if let Some((result, _)) = poi::Pallet::<T>::inference_results(&validator) {
                 let inference_score = result as u64;
                 ValidatorInferenceScores::<T>::insert(&validator, inference_score);
@@ -330,6 +350,8 @@ pub mod pallet {
         }
 
         #[pallet::call_index(2)]
+        /// Update the consensus weights for POS and POI scores.
+        /// Only Root can call this, and the sum of weights must be 100.
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_consensus_weights(
             origin: OriginFor<T>,
@@ -347,6 +369,26 @@ pub mod pallet {
                 poi_weight,
             });
             
+            Ok(())
+        }
+
+        /// Toggle governance mode (Root only).
+        #[pallet::call_index(3)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn set_governance_mode(origin: OriginFor<T>, enabled: bool) -> DispatchResult {
+            ensure_root(origin)?;
+            GovernanceModeEnabled::<T>::put(enabled);
+            Self::deposit_event(Event::GovernanceModeToggled { enabled });
+            Ok(())
+        }
+
+        /// Sudo-only epoch advancement when governance mode is enabled
+        #[pallet::call_index(4)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn sudo_advance_epoch(origin: OriginFor<T>) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(GovernanceModeEnabled::<T>::get(), Error::<T>::NotAllowedInGovernanceMode);
+            let _ = Self::handle_epoch_transition();
             Ok(())
         }
     }
@@ -592,35 +634,22 @@ pub mod pallet {
 
         // Handle epoch transition logic
         fn handle_epoch_transition() -> Weight {
+            // Restrict to governance only if enabled
+            if GovernanceModeEnabled::<T>::get() {
+                // Only allow via Root extrinsic, not automatic transition
+                return <T as Config>::WeightInfo::on_initialize();
+            }
             let current_epoch = Self::current_epoch();
             let next_epoch = current_epoch.saturating_add(1);
             CurrentEpoch::<T>::put(next_epoch);
 
-            // Select new validator set (for now, just keep the same set)
             let active_validators = ActiveValidators::<T>::get();
             Self::deposit_event(Event::EpochStarted {
                 epoch: next_epoch,
                 validators: active_validators.clone().into_inner(),
             });
 
-            // Optionally, update scores or perform other epoch tasks here
-
             <T as Config>::WeightInfo::on_initialize()
-        }
-
-        pub fn is_active_validator(author: &T::AccountId) -> bool {
-            Self::active_validators().contains(author)
-        }
-
-        // Get the expected block author for a given block number
-        pub fn get_expected_author(now: BlockNumberFor<T>) -> Option<T::AccountId> {
-            let validators = ActiveValidators::<T>::get();
-            if validators.is_empty() {
-                return None;
-            }
-            let now_u32: u32 = now.saturated_into();
-            let idx = (now_u32 as usize) % validators.len();
-            validators.get(idx).cloned()
         }
     }
 
@@ -629,19 +658,18 @@ pub mod pallet {
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
             let epoch_config = Self::epoch_config();
             let current_epoch = Self::current_epoch();
-            
-            // Check if we should transition to a new epoch
-            if Self::should_transition_epoch(now, current_epoch, &epoch_config) {
+
+            // Only allow automatic epoch transition if governance mode is disabled
+            if !Self::governance_mode_enabled() && Self::should_transition_epoch(now, current_epoch, &epoch_config) {
                 Self::handle_epoch_transition()
             } else {
                 // Validate block author
-                if let Some(expected_author) = Self::get_expected_author(now) {
+                if let Some(expected_author) = Self::get_expected_author(now.saturated_into::<u32>()) {
                     let actual_author = frame_system::Pallet::<T>::digest()
                         .logs()
                         .iter()
                         .find_map(|log| {
                             if let DigestItem::Consensus(_, data) = log {
-                                // Convert Vec<u8> to AccountId
                                 let account_id = T::AccountId::decode(&mut &data[..]).ok()?;
                                 Some(account_id)
                             } else {
@@ -651,15 +679,13 @@ pub mod pallet {
                     
                     if let Some(actual) = actual_author {
                         if actual != expected_author {
-                            // Record missed block for expected author
                             let _ = Self::record_missed_block(&expected_author);
                         } else {
-                            // Record successful authorship
                             let _ = Self::record_block_authorship(&actual);
                         }
                     }
                 }
-                
+
                 <T as Config>::WeightInfo::on_initialize()
             }
         }
@@ -741,6 +767,17 @@ pub mod pallet {
         /// Helper to check if validator is active
         pub fn is_validator_active(author: &T::AccountId) -> bool {
             Self::active_validators().contains(author)
+        }
+
+        /// Returns the expected author for a given block number, if any.
+        pub fn get_expected_author(block_number: u32) -> Option<T::AccountId> {
+            // Example logic: round-robin selection from active_validators
+            let validators = Self::active_validators();
+            if validators.is_empty() {
+                return None;
+            }
+            let idx = (block_number as usize) % validators.len();
+            validators.get(idx).cloned()
         }
     }
 }
