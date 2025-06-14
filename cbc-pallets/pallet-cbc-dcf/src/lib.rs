@@ -17,7 +17,6 @@ use pallet_cbc_pos as pos;
 use pallet_cbc_poi as poi;
 use serde::{Serialize, Deserialize};
 
-// Runtime API declaration
 sp_api::decl_runtime_apis! {
     pub trait DcfApi<AccountId>
     where
@@ -38,8 +37,6 @@ sp_api::decl_runtime_apis! {
     }
 }
 
-
-
 pub mod weights;
 pub use weights::*;
 
@@ -50,94 +47,65 @@ pub mod pallet {
     use super::*;
 
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
-    #[scale_info(skip_type_params(T))]
-    pub struct ValidatorScore {
-        pub stake_weight: u64,
-        pub inference_weight: u64,
+    pub struct EpochStats {
+        pub epoch: u32,
+        pub stake_score: u64,
+        pub inference_score: u64,
         pub final_score: u64,
-        pub last_epoch_active: u32,
-        pub participation_count: u32,
-        pub missed_blocks: u32,
         pub authored_blocks: u32,
+        pub missed_blocks: u32,
     }
 
-    /// Configuration for epoch transitions
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct ValidatorState {
+        pub last_active_epoch: u32,
+        pub current: EpochStats,
+        pub history: BoundedVec<EpochStats, ConstU32<10>>,
+    }
+
     #[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, Default, Serialize, Deserialize)]
-    #[scale_info(skip_type_params(T))]
     pub struct EpochConfig {
-        /// Number of blocks per epoch
         pub blocks_per_epoch: u32,
-        /// Minimum stake required to be a validator
         pub min_stake: u128,
-        /// Maximum number of validators per epoch
         pub max_validators: u32,
     }
 
     #[pallet::config]
     pub trait Config: frame_system::Config + pos::Config + poi::Config {
-        /// The overarching event type.
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        
-        /// The maximum number of validators that can be active at once.
         #[pallet::constant]
         type MaxValidators: Get<u32>;
-
-        /// Default weight for POS score in final calculation (0-100)
         #[pallet::constant]
         type DefaultPosWeight: Get<u64>;
-
-        /// Default weight for POI score in final calculation (0-100)
         #[pallet::constant]
         type DefaultPoiWeight: Get<u64>;
-
-        /// Minimum number of active validators required for a new epoch
         #[pallet::constant]
         type MinActiveValidators: Get<u32>;
-
-        /// Minimum validator score required
         #[pallet::constant]
         type MinValidatorScore: Get<u32>;
-
-        /// Score decay per epoch (percentage, 0-100)
         #[pallet::constant]
         type ValidatorScoreDecay: Get<u32>;
-
-        /// Maximum validator score
         #[pallet::constant]
         type MaxValidatorScore: Get<u64>;
-
-        /// Score boost for valid block authored
         #[pallet::constant]
         type BlockAuthorshipBoost: Get<u64>;
-
-        /// Score penalty for missed block
         #[pallet::constant]
         type MissedBlockPenalty: Get<u64>;
-
-        /// Score boost for valid inference (low/medium/high)
         #[pallet::constant]
         type InferenceBoostLow: Get<u64>;
         #[pallet::constant]
         type InferenceBoostMedium: Get<u64>;
         #[pallet::constant]
         type InferenceBoostHigh: Get<u64>;
-
-        /// Score penalty for inference error (low/medium/high)
         #[pallet::constant]
         type InferencePenaltyLow: Get<u64>;
         #[pallet::constant]
         type InferencePenaltyMedium: Get<u64>;
         #[pallet::constant]
         type InferencePenaltyHigh: Get<u64>;
-
-        /// Minimum stake amount required for validators
         #[pallet::constant]
         type MinStake: Get<<Self as Config>::Balance>;
-
-        /// The balance type
         type Balance: Parameter + Member + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
-
-        /// Weight information for the pallet
         type WeightInfo: WeightInfo;
     }
 
@@ -145,33 +113,13 @@ pub mod pallet {
     pub struct Pallet<T>(_);
 
     #[pallet::storage]
-    #[pallet::getter(fn validator_stake_scores)]
-    pub type ValidatorStakeScores<T: Config> = StorageMap<
+    #[pallet::getter(fn validator_states)]
+    pub type ValidatorStates<T: Config> = StorageMap<
         _,
         Blake2_128Concat,
         T::AccountId,
-        u64,
-        ValueQuery,
-    >;
-
-    #[pallet::storage]
-    #[pallet::getter(fn validator_inference_scores)]
-    pub type ValidatorInferenceScores<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        u64,
-        ValueQuery,
-    >;
-
-    #[pallet::storage]
-    #[pallet::getter(fn validator_final_scores)]
-    pub type ValidatorFinalScores<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        ValidatorScore,
-        ValueQuery,
+        ValidatorState,
+        OptionQuery,
     >;
 
     #[pallet::storage]
@@ -186,105 +134,62 @@ pub mod pallet {
     #[pallet::getter(fn validator_set)]
     pub type ValidatorSet<T: Config> = StorageValue<_, BoundedVec<T::AccountId, <T as Config>::MaxValidators>, ValueQuery>;
 
-    /// Storage for epoch configuration
     #[pallet::storage]
     #[pallet::getter(fn epoch_config)]
     pub type EpochConfigStorage<T: Config> = StorageValue<_, EpochConfig, ValueQuery>;
 
-    /// Storage for current epoch number
     #[pallet::storage]
     #[pallet::getter(fn current_epoch)]
     pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// Storage for active validators in current epoch
     #[pallet::storage]
     #[pallet::getter(fn active_validators)]
     pub type ActiveValidators<T: Config> = StorageValue<_, BoundedVec<T::AccountId, <T as Config>::MaxValidators>, ValueQuery>;
 
     #[pallet::storage]
-    #[pallet::getter(fn validator_score_history)]
-    pub type ValidatorScoreHistory<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        BoundedVec<u64, ConstU32<10>>, // Store last 10 epochs of scores
-        ValueQuery,
-    >;
-
-    #[pallet::storage]
-    #[pallet::getter(fn validator_participation)]
-    pub type ValidatorParticipation<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        (u32, u32), // (authored_blocks, missed_blocks)
-        ValueQuery,
-    >;
-
-    #[pallet::storage]
-    #[pallet::getter(fn validator_last_active)]
-    pub type ValidatorLastActive<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        u32,
-        ValueQuery,
-    >;
-
-    #[pallet::storage]
     #[pallet::getter(fn governance_mode_enabled)]
-    /// If true, restrict epoch advancement and score setting to sudo (Root).
     pub type GovernanceModeEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// Validator score updated
         ValidatorScoreUpdated {
             validator: T::AccountId,
             stake_score: u64,
             inference_score: u64,
             final_score: u64,
         },
-        /// Consensus weights updated
         ConsensusWeightsUpdated {
             pos_weight: u64,
             poi_weight: u64,
         },
-        /// A new epoch has started
         EpochStarted {
             epoch: u32,
             validators: Vec<T::AccountId>,
         },
-        /// Validator score decayed
         ValidatorScoreDecayed {
             validator: T::AccountId,
             old_score: u64,
             new_score: u64,
         },
-        /// Validator score boosted
         ValidatorScoreBoosted {
             validator: T::AccountId,
             old_score: u64,
             new_score: u64,
             reason: ScoreBoostReason,
         },
-        /// Validator ejected from active set
         ValidatorEjected {
             validator: T::AccountId,
             reason: EjectionReason,
         },
-        /// Validator re-entered active set
         ValidatorReEntered {
             validator: T::AccountId,
             score: u64,
         },
-        /// Invalid block author detected
         InvalidAuthor {
             block_number: u32,
             author: T::AccountId,
         },
-        /// Governance mode toggled
         GovernanceModeToggled {
             enabled: bool,
         },
@@ -292,29 +197,21 @@ pub mod pallet {
 
     #[pallet::error]
     pub enum Error<T> {
-        /// Validator not found
         ValidatorNotFound,
-        /// Invalid weight value
         InvalidWeight,
-        /// Invalid epoch configuration
         InvalidEpochConfig,
-        /// Not enough validators for epoch
         NotEnoughValidators,
-        /// Operation not allowed in governance mode
         NotAllowedInGovernanceMode,
     }
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
-        /// Update the stake score of a validator based on their current stake.
-        /// This is typically called by the POS pallet.
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_validator_stake_score(
             origin: OriginFor<T>,
             validator: T::AccountId,
         ) -> DispatchResult {
-            // Restrict to Root if governance mode is enabled
             if GovernanceModeEnabled::<T>::get() {
                 ensure_root(origin)?;
             } else {
@@ -322,20 +219,21 @@ pub mod pallet {
             }
             let stake = pos::Pallet::<T>::stake(&validator);
             let stake_score = stake.saturated_into::<u64>();
-            ValidatorStakeScores::<T>::insert(&validator, stake_score);
+            ValidatorStates::<T>::try_mutate(&validator, |maybe_state| {
+                let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                state.current.stake_score = stake_score;
+                Ok::<(), Error<T>>(())
+            }).map_err(|e| sp_runtime::DispatchError::from(e))?;
             Self::update_final_score(&validator)?;
             Ok(())
         }
 
         #[pallet::call_index(1)]
-        /// Update the inference score of a validator based on the latest inference result.
-        /// This is typically called by the POI pallet.
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_validator_inference_score(
             origin: OriginFor<T>,
             validator: T::AccountId,
         ) -> DispatchResult {
-            // Restrict to Root if governance mode is enabled
             if GovernanceModeEnabled::<T>::get() {
                 ensure_root(origin)?;
             } else {
@@ -343,15 +241,17 @@ pub mod pallet {
             }
             if let Some((result, _)) = poi::Pallet::<T>::inference_results(&validator) {
                 let inference_score = result as u64;
-                ValidatorInferenceScores::<T>::insert(&validator, inference_score);
+                ValidatorStates::<T>::try_mutate(&validator, |maybe_state| {
+                    let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                    state.current.inference_score = inference_score;
+                    Ok::<(), Error<T>>(())
+                }).map_err(|e| sp_runtime::DispatchError::from(e))?;
                 Self::update_final_score(&validator)?;
             }
             Ok(())
         }
 
         #[pallet::call_index(2)]
-        /// Update the consensus weights for POS and POI scores.
-        /// Only Root can call this, and the sum of weights must be 100.
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_consensus_weights(
             origin: OriginFor<T>,
@@ -360,19 +260,15 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_root(origin)?;
             ensure!(pos_weight + poi_weight == 100, Error::<T>::InvalidWeight);
-            
             PosWeight::<T>::put(pos_weight);
             PoiWeight::<T>::put(poi_weight);
-            
             Self::deposit_event(Event::ConsensusWeightsUpdated {
                 pos_weight,
                 poi_weight,
             });
-            
             Ok(())
         }
 
-        /// Toggle governance mode (Root only).
         #[pallet::call_index(3)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn set_governance_mode(origin: OriginFor<T>, enabled: bool) -> DispatchResult {
@@ -382,7 +278,6 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Sudo-only epoch advancement when governance mode is enabled
         #[pallet::call_index(4)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn sudo_advance_epoch(origin: OriginFor<T>) -> DispatchResult {
@@ -394,164 +289,128 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
-        /// Update the final score for a validator based on weighted PoS and PoI scores.
-        /// All weights and thresholds are runtime-configurable.
         fn update_final_score(validator: &T::AccountId) -> DispatchResult {
-            let stake_score = ValidatorStakeScores::<T>::get(validator);
-            let inference_score = ValidatorInferenceScores::<T>::get(validator);
-
-            // Use runtime-configured weights, fallback to defaults if not set
-            let pos_weight = if !PosWeight::<T>::exists() {
-                let weight = T::DefaultPosWeight::get();
-                PosWeight::<T>::put(weight);
-                weight
-            } else {
-                PosWeight::<T>::get()
-            };
-
-            let poi_weight = if !PoiWeight::<T>::exists() {
-                let weight = T::DefaultPoiWeight::get();
-                PoiWeight::<T>::put(weight);
-                weight
-            } else {
-                PoiWeight::<T>::get()
-            };
-
-            // Weighted sum, normalized to 100
-            let mut final_score = (stake_score.saturating_mul(pos_weight) + inference_score.saturating_mul(poi_weight)) / 100;
-
-            // Clamp to max validator score
-            if final_score > T::MaxValidatorScore::get() {
-                final_score = T::MaxValidatorScore::get();
-            }
-
-            ValidatorFinalScores::<T>::insert(
-                validator,
-                ValidatorScore {
-                    stake_weight: stake_score,
-                    inference_weight: inference_score,
+            ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
+                let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                let stake_score = state.current.stake_score;
+                let inference_score = state.current.inference_score;
+                let pos_weight = if !PosWeight::<T>::exists() {
+                    let weight = T::DefaultPosWeight::get();
+                    PosWeight::<T>::put(weight);
+                    weight
+                } else {
+                    PosWeight::<T>::get()
+                };
+                let poi_weight = if !PoiWeight::<T>::exists() {
+                    let weight = T::DefaultPoiWeight::get();
+                    PoiWeight::<T>::put(weight);
+                    weight
+                } else {
+                    PoiWeight::<T>::get()
+                };
+                let mut final_score = (stake_score.saturating_mul(pos_weight) + inference_score.saturating_mul(poi_weight)) / 100;
+                if final_score > T::MaxValidatorScore::get() {
+                    final_score = T::MaxValidatorScore::get();
+                }
+                let _old_score = state.current.final_score;
+                state.current.final_score = final_score;
+                state.last_active_epoch = Self::current_epoch();
+                if state.history.len() == state.history.capacity() {
+                    state.history.remove(0);
+                }
+                let _ = state.history.try_push(EpochStats {
+                    epoch: Self::current_epoch(),
+                    stake_score,
+                    inference_score,
                     final_score,
-                    last_epoch_active: 0,
-                    participation_count: 0,
-                    missed_blocks: 0,
-                    authored_blocks: 0,
-                },
-            );
-
-            Self::deposit_event(Event::ValidatorScoreUpdated {
-                validator: validator.clone(),
-                stake_score,
-                inference_score,
-                final_score,
-            });
-
-            Ok(())
-        }
-
-        /// Apply score decay to a validator's score if inactive for one or more epochs.
-        /// Decay rate and min/max scores are runtime-configurable.
-        fn apply_score_decay(validator: &T::AccountId, current_epoch: u32) -> DispatchResult {
-            let mut score = ValidatorFinalScores::<T>::get(validator);
-            let last_active = ValidatorLastActive::<T>::get(validator);
-
-            // Calculate epochs since last activity
-            let inactive_epochs = current_epoch.saturating_sub(last_active);
-
-            if inactive_epochs > 0 {
-                let decay_rate = <T as pallet::Config>::ValidatorScoreDecay::get();
-                let decay_amount = score.final_score.saturating_mul(decay_rate as u64) / 100u64;
-
-                let old_score = score.final_score;
-                score.final_score = score.final_score.saturating_sub(decay_amount);
-
-                // Clamp to MaxValidatorScore only (no need to clamp to zero, saturating_sub already does it)
-                if score.final_score > T::MaxValidatorScore::get() {
-                    score.final_score = T::MaxValidatorScore::get();
-                }
-
-                ValidatorFinalScores::<T>::insert(validator, score.clone());
-
-                Self::deposit_event(Event::ValidatorScoreDecayed {
-                    validator: validator.clone(),
-                    old_score,
-                    new_score: score.final_score,
+                    authored_blocks: state.current.authored_blocks,
+                    missed_blocks: state.current.missed_blocks,
                 });
-
-                // Eject if below minimum threshold
-                if score.final_score < <T as Config>::MinValidatorScore::get() as u64 {
-                    Self::eject_validator(validator, EjectionReason::ScoreBelowThreshold)?;
-                }
-            }
-
-            Ok(())
+                Self::deposit_event(Event::ValidatorScoreUpdated {
+                    validator: validator.clone(),
+                    stake_score,
+                    inference_score,
+                    final_score,
+                });
+                Ok::<(), Error<T>>(())
+            }).map_err(Into::into)
         }
 
-        /// Boost a validator's score for positive actions (block authored, valid inference, etc).
-        /// Boost amounts are runtime-configurable.
+        fn apply_score_decay(validator: &T::AccountId, current_epoch: u32) -> DispatchResult {
+            ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
+                let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                let last_active = state.last_active_epoch;
+                let inactive_epochs = current_epoch.saturating_sub(last_active);
+                if inactive_epochs > 0 {
+                    let decay_rate = <T as pallet::Config>::ValidatorScoreDecay::get();
+                    let decay_amount = state.current.final_score.saturating_mul(decay_rate as u64) / 100u64;
+                    let old_score = state.current.final_score;
+                    state.current.final_score = state.current.final_score.saturating_sub(decay_amount);
+                    if state.current.final_score > T::MaxValidatorScore::get() {
+                        state.current.final_score = T::MaxValidatorScore::get();
+                    }
+                    Self::deposit_event(Event::ValidatorScoreDecayed {
+                        validator: validator.clone(),
+                        old_score,
+                        new_score: state.current.final_score,
+                    });
+                    if state.current.final_score < <T as Config>::MinValidatorScore::get() as u64 {
+                        Self::eject_validator(validator, EjectionReason::ScoreBelowThreshold)
+                            .map_err(|_| Error::<T>::ValidatorNotFound)?;
+                    }
+                }
+                Ok::<(), Error<T>>(())
+            }).map_err(Into::into)
+        }
+
         fn boost_score(
             validator: &T::AccountId,
             amount: u64,
             reason: ScoreBoostReason,
         ) -> DispatchResult {
-            let mut score = ValidatorFinalScores::<T>::get(validator);
-            let old_score = score.final_score;
-
-            score.final_score = score.final_score.saturating_add(amount);
-            // Clamp to max
-            if score.final_score > T::MaxValidatorScore::get() {
-                score.final_score = T::MaxValidatorScore::get();
-            }
-            score.last_epoch_active = Self::current_epoch();
-
-            // Update storage
-            ValidatorFinalScores::<T>::insert(validator, score.clone());
-            ValidatorLastActive::<T>::insert(validator, Self::current_epoch());
-
-            // Update score history (last 10)
-            let history = ValidatorScoreHistory::<T>::get(validator);
-            let mut new_history = Vec::new();
-            if history.len() >= 10 {
-                new_history.extend_from_slice(&history[1..]);
-            } else {
-                new_history.extend_from_slice(&history);
-            }
-            new_history.push(score.final_score);
-            let bounded_history: BoundedVec<u64, ConstU32<10>> = new_history.try_into().expect("We know this is bounded by 10");
-            ValidatorScoreHistory::<T>::insert(validator, bounded_history);
-
-            // Emit event
-            Self::deposit_event(Event::ValidatorScoreBoosted {
-                validator: validator.clone(),
-                old_score,
-                new_score: score.final_score,
-                reason,
-            });
-
-            Ok(())
+            ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
+                let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                let old_score = state.current.final_score;
+                state.current.final_score = state.current.final_score.saturating_add(amount);
+                if state.current.final_score > T::MaxValidatorScore::get() {
+                    state.current.final_score = T::MaxValidatorScore::get();
+                }
+                state.last_active_epoch = Self::current_epoch();
+                if state.history.len() == state.history.capacity() {
+                    state.history.remove(0);
+                }
+                let _ = state.history.try_push(EpochStats {
+                    epoch: Self::current_epoch(),
+                    stake_score: state.current.stake_score,
+                    inference_score: state.current.inference_score,
+                    final_score: state.current.final_score,
+                    authored_blocks: state.current.authored_blocks,
+                    missed_blocks: state.current.missed_blocks,
+                });
+                Self::deposit_event(Event::ValidatorScoreBoosted {
+                    validator: validator.clone(),
+                    old_score,
+                    new_score: state.current.final_score,
+                    reason,
+                });
+                Ok::<(), Error<T>>(())
+            }).map_err(Into::into)
         }
 
-        /// Penalize a validator for missed blocks.
-        /// Penalty amount is runtime-configurable.
         fn record_missed_block(validator: &T::AccountId) -> DispatchResult {
-            let mut participation = ValidatorParticipation::<T>::get(validator);
-            participation.1 = participation.1.saturating_add(1);
-            ValidatorParticipation::<T>::insert(validator, participation);
-
-            let mut score = ValidatorFinalScores::<T>::get(validator);
-            let penalty = T::MissedBlockPenalty::get();
-            score.final_score = score.final_score.saturating_sub(penalty);
-            ValidatorFinalScores::<T>::insert(validator, score);
-
-            Ok(())
+            ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
+                let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                state.current.missed_blocks = state.current.missed_blocks.saturating_add(1);
+                Ok::<(), Error<T>>(())
+            }).map_err(|e| sp_runtime::DispatchError::from(e))
         }
 
-        /// Reward a validator for block authorship.
-        /// Boost amount is runtime-configurable.
         fn record_block_authorship(validator: &T::AccountId) -> DispatchResult {
-            let mut participation = ValidatorParticipation::<T>::get(validator);
-            participation.0 = participation.0.saturating_add(1);
-            ValidatorParticipation::<T>::insert(validator, participation);
-
+            ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
+                let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                state.current.authored_blocks = state.current.authored_blocks.saturating_add(1);
+                Ok::<(), Error<T>>(())
+            }).map_err(|e| sp_runtime::DispatchError::from(e))?;
             Self::boost_score(
                 validator,
                 T::BlockAuthorshipBoost::get(),
@@ -559,7 +418,6 @@ pub mod pallet {
             )
         }
 
-        /// Reward a validator for valid inference, boost depends on confidence.
         fn handle_valid_inference(
             validator: &T::AccountId,
             confidence: u32,
@@ -571,7 +429,6 @@ pub mod pallet {
             } else {
                 T::InferenceBoostLow::get()
             };
-
             Self::boost_score(
                 validator,
                 boost_amount,
@@ -579,8 +436,6 @@ pub mod pallet {
             )
         }
 
-        /// Penalize a validator for invalid/challenged inference.
-        /// Penalty depends on severity and is runtime-configurable.
         fn handle_invalid_inference(
             validator: &T::AccountId,
             severity: InferenceErrorSeverity,
@@ -590,28 +445,24 @@ pub mod pallet {
                 InferenceErrorSeverity::Medium => T::InferencePenaltyMedium::get(),
                 InferenceErrorSeverity::Low => T::InferencePenaltyLow::get(),
             };
-
-            let mut score = ValidatorFinalScores::<T>::get(validator);
-            let new_score = score.final_score.saturating_sub(penalty);
-            score.final_score = new_score;
-            ValidatorFinalScores::<T>::insert(validator, score.clone());
-
-            if new_score < <T as Config>::MinValidatorScore::get() as u64 {
-                Self::eject_validator(validator, EjectionReason::ScoreBelowThreshold)?;
-            }
-
-            Ok(())
+            ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
+                let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                let new_score = state.current.final_score.saturating_sub(penalty);
+                state.current.final_score = new_score;
+                if new_score < <T as Config>::MinValidatorScore::get() as u64 {
+                    Self::eject_validator(validator, EjectionReason::ScoreBelowThreshold)
+                        .map_err(|_| Error::<T>::ValidatorNotFound)?;
+                }
+                Ok::<(), Error<T>>(())
+            }).map_err(Into::into)
         }
 
-        // Eject a validator from the active set for a given reason
         fn eject_validator(validator: &T::AccountId, reason: EjectionReason) -> DispatchResult {
-            // Remove from active set
             let mut active_validators = ActiveValidators::<T>::get();
             if let Some(pos) = active_validators.iter().position(|v| v == validator) {
                 active_validators.remove(pos);
                 ActiveValidators::<T>::put(active_validators);
             }
-            // Emit event
             Self::deposit_event(Event::ValidatorEjected {
                 validator: validator.clone(),
                 reason,
@@ -619,24 +470,19 @@ pub mod pallet {
             Ok(())
         }
 
-        // Determine if an epoch transition should occur
         fn should_transition_epoch(
             now: BlockNumberFor<T>,
             current_epoch: u32,
             epoch_config: &EpochConfig,
         ) -> bool {
-            // Transition if enough blocks have passed since last epoch
             let blocks_per_epoch = epoch_config.blocks_per_epoch;
             let epoch_start_block = current_epoch.saturating_mul(blocks_per_epoch);
             let now_u32: u32 = now.saturated_into();
             now_u32 >= epoch_start_block + blocks_per_epoch
         }
 
-        // Handle epoch transition logic
         fn handle_epoch_transition() -> Weight {
-            // Restrict to governance only if enabled
             if GovernanceModeEnabled::<T>::get() {
-                // Only allow via Root extrinsic, not automatic transition
                 return <T as Config>::WeightInfo::on_initialize();
             }
             let current_epoch = Self::current_epoch();
@@ -659,11 +505,9 @@ pub mod pallet {
             let epoch_config = Self::epoch_config();
             let current_epoch = Self::current_epoch();
 
-            // Only allow automatic epoch transition if governance mode is disabled
             if !Self::governance_mode_enabled() && Self::should_transition_epoch(now, current_epoch, &epoch_config) {
                 Self::handle_epoch_transition()
             } else {
-                // Validate block author
                 if let Some(expected_author) = Self::get_expected_author(now.saturated_into::<u32>()) {
                     let actual_author = frame_system::Pallet::<T>::digest()
                         .logs()
@@ -691,7 +535,6 @@ pub mod pallet {
         }
 
         fn on_finalize(_n: BlockNumberFor<T>) {
-            // Update all validator scores at the end of each block
             let validators = ValidatorSet::<T>::get();
             for validator in validators.iter() {
                 let _ = Self::update_final_score(validator);
@@ -711,50 +554,49 @@ pub mod pallet {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            // Set initial validators
             ValidatorSet::<T>::put(
                 BoundedVec::try_from(self.validators.clone())
                     .expect("Initial validators exceed MaxValidators"),
             );
 
-            // Set initial validator scores
             for (validator, score) in self.validators.iter().zip(self.validator_scores.iter()) {
-                ValidatorStakeScores::<T>::insert(validator, *score as u64);
-                ValidatorInferenceScores::<T>::insert(validator, *score as u64);
-                
-                // Calculate final score directly instead of calling update_final_score
                 let pos_weight = T::DefaultPosWeight::get();
                 let poi_weight = T::DefaultPoiWeight::get();
                 let final_score = (*score as u64 * pos_weight + *score as u64 * poi_weight) / 100;
-                
-                ValidatorFinalScores::<T>::insert(
+                let mut history = BoundedVec::<EpochStats, ConstU32<10>>::default();
+                let _ = history.try_push(EpochStats {
+                    epoch: 0,
+                    stake_score: *score as u64,
+                    inference_score: *score as u64,
+                    final_score,
+                    authored_blocks: 0,
+                    missed_blocks: 0,
+                });
+                ValidatorStates::<T>::insert(
                     validator,
-                    ValidatorScore {
-                        stake_weight: *score as u64,
-                        inference_weight: *score as u64,
-                        final_score,
-                        last_epoch_active: 0,
-                        participation_count: 0,
-                        missed_blocks: 0,
-                        authored_blocks: 0,
+                    ValidatorState {
+                        last_active_epoch: 0,
+                        current: EpochStats {
+                            epoch: 0,
+                            stake_score: *score as u64,
+                            inference_score: *score as u64,
+                            final_score,
+                            authored_blocks: 0,
+                            missed_blocks: 0,
+                        },
+                        history,
                     },
                 );
             }
 
-            // Set initial epoch
             CurrentEpoch::<T>::put(self.current_epoch);
-
-            // Set epoch config
             EpochConfigStorage::<T>::put(self.epoch_config.clone());
-
-            // Set initial weights
             PosWeight::<T>::put(T::DefaultPosWeight::get());
             PoiWeight::<T>::put(T::DefaultPoiWeight::get());
         }
     }
 
     impl<T: Config> Pallet<T> {
-        /// Called by consensus engine to validate block author.
         pub fn validate_block_author(block_number: u32, author: T::AccountId) {
             if !Self::is_validator_active(&author) {
                 Self::deposit_event(Event::InvalidAuthor {
@@ -764,14 +606,11 @@ pub mod pallet {
             }
         }
 
-        /// Helper to check if validator is active
         pub fn is_validator_active(author: &T::AccountId) -> bool {
             Self::active_validators().contains(author)
         }
 
-        /// Returns the expected author for a given block number, if any.
         pub fn get_expected_author(block_number: u32) -> Option<T::AccountId> {
-            // Example logic: round-robin selection from active_validators
             let validators = Self::active_validators();
             if validators.is_empty() {
                 return None;
