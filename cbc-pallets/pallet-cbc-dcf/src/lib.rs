@@ -1,6 +1,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(dead_code)]
 #[warn(unused_comparisons)]
+
+#[cfg(test)]
+mod tests;
 use frame_support::{
     pallet_prelude::*,
     traits::Get,
@@ -11,6 +14,7 @@ use frame_system::pallet_prelude::*;
 use sp_runtime::{
     traits::{SaturatedConversion, AtLeast32BitUnsigned},
     DigestItem,
+    codec, 
 };
 use sp_std::prelude::*;
 use pallet_cbc_pos as pos;
@@ -70,7 +74,7 @@ pub mod pallet {
         pub max_validators: u32,
     }
 
-    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
     pub enum ProposalAction<T: Config + TypeInfo + std::fmt::Debug> {
         Slash { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
         Reward { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
@@ -231,6 +235,10 @@ pub mod pallet {
         InvalidEpochConfig,
         NotEnoughValidators,
         NotAllowedInGovernanceMode,
+        NotValidator,
+        AlreadyVoted,
+        ProposalNotApproved,
+        ProposalAlreadyExecuted,
     }
 
     #[pallet::call]
@@ -318,21 +326,21 @@ pub mod pallet {
 
         #[pallet::call_index(5)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn submit_proposal(origin: OriginFor<T>, action: ProposalAction<T>) -> DispatchResult {
+        pub fn submit_proposal(_origin: OriginFor<T>, _action: ProposalAction<T>) -> DispatchResult {
             // Implementation: store proposal, emit event
             Ok(())
         }
 
         #[pallet::call_index(6)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn vote_proposal(origin: OriginFor<T>, proposal_id: u32, approve: bool) -> DispatchResult {
+        pub fn vote_proposal(_origin: OriginFor<T>, _proposal_id: u32, _approve: bool) -> DispatchResult {
             // Implementation: record vote, emit event
             Ok(())
         }
 
         #[pallet::call_index(7)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn execute_proposal(origin: OriginFor<T>, proposal_id: u32) -> DispatchResult {
+        pub fn execute_proposal(_origin: OriginFor<T>, _proposal_id: u32) -> DispatchResult {
             // Implementation: check approval, execute action, emit event
             Ok(())
         }
@@ -386,7 +394,7 @@ pub mod pallet {
             }).map_err(Into::into)
         }
 
-        fn apply_score_decay(validator: &T::AccountId, current_epoch: u32) -> DispatchResult {
+        pub fn apply_score_decay(validator: &T::AccountId, current_epoch: u32) -> DispatchResult {
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
                 let last_active = state.last_active_epoch;
@@ -447,7 +455,7 @@ pub mod pallet {
             }).map_err(Into::into)
         }
 
-        fn record_missed_block(validator: &T::AccountId) -> DispatchResult {
+        pub fn record_missed_block(validator: &T::AccountId) -> DispatchResult {
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
                 state.current.missed_blocks = state.current.missed_blocks.saturating_add(1);
@@ -455,7 +463,7 @@ pub mod pallet {
             }).map_err(|e| sp_runtime::DispatchError::from(e))
         }
 
-        fn record_block_authorship(validator: &T::AccountId) -> DispatchResult {
+        pub fn record_block_authorship(validator: &T::AccountId) -> DispatchResult {
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
                 state.current.authored_blocks = state.current.authored_blocks.saturating_add(1);
@@ -694,4 +702,8 @@ pub enum InferenceErrorSeverity {
     Medium, // Moderate error
     Low,    // Minor error
 }
+
+
+
+
 
