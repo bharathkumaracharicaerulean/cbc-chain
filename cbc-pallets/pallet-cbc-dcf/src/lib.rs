@@ -40,7 +40,7 @@ sp_api::decl_runtime_apis! {
 pub mod weights;
 pub use weights::*;
 
-pub use pallet::*;
+pub use self::pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -70,8 +70,32 @@ pub mod pallet {
         pub max_validators: u32,
     }
 
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub enum ProposalAction<T: Config + TypeInfo + std::fmt::Debug> {
+        Slash { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
+        Reward { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
+        Eject { validator: T::AccountId, reason: EjectionReason },
+    }
+
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct GovernanceProposal<T: Config + TypeInfo + std::fmt::Debug> {
+        pub proposer: T::AccountId,
+        pub action: ProposalAction<T>,
+        pub status: ProposalStatus,
+        pub votes_for: u32,
+        pub votes_against: u32,
+    }
+
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub enum ProposalStatus {
+        Pending,
+        Approved,
+        Rejected,
+        Executed,
+    }
+
     #[pallet::config]
-    pub trait Config: frame_system::Config + pos::Config + poi::Config {
+    pub trait Config: frame_system::Config + pos::Config + poi::Config + TypeInfo + std::fmt::Debug {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         #[pallet::constant]
         type MaxValidators: Get<u32>;
@@ -149,6 +173,11 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn governance_mode_enabled)]
     pub type GovernanceModeEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
+
+    #[pallet::storage]
+    pub type Proposals<T: Config> = StorageMap<
+        _, Blake2_128Concat, u32, GovernanceProposal<T>, OptionQuery
+    >;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -284,6 +313,27 @@ pub mod pallet {
             ensure_root(origin)?;
             ensure!(GovernanceModeEnabled::<T>::get(), Error::<T>::NotAllowedInGovernanceMode);
             let _ = Self::handle_epoch_transition();
+            Ok(())
+        }
+
+        #[pallet::call_index(5)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn submit_proposal(origin: OriginFor<T>, action: ProposalAction<T>) -> DispatchResult {
+            // Implementation: store proposal, emit event
+            Ok(())
+        }
+
+        #[pallet::call_index(6)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn vote_proposal(origin: OriginFor<T>, proposal_id: u32, approve: bool) -> DispatchResult {
+            // Implementation: record vote, emit event
+            Ok(())
+        }
+
+        #[pallet::call_index(7)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn execute_proposal(origin: OriginFor<T>, proposal_id: u32) -> DispatchResult {
+            // Implementation: check approval, execute action, emit event
             Ok(())
         }
     }
