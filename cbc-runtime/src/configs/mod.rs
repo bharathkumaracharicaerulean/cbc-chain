@@ -131,11 +131,6 @@ impl pallet_sudo::Config for Runtime {
     type WeightInfo = pallet_sudo::weights::SubstrateWeight<Runtime>;
 }
 
-// === Custom Pallet Template Configuration ===
-impl cbc_pallet_template::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = cbc_pallet_template::weights::SubstrateWeight<Runtime>;
-}
 
 // === CBC POI Pallet Configuration ===
 impl pallet_cbc_poi::Config for Runtime {

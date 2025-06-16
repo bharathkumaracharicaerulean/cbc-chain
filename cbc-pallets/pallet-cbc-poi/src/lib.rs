@@ -1,28 +1,47 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+//! # pallet-cbc-poi
+//!
+//! This pallet implements Proof-of-Inference (PoI) logic for the CBC-Chain. It allows validators to submit inference results, challenge others' results, and provides a mechanism for rewarding or penalizing based on inference correctness and challenge outcomes.
+//!
+//! ## Main Features
+//! - **Inference Submission:** Validators submit inference results with a confidence score.
+//! - **Challenge Mechanism:** Validators can challenge others' inference results within a configurable window.
+//! - **Epoch Management:** Inference results and challenges are tracked per epoch.
+//! - **Configurable Parameters:** Confidence threshold, challenge window, and rewards are all configurable via the runtime.
+//! - **Events:** Emits events for inference submissions, challenges, and challenge resolutions.
+
 pub use pallet::*;
 
+// --- Weights Module --- //
 pub mod weights;
 pub use weights::*;
 
+// --- Test Modules --- //
 #[cfg(test)]
 mod mock;
 
 #[cfg(test)]
 mod tests;
 
+// --- Benchmarking (if enabled) --- //
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+// --- Imports --- //
 use sp_std::prelude::*;
 
-// Runtime API declaration
+// --- Runtime API Declaration --- //
+// Exposes PoI state and queries to the runtime API.
 sp_api::decl_runtime_apis! {
     pub trait PoiApi<AccountId>
     where
         AccountId: codec::Codec + Clone + Eq + sp_std::fmt::Debug,
     {
+        /// Get the inference result and epoch for a validator.
         fn get_inference_result(validator: AccountId) -> Option<(u32, u32)>;
+        /// Get the challenge (challenger, result, epoch) for a validator.
         fn get_challenge(validator: AccountId) -> Option<(AccountId, u32, u32)>;
+        /// Get the current inference epoch.
         fn get_current_epoch() -> u32;
     }
 }
@@ -34,53 +53,63 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use scale_info::prelude::vec::Vec;
 
+    /// Main pallet struct.
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
+    /// Pallet configuration trait.
     #[pallet::config]
     pub trait Config: frame_system::Config {
+        /// The overarching event type.
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+        /// Weight information for extrinsics.
         type WeightInfo: WeightInfo;
 
-        /// Minimum confidence threshold for inference (0-100)
+        /// Minimum confidence threshold for inference (0-100).
         type MinInferenceConfidence: Get<u32>;
-        /// Maximum age of inference in epochs
+        /// Maximum age of inference in epochs.
         type MaxInferenceAge: Get<u32>;
-        /// Number of epochs to challenge an inference
+        /// Number of epochs to challenge an inference.
         type ChallengeWindow: Get<u32>;
-        /// Reward for correct inference
+        /// Reward for correct inference.
         type InferenceReward: Get<u128>;
-        /// Reward for successful challenge
+        /// Reward for successful challenge.
         type ChallengeReward: Get<u128>;
     }
 
+    /// Genesis configuration for PoI pallet.
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
+        /// Initial inference results: (validator, result).
         pub inference_results: Vec<(T::AccountId, u32)>,
+        /// Initial challenges: (challenger, challenged, result).
         pub challenges: Vec<(T::AccountId, T::AccountId, u32)>,
+        /// Initial epoch number.
         pub current_epoch: u32,
     }
 
+    /// Genesis build logic for initializing storage.
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            // Initialize inference results
+            // Initialize inference results for validators.
             for (account, result) in &self.inference_results {
                 InferenceResults::<T>::insert(account, (*result, self.current_epoch));
             }
 
-            // Initialize challenges
+            // Initialize challenges.
             for (challenger, challenged, result) in &self.challenges {
                 Challenges::<T>::insert(challenger, (challenged, *result, self.current_epoch));
             }
 
-            // Initialize current epoch
+            // Set the current epoch.
             CurrentEpoch::<T>::put(self.current_epoch);
         }
     }
 
     /// Storage for inference result submissions from validators.
+    /// Maps validator account to (result, epoch).
     #[pallet::storage]
     #[pallet::getter(fn inference_results)]
     pub type InferenceResults<T: Config> = StorageMap<
@@ -91,7 +120,8 @@ pub mod pallet {
         OptionQuery
     >;
 
-    /// Storage for challenge submissions (if a validator disputes an inference).
+    /// Storage for challenge submissions.
+    /// Maps challenger account to (challenged, result, epoch).
     #[pallet::storage]
     #[pallet::getter(fn challenges)]
     pub type Challenges<T: Config> = StorageMap<
@@ -107,6 +137,7 @@ pub mod pallet {
     #[pallet::getter(fn current_epoch)]
     pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// Events emitted by the PoI pallet.
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -118,25 +149,32 @@ pub mod pallet {
         ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
     }
 
+    /// Errors returned by the PoI pallet.
     #[pallet::error]
     pub enum Error<T> {
-        /// The inference result already exists.
+        /// The inference result already exists for this validator.
         InferenceAlreadySubmitted,
         /// The inference result does not exist.
         InferenceNotFound,
-        /// The challenge is invalid.
+        /// The challenge is invalid (e.g., wrong result).
         InvalidChallenge,
         /// The confidence level is too low.
         ConfidenceTooLow,
         /// The challenge window has expired.
         ChallengeWindowExpired,
-        /// The inference is too old.
+        /// The inference is too old to be challenged.
         InferenceTooOld,
     }
 
+    /// Dispatchable functions (extrinsics) for the PoI pallet.
     #[pallet::call]
     impl<T: Config> Pallet<T> {
-        /// Submit an inference result.
+        /// Submit an inference result for the current epoch.
+        ///
+        /// - `result`: The inference result value.
+        /// - `confidence`: Confidence score (must meet minimum threshold).
+        ///
+        /// Emits `InferenceSubmitted` event.
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::submit_inference())]
         pub fn submit_inference(
@@ -152,7 +190,7 @@ pub mod pallet {
                 Error::<T>::InferenceAlreadySubmitted
             );
 
-            // Ensure confidence meets minimum threshold
+            // Ensure confidence meets minimum threshold.
             ensure!(
                 confidence >= T::MinInferenceConfidence::get(),
                 Error::<T>::ConfidenceTooLow
@@ -160,7 +198,7 @@ pub mod pallet {
 
             let current_epoch = CurrentEpoch::<T>::get();
 
-            // Store the inference result with current epoch
+            // Store the inference result with current epoch.
             InferenceResults::<T>::insert(&who, (result, current_epoch));
 
             // Emit an event.
@@ -169,7 +207,12 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Submit a challenge against an inference result.
+        /// Submit a challenge against another validator's inference result.
+        ///
+        /// - `challenged`: The validator being challenged.
+        /// - `result`: The result being challenged.
+        ///
+        /// Emits `InferenceChallenged` event.
         #[pallet::call_index(1)]
         #[pallet::weight(T::WeightInfo::challenge_inference())]
         pub fn challenge_inference(
@@ -179,31 +222,31 @@ pub mod pallet {
         ) -> DispatchResult {
             let challenger = ensure_signed(origin)?;
 
-            // Get the inference result and its epoch
+            // Get the inference result and its epoch.
             let (stored_result, epoch) = InferenceResults::<T>::get(&challenged)
                 .ok_or(Error::<T>::InferenceNotFound)?;
 
             let current_epoch = CurrentEpoch::<T>::get();
 
-            // Ensure the inference is not too old
+            // Ensure the inference is not too old.
             ensure!(
                 current_epoch - epoch <= T::MaxInferenceAge::get(),
                 Error::<T>::InferenceTooOld
             );
 
-            // Ensure we're within the challenge window
+            // Ensure we're within the challenge window.
             ensure!(
                 current_epoch - epoch <= T::ChallengeWindow::get(),
                 Error::<T>::ChallengeWindowExpired
             );
 
-            // Ensure the inference result matches
+            // Ensure the inference result matches.
             ensure!(
                 stored_result == result,
                 Error::<T>::InvalidChallenge
             );
 
-            // Store the challenge with current epoch
+            // Store the challenge with current epoch.
             Challenges::<T>::insert(&challenger, (&challenged, result, current_epoch));
 
             // Emit an event.

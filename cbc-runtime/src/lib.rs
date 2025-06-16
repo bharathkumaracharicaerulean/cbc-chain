@@ -191,9 +191,6 @@ mod runtime {
     #[runtime::pallet_index(4)]
     pub type Sudo = pallet_sudo;
 
-    #[runtime::pallet_index(5)]
-    pub type Template = cbc_pallet_template;
-
     #[runtime::pallet_index(6)]
     pub type PalletCbcPoi = pallet_cbc_poi;
 

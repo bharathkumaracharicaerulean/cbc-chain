@@ -31,9 +31,6 @@ This document provides an overview of the CBC runtime, including the purpose of 
 - Allows a privileged account (sudo key) to execute administrative tasks.
 - Useful for runtime upgrades and testing.
 
-### **Template (`cbc_pallet_template`)**
-- A custom pallet for implementing application-specific logic.
-- Acts as a starting point for custom development.
 
 ### **Pallet-cbc-PoS**
 - **Purpose**:  

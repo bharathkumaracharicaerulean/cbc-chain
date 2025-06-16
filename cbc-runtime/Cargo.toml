@@ -28,8 +28,7 @@ frame-try-runtime = { optional = true, workspace = true }                       
 pallet-aura.workspace = true                                                     # Aura consensus pallet
 pallet-balances.workspace = true                                                 # Balances pallet
 pallet-grandpa.workspace = true                                                  # Grandpa consensus pallet
-pallet-sudo.workspace = true                                                     # Sudo pallet for superuser access
-cbc-pallet-template.workspace = true                                                 # Custom template pallet
+pallet-sudo.workspace = true                                                     # Sudo pallet for superuser access                                              # Custom template pallet
 pallet-cbc-poi.workspace = true
 pallet-cbc-pos.workspace = true
 pallet-cbc-dcf.workspace = true
@@ -79,7 +78,6 @@ std = [
 	"pallet-balances/std",
 	"pallet-grandpa/std",
 	"pallet-sudo/std",
-	"cbc-pallet-template/std",
 	"pallet-cbc-poi/std",
 	"pallet-cbc-pos/std",
 	"pallet-cbc-dcf/std",
@@ -115,7 +113,6 @@ runtime-benchmarks = [
 	"pallet-balances/runtime-benchmarks",
 	"pallet-grandpa/runtime-benchmarks",
 	"pallet-sudo/runtime-benchmarks",
-	"cbc-pallet-template/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
 	"pallet-transaction-payment/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
@@ -131,7 +128,6 @@ try-runtime = [
 	"pallet-balances/try-runtime",
 	"pallet-grandpa/try-runtime",
 	"pallet-sudo/try-runtime",
-	"cbc-pallet-template/try-runtime",
 	"pallet-cbc-poi/try-runtime",
 	"pallet-cbc-pos/try-runtime",
 	"pallet-timestamp/try-runtime",

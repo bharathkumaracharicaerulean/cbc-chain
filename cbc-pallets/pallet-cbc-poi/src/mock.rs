@@ -1,3 +1,4 @@
+// Import the pallet as a local crate alias for easier reference in tests.
 use crate as pallet_cbc_poi;
 use frame_support::{
     parameter_types,
@@ -10,9 +11,11 @@ use sp_runtime::{
     BuildStorage,
 };
 
+// Define the mock block type for the test runtime.
 type Block = frame_system::mocking::MockBlock<Test>;
 
-// Configure a mock runtime to test the pallet.
+// Configure a mock runtime to test the pallet using construct_runtime macro.
+// This creates a minimal runtime with just the system and the PoI pallet.
 frame_support::construct_runtime!(
     pub enum Test {
         System: frame_system,
@@ -20,11 +23,13 @@ frame_support::construct_runtime!(
     }
 );
 
+// Parameter types for system configuration.
 parameter_types! {
-    pub const BlockHashCount: u64 = 250;
-    pub const SS58Prefix: u8 = 42;
+    pub const BlockHashCount: u64 = 250; // Number of recent block hashes to keep.
+    pub const SS58Prefix: u8 = 42;       // Default Substrate address prefix.
 }
 
+// Implement the system pallet configuration trait for the mock runtime.
 impl system::Config for Test {
     type BaseCallFilter = frame_support::traits::Everything;
     type BlockWeights = ();
@@ -34,7 +39,7 @@ impl system::Config for Test {
     type Nonce = u64;
     type Hash = H256;
     type Hashing = BlakeTwo256;
-    type AccountId = u64;
+    type AccountId = u64; // Use u64 for account IDs in tests.
     type Lookup = IdentityLookup<Self::AccountId>;
     type Block = Block;
     type RuntimeEvent = RuntimeEvent;
@@ -58,20 +63,22 @@ impl system::Config for Test {
     type PostTransactions = ();
 }
 
+// Implement the PoI pallet configuration trait for the mock runtime.
 impl pallet_cbc_poi::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
-    type MinInferenceConfidence = ConstU32<50>;
-    type MaxInferenceAge = ConstU32<10>;
-    type ChallengeWindow = ConstU32<5>;
-    type InferenceReward = ConstU128<1000>;
-    type ChallengeReward = ConstU128<500>;
+    type MinInferenceConfidence = ConstU32<50>; // Minimum confidence for inference.
+    type MaxInferenceAge = ConstU32<10>;       // Max epochs an inference is valid.
+    type ChallengeWindow = ConstU32<5>;        // Epochs allowed for challenge.
+    type InferenceReward = ConstU128<1000>;    // Reward for correct inference.
+    type ChallengeReward = ConstU128<500>;     // Reward for successful challenge.
 }
 
-// Build genesis storage according to the mock runtime.
+// Helper function to build genesis storage for tests.
+// Returns a TestExternalities instance for executing tests in an isolated environment.
 pub fn new_test_ext() -> sp_io::TestExternalities {
     system::GenesisConfig::<Test>::default()
         .build_storage()
         .unwrap()
         .into()
-} 
+}

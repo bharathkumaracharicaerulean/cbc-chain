@@ -1,9 +1,24 @@
+//! # pallet-cbc-dcf
+//!
+//! This pallet implements the DCF (Dynamic Consensus Framework) for the CBC-Chain. It manages validator scoring, epoch transitions, consensus weights, governance proposals, and validator lifecycle (ejection, re-entry, etc).
+//! 
+//! ## Main Features
+//! - **Validator Scoring:** Combines PoS and PoI scores with configurable weights.
+//! - **Epoch Management:** Handles epoch transitions, validator activity, and score decay.
+//! - **Governance:** Allows proposals for slashing, rewards, and validator ejection.
+//! - **Block Authorship:** Tracks block authorship and missed blocks, boosting or penalizing scores accordingly.
+//! - **Hooks:** Integrates with runtime hooks for per-block and per-epoch logic.
+//! - **Genesis Configuration:** Supports initial validator set and configuration at genesis.
+
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(dead_code)]
 #[warn(unused_comparisons)]
 
+// Unit tests module
 #[cfg(test)]
 mod tests;
+
+// --- Imports --- //
 use frame_support::{
     pallet_prelude::*,
     traits::Get,
@@ -21,6 +36,8 @@ use pallet_cbc_pos as pos;
 use pallet_cbc_poi as poi;
 use serde::{Serialize, Deserialize};
 
+// --- Runtime API Declarations --- //
+// These APIs are exposed to the runtime for querying validator and consensus state.
 sp_api::decl_runtime_apis! {
     pub trait DcfApi<AccountId>
     where
@@ -41,15 +58,21 @@ sp_api::decl_runtime_apis! {
     }
 }
 
+// --- Weights Module --- //
 pub mod weights;
 pub use weights::*;
 
+// Re-export the pallet for external use
 pub use self::pallet::*;
 
+// --- Pallet Declaration --- //
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
 
+    // --- Data Structures --- //
+
+    /// Per-epoch statistics for a validator.
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
     pub struct EpochStats {
         pub epoch: u32,
@@ -60,6 +83,7 @@ pub mod pallet {
         pub missed_blocks: u32,
     }
 
+    /// State for a validator, including current stats and history.
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
     pub struct ValidatorState {
         pub last_active_epoch: u32,
@@ -67,6 +91,7 @@ pub mod pallet {
         pub history: BoundedVec<EpochStats, ConstU32<10>>,
     }
 
+    /// Configuration for epochs (block count, min stake, max validators).
     #[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, Default, Serialize, Deserialize)]
     pub struct EpochConfig {
         pub blocks_per_epoch: u32,
@@ -74,6 +99,7 @@ pub mod pallet {
         pub max_validators: u32,
     }
 
+    /// Actions that can be proposed via governance.
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
     pub enum ProposalAction<T: Config + TypeInfo + std::fmt::Debug> {
         Slash { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
@@ -81,6 +107,7 @@ pub mod pallet {
         Eject { validator: T::AccountId, reason: EjectionReason },
     }
 
+    /// Governance proposal structure.
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
     pub struct GovernanceProposal<T: Config + TypeInfo + std::fmt::Debug> {
         pub proposer: T::AccountId,
@@ -90,6 +117,7 @@ pub mod pallet {
         pub votes_against: u32,
     }
 
+    /// Status of a governance proposal.
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
     pub enum ProposalStatus {
         Pending,
@@ -98,6 +126,7 @@ pub mod pallet {
         Executed,
     }
 
+    // --- Pallet Configuration Trait --- //
     #[pallet::config]
     pub trait Config: frame_system::Config + pos::Config + poi::Config + TypeInfo + std::fmt::Debug {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
@@ -140,6 +169,7 @@ pub mod pallet {
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
+    /// Stores state for each validator.
     #[pallet::storage]
     #[pallet::getter(fn validator_states)]
     pub type ValidatorStates<T: Config> = StorageMap<
@@ -150,39 +180,48 @@ pub mod pallet {
         OptionQuery,
     >;
 
+    /// Current PoS weight for scoring.
     #[pallet::storage]
     #[pallet::getter(fn pos_weight)]
     pub type PosWeight<T: Config> = StorageValue<_, u64, ValueQuery>;
 
+    /// Current PoI weight for scoring.
     #[pallet::storage]
     #[pallet::getter(fn poi_weight)]
     pub type PoiWeight<T: Config> = StorageValue<_, u64, ValueQuery>;
 
+    /// Set of all validators.
     #[pallet::storage]
     #[pallet::getter(fn validator_set)]
     pub type ValidatorSet<T: Config> = StorageValue<_, BoundedVec<T::AccountId, <T as Config>::MaxValidators>, ValueQuery>;
 
+    /// Epoch configuration.
     #[pallet::storage]
     #[pallet::getter(fn epoch_config)]
     pub type EpochConfigStorage<T: Config> = StorageValue<_, EpochConfig, ValueQuery>;
 
+    /// Current epoch number.
     #[pallet::storage]
     #[pallet::getter(fn current_epoch)]
     pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// Currently active validators.
     #[pallet::storage]
     #[pallet::getter(fn active_validators)]
     pub type ActiveValidators<T: Config> = StorageValue<_, BoundedVec<T::AccountId, <T as Config>::MaxValidators>, ValueQuery>;
 
+    /// Whether governance mode is enabled (sudo-like).
     #[pallet::storage]
     #[pallet::getter(fn governance_mode_enabled)]
     pub type GovernanceModeEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
 
+    /// Governance proposals by ID.
     #[pallet::storage]
     pub type Proposals<T: Config> = StorageMap<
         _, Blake2_128Concat, u32, GovernanceProposal<T>, OptionQuery
     >;
 
+    // --- Events --- //
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -228,6 +267,7 @@ pub mod pallet {
         },
     }
 
+    // --- Errors --- //
     #[pallet::error]
     pub enum Error<T> {
         ValidatorNotFound,
@@ -241,8 +281,10 @@ pub mod pallet {
         ProposalAlreadyExecuted,
     }
 
+    // --- Dispatchable Calls --- //
     #[pallet::call]
     impl<T: Config> Pallet<T> {
+        /// Update a validator's stake score (PoS).
         #[pallet::call_index(0)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_validator_stake_score(
@@ -265,6 +307,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Update a validator's inference score (PoI).
         #[pallet::call_index(1)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_validator_inference_score(
@@ -288,6 +331,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Update consensus weights for PoS and PoI.
         #[pallet::call_index(2)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn update_consensus_weights(
@@ -306,6 +350,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Toggle governance mode (sudo-like).
         #[pallet::call_index(3)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn set_governance_mode(origin: OriginFor<T>, enabled: bool) -> DispatchResult {
@@ -315,6 +360,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Sudo: advance epoch manually (governance mode only).
         #[pallet::call_index(4)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn sudo_advance_epoch(origin: OriginFor<T>) -> DispatchResult {
@@ -324,6 +370,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Submit a governance proposal.
         #[pallet::call_index(5)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn submit_proposal(_origin: OriginFor<T>, _action: ProposalAction<T>) -> DispatchResult {
@@ -331,6 +378,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Vote on a governance proposal.
         #[pallet::call_index(6)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn vote_proposal(_origin: OriginFor<T>, _proposal_id: u32, _approve: bool) -> DispatchResult {
@@ -338,6 +386,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Execute an approved governance proposal.
         #[pallet::call_index(7)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn execute_proposal(_origin: OriginFor<T>, _proposal_id: u32) -> DispatchResult {
@@ -346,7 +395,9 @@ pub mod pallet {
         }
     }
 
+    // --- Internal Logic --- //
     impl<T: Config> Pallet<T> {
+        /// Recalculate and update the final score for a validator.
         fn update_final_score(validator: &T::AccountId) -> DispatchResult {
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
@@ -394,6 +445,7 @@ pub mod pallet {
             }).map_err(Into::into)
         }
 
+        /// Apply score decay to a validator if inactive.
         pub fn apply_score_decay(validator: &T::AccountId, current_epoch: u32) -> DispatchResult {
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
@@ -421,6 +473,7 @@ pub mod pallet {
             }).map_err(Into::into)
         }
 
+        /// Boost a validator's score for a given reason.
         fn boost_score(
             validator: &T::AccountId,
             amount: u64,
@@ -455,6 +508,7 @@ pub mod pallet {
             }).map_err(Into::into)
         }
 
+        /// Record a missed block for a validator.
         pub fn record_missed_block(validator: &T::AccountId) -> DispatchResult {
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
@@ -463,6 +517,7 @@ pub mod pallet {
             }).map_err(|e| sp_runtime::DispatchError::from(e))
         }
 
+        /// Record block authorship for a validator and boost score.
         pub fn record_block_authorship(validator: &T::AccountId) -> DispatchResult {
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
@@ -476,6 +531,7 @@ pub mod pallet {
             )
         }
 
+        /// Handle a valid inference result for a validator.
         fn handle_valid_inference(
             validator: &T::AccountId,
             confidence: u32,
@@ -494,6 +550,7 @@ pub mod pallet {
             )
         }
 
+        /// Handle an invalid inference result for a validator.
         fn handle_invalid_inference(
             validator: &T::AccountId,
             severity: InferenceErrorSeverity,
@@ -515,6 +572,7 @@ pub mod pallet {
             }).map_err(Into::into)
         }
 
+        /// Eject a validator from the active set for a given reason.
         fn eject_validator(validator: &T::AccountId, reason: EjectionReason) -> DispatchResult {
             let mut active_validators = ActiveValidators::<T>::get();
             if let Some(pos) = active_validators.iter().position(|v| v == validator) {
@@ -528,6 +586,7 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Determine if an epoch transition should occur.
         fn should_transition_epoch(
             now: BlockNumberFor<T>,
             current_epoch: u32,
@@ -539,6 +598,7 @@ pub mod pallet {
             now_u32 >= epoch_start_block + blocks_per_epoch
         }
 
+        /// Handle the logic for transitioning to a new epoch.
         fn handle_epoch_transition() -> Weight {
             if GovernanceModeEnabled::<T>::get() {
                 return <T as Config>::WeightInfo::on_initialize();
@@ -557,15 +617,19 @@ pub mod pallet {
         }
     }
 
+    // --- Runtime Hooks --- //
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        /// Called at the beginning of each block.
         fn on_initialize(now: BlockNumberFor<T>) -> Weight {
             let epoch_config = Self::epoch_config();
             let current_epoch = Self::current_epoch();
 
+            // Handle epoch transition if needed
             if !Self::governance_mode_enabled() && Self::should_transition_epoch(now, current_epoch, &epoch_config) {
                 Self::handle_epoch_transition()
             } else {
+                // Check block author and update scores
                 if let Some(expected_author) = Self::get_expected_author(now.saturated_into::<u32>()) {
                     let actual_author = frame_system::Pallet::<T>::digest()
                         .logs()
@@ -592,6 +656,7 @@ pub mod pallet {
             }
         }
 
+        /// Called at the end of each block.
         fn on_finalize(_n: BlockNumberFor<T>) {
             let validators = ValidatorSet::<T>::get();
             for validator in validators.iter() {
@@ -600,6 +665,7 @@ pub mod pallet {
         }
     }
 
+    // --- Genesis Configuration --- //
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
@@ -654,7 +720,9 @@ pub mod pallet {
         }
     }
 
+    // --- Public Helper Functions --- //
     impl<T: Config> Pallet<T> {
+        /// Validate if a block author is an active validator.
         pub fn validate_block_author(block_number: u32, author: T::AccountId) {
             if !Self::is_validator_active(&author) {
                 Self::deposit_event(Event::InvalidAuthor {
@@ -664,10 +732,12 @@ pub mod pallet {
             }
         }
 
+        /// Check if an account is an active validator.
         pub fn is_validator_active(author: &T::AccountId) -> bool {
             Self::active_validators().contains(author)
         }
 
+        /// Get the expected author for a given block number.
         pub fn get_expected_author(block_number: u32) -> Option<T::AccountId> {
             let validators = Self::active_validators();
             if validators.is_empty() {
@@ -679,9 +749,13 @@ pub mod pallet {
     }
 }
 
+// --- Benchmarking (if enabled) --- //
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+// --- Score/Ejection/Inference Reason Enums --- //
+
+/// Reason for boosting a validator's score.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum ScoreBoostReason {
     ValidBlockAuthored,
@@ -689,6 +763,7 @@ pub enum ScoreBoostReason {
     ManualBoost,
 }
 
+/// Reason for ejecting a validator.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum EjectionReason {
     ScoreBelowThreshold,
@@ -696,6 +771,7 @@ pub enum EjectionReason {
     ManualEjection,
 }
 
+/// Severity of an inference error.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum InferenceErrorSeverity {
     High,   // Major error, significant impact
