@@ -198,7 +198,7 @@ mod runtime {
     pub type PalletCbcPos = pallet_cbc_pos;
 
     #[runtime::pallet_index(8)]
-    pub type Dcf = pallet_cbc_dcf;
+    pub type Dcf = pallet_cbc_dcf::Pallet<Runtime>;
 }
 use sp_runtime::traits::parameter_types;
 
@@ -228,23 +228,59 @@ parameter_types! {
     pub const DcfMaxValidators: u32 = 100;
     pub const DefaultPosWeight: u64 = 60; // 60% weight for POS score
     pub const DefaultPoiWeight: u64 = 40; // 40% weight for POI score
-    pub const EpochDuration: BlockNumber = 24 * HOURS; // 24 hours per epoch
     pub const MinStake: Balance = 1000 * DOLLARS; // Minimum stake required
     pub const MaxValidatorsPerEpoch: u32 = 50; // Maximum validators per epoch
-    pub const MaxValidatorScore: u32 = 100;
+    pub const MaxValidatorScore: u64 = 100;
 
     // Block authorship and inference boosting parameters
-    pub const BlockAuthorshipBoost: u32 = 10;
-    pub const MissedBlockPenalty: u32 = 5;
-    pub const InferenceBoostLow: u32 = 2;
-    pub const InferenceBoostMedium: u32 = 5;
-    pub const InferenceBoostHigh: u32 = 10;
-    pub const InferencePenaltyLow: u32 = 1;
-    pub const InferencePenaltyMedium: u32 = 3;
-    pub const InferencePenaltyHigh: u32 = 7;
+    pub const BlockAuthorshipBoost: u64 = 10;
+    pub const MissedBlockPenalty: u64 = 5;
+    pub const InferenceBoostLow: u64 = 2;
+    pub const InferenceBoostMedium: u64 = 5;
+    pub const InferenceBoostHigh: u64 = 10;
+    pub const InferencePenaltyLow: u64 = 1;
+    pub const InferencePenaltyMedium: u64 = 3;
+    pub const InferencePenaltyHigh: u64 = 7;
 }
 
 pub use pallet_cbc_poi;
 pub use pallet_cbc_pos;
+
+// Update the DCF pallet configuration in the runtime module
+impl pallet_cbc_dcf::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxValidators = MaxValidators;
+    type DefaultPosWeight = DefaultPosWeight;
+    type DefaultPoiWeight = DefaultPoiWeight;
+    type MinActiveValidators = MinActiveValidators;
+    type MinValidatorScore = MinValidatorScore;
+    type MaxValidatorScore = MaxValidatorScore;
+    type BlockAuthorshipBoost = BlockAuthorshipBoost;
+    type MissedBlockPenalty = MissedBlockPenalty;
+    type InferenceBoostLow = InferenceBoostLow;
+    type InferenceBoostMedium = InferenceBoostMedium;
+    type InferenceBoostHigh = InferenceBoostHigh;
+    type InferencePenaltyLow = InferencePenaltyLow;
+    type InferencePenaltyMedium = InferencePenaltyMedium;
+    type InferencePenaltyHigh = InferencePenaltyHigh;
+    type ValidatorScoreDecay = ValidatorScoreDecay;
+    type MinStake = MinStake;
+    type Balance = Balance;
+    type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
+}
+
+// Update the transaction extensions to include any new DCF hooks
+pub type TxExtension = (
+    frame_system::CheckNonZeroSender<Runtime>,
+    frame_system::CheckSpecVersion<Runtime>,
+    frame_system::CheckTxVersion<Runtime>,
+    frame_system::CheckGenesis<Runtime>,
+    frame_system::CheckEra<Runtime>,
+    frame_system::CheckNonce<Runtime>,
+    frame_system::CheckWeight<Runtime>,
+    pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
+    frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
+    frame_system::WeightReclaim<Runtime>,
+);
 
 
