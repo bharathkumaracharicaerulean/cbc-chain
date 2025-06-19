@@ -1,14 +1,40 @@
 //! # pallet-cbc-dcf
 //!
-//! This pallet implements the DCF (Dynamic Consensus Framework) for the CBC-Chain. It manages validator scoring, epoch transitions, consensus weights, governance proposals, and validator lifecycle (ejection, re-entry, etc).
-//! 
+//! This pallet implements the Dynamic Consensus Framework (DCF) for the CBC-Chain, providing advanced validator management, scoring, and on-chain governance. It supports dynamic validator sets, configurable consensus weights, and robust governance mechanisms for slashing, rewards, and ejection.
+//!
 //! ## Main Features
-//! - **Validator Scoring:** Combines PoS and PoI scores with configurable weights.
-//! - **Epoch Management:** Handles epoch transitions, validator activity, and score decay.
-//! - **Governance:** Allows proposals for slashing, rewards, and validator ejection.
-//! - **Block Authorship:** Tracks block authorship and missed blocks, boosting or penalizing scores accordingly.
-//! - **Hooks:** Integrates with runtime hooks for per-block and per-epoch logic.
-//! - **Genesis Configuration:** Supports initial validator set and configuration at genesis.
+//! - **Validator Scoring:** Combines Proof-of-Stake (PoS) and Proof-of-Inference (PoI) scores with configurable weights, supporting dynamic adjustment and decay.
+//! - **Epoch Management:** Handles epoch transitions, validator activity tracking, score decay, and validator set updates.
+//! - **Governance:** Enables on-chain proposals for slashing, rewarding, and ejecting validators, with voting and execution logic.
+//! - **Block Authorship Tracking:** Monitors block authorship and missed blocks, applying score boosts or penalties accordingly.
+//! - **Runtime Hooks:** Integrates with runtime hooks for per-block and per-epoch logic, including automatic epoch transitions and score updates.
+//! - **Genesis Configuration:** Allows initialization of validator set, scores, and consensus parameters at genesis.
+//! - **APIs:** Exposes runtime APIs for querying validator scores, participation, epoch state, and expected block authors.
+//! - **Sudo Controls:** Supports governance mode toggling and sudo-only operations for manual intervention and testing.
+//!
+//! ## Dispatchable Calls (pallet index)
+//! - **0. `update_validator_stake_score`**: Update a validator's PoS stake score.  
+//!   - Root required if governance mode is enabled, otherwise signed.
+//! - **1. `update_validator_inference_score`**: Update a validator's PoI inference score.  
+//!   - Root required if governance mode is enabled, otherwise signed.
+//! - **2. `update_consensus_weights`**: Update PoS and PoI weights (must sum to 100).  
+//!   - Root required.
+//! - **3. `set_governance_mode`**: Toggle governance mode (sudo-like).  
+//!   - Root required.
+//! - **4. `sudo_advance_epoch`**: Manually advance epoch (governance mode only).  
+//!   - Root required.
+//! - **5. `submit_proposal`**: Submit a governance proposal (slash, reward, eject).  
+//!   - Signed.
+//! - **6. `vote_proposal`**: Vote on a governance proposal.  
+//!   - Signed.
+//! - **7. `execute_proposal`**: Execute an approved governance proposal.  
+//!   - Root required.
+//! - **8. `propose_slash_validator`**: Sudo propose to slash a validator.  
+//!   - Root required.
+//! - **9. `propose_reward_validator`**: Sudo propose to reward a validator.  
+//!   - Root required.
+//! - **10. `propose_eject_validator`**: Sudo propose to eject a validator.  
+//!   - Root required.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(dead_code)]
@@ -32,6 +58,7 @@ use sp_runtime::{
     codec, 
 };
 use sp_std::prelude::*;
+use sp_std::fmt; // <-- Add this import
 use pallet_cbc_pos as pos;
 use pallet_cbc_poi as poi;
 use serde::{Serialize, Deserialize};
@@ -55,6 +82,8 @@ sp_api::decl_runtime_apis! {
         fn get_active_validators() -> Vec<AccountId>;
         fn get_validator_last_active(validator: AccountId) -> u32;
         fn validate_block_author(block_number: u32, author: AccountId);
+        fn get_validator_profile(account_id: AccountId) -> Option<(u64, u32, u32, u32, u32)>;
+        fn get_inference_result(account_id: AccountId) -> Option<u64>;
     }
 }
 
@@ -89,6 +118,9 @@ pub mod pallet {
         pub last_active_epoch: u32,
         pub current: EpochStats,
         pub history: BoundedVec<EpochStats, ConstU32<10>>,
+        pub uptime: u32, // Number of epochs active
+        pub inference_success_count: u32,
+        pub participation_rate: u32, // Percentage (0-100)
     }
 
     /// Configuration for epochs (block count, min stake, max validators).
@@ -101,7 +133,7 @@ pub mod pallet {
 
     /// Actions that can be proposed via governance.
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
-    pub enum ProposalAction<T: Config + TypeInfo + std::fmt::Debug> {
+    pub enum ProposalAction<T: Config + TypeInfo + fmt::Debug> { // <-- Change here
         Slash { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
         Reward { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
         Eject { validator: T::AccountId, reason: EjectionReason },
@@ -109,7 +141,7 @@ pub mod pallet {
 
     /// Governance proposal structure.
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
-    pub struct GovernanceProposal<T: Config + TypeInfo + std::fmt::Debug> {
+    pub struct GovernanceProposal<T: Config + TypeInfo + fmt::Debug> { // <-- Change here
         pub proposer: T::AccountId,
         pub action: ProposalAction<T>,
         pub status: ProposalStatus,
@@ -118,7 +150,7 @@ pub mod pallet {
     }
 
     /// Status of a governance proposal.
-    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
     pub enum ProposalStatus {
         Pending,
         Approved,
@@ -128,7 +160,7 @@ pub mod pallet {
 
     // --- Pallet Configuration Trait --- //
     #[pallet::config]
-    pub trait Config: frame_system::Config + pos::Config + poi::Config + TypeInfo + std::fmt::Debug {
+    pub trait Config: frame_system::Config + pos::Config + poi::Config + TypeInfo + fmt::Debug { // <-- Change here
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         #[pallet::constant]
         type MaxValidators: Get<u32>;
@@ -221,6 +253,17 @@ pub mod pallet {
         _, Blake2_128Concat, u32, GovernanceProposal<T>, OptionQuery
     >;
 
+    /// Next proposal ID counter.
+    #[pallet::storage]
+    #[pallet::getter(fn next_proposal_id)]
+    pub type NextProposalId<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+    /// Track who has voted on which proposal.
+    #[pallet::storage]
+    pub type ProposalVotes<T: Config> = StorageDoubleMap<
+        _, Blake2_128Concat, u32, Blake2_128Concat, T::AccountId, bool, OptionQuery
+    >;
+
     // --- Events --- //
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -265,6 +308,24 @@ pub mod pallet {
         GovernanceModeToggled {
             enabled: bool,
         },
+        ProposalSubmitted {
+            proposal_id: u32,
+            proposer: T::AccountId,
+            action: ProposalAction<T>,
+        },
+        ProposalExecuted {
+            proposal_id: u32,
+            status: ProposalStatus,
+        },
+        ProposalVoted {
+            proposal_id: u32,
+            voter: T::AccountId,
+            approve: bool,
+        },
+        ProposalPassed { proposal_id: u32 },
+        ProposalRejected { proposal_id: u32 },
+        ValidatorJoined { validator: T::AccountId },
+        ValidatorLeft { validator: T::AccountId },
     }
 
     // --- Errors --- //
@@ -283,7 +344,10 @@ pub mod pallet {
 
     // --- Dispatchable Calls --- //
     #[pallet::call]
-    impl<T: Config> Pallet<T> {
+    impl<T: Config> Pallet<T>
+    where
+        <T as frame_system::Config>::AccountId: Default,
+    {
         /// Update a validator's stake score (PoS).
         #[pallet::call_index(0)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
@@ -370,27 +434,253 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Submit a governance proposal.
+        /// Submit a governance proposal (slash, reward, eject).
         #[pallet::call_index(5)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn submit_proposal(_origin: OriginFor<T>, _action: ProposalAction<T>) -> DispatchResult {
-            // Implementation: store proposal, emit event
+        pub fn submit_proposal(
+            origin: OriginFor<T>,
+            action: ProposalAction<T>,
+        ) -> DispatchResult {
+            let proposer = ensure_signed(origin)?;
+            let proposal_id = NextProposalId::<T>::get();
+            let proposal = GovernanceProposal {
+                proposer: proposer.clone(),
+                action: action.clone(),
+                status: ProposalStatus::Pending,
+                votes_for: 0,
+                votes_against: 0,
+            };
+            Proposals::<T>::insert(proposal_id, proposal);
+            NextProposalId::<T>::put(proposal_id + 1);
+            Self::deposit_event(Event::ProposalSubmitted {
+                proposal_id,
+                proposer,
+                action,
+            });
             Ok(())
         }
 
         /// Vote on a governance proposal.
         #[pallet::call_index(6)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn vote_proposal(_origin: OriginFor<T>, _proposal_id: u32, _approve: bool) -> DispatchResult {
-            // Implementation: record vote, emit event
+        pub fn vote_proposal(
+            origin: OriginFor<T>,
+            proposal_id: u32,
+            approve: bool,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            Proposals::<T>::try_mutate_exists(proposal_id, |maybe_prop| {
+                let prop = maybe_prop.as_mut().ok_or(Error::<T>::ProposalNotApproved)?;
+                ensure!(prop.status == ProposalStatus::Pending, Error::<T>::ProposalAlreadyExecuted);
+                ensure!(!ProposalVotes::<T>::contains_key(proposal_id, &who), Error::<T>::AlreadyVoted);
+
+                if approve {
+                    prop.votes_for += 1;
+                } else {
+                    prop.votes_against += 1;
+                }
+                ProposalVotes::<T>::insert(proposal_id, &who, approve);
+                Self::deposit_event(Event::ProposalVoted {
+                    proposal_id,
+                    voter: who,
+                    approve,
+                });
+
+                // --- Quorum logic: require at least half of active validators to vote ---
+                let quorum = (ActiveValidators::<T>::get().len() as u32 + 1) / 2;
+                let total_votes = prop.votes_for + prop.votes_against;
+                if total_votes >= quorum {
+                    if prop.votes_for > prop.votes_against {
+                        prop.status = ProposalStatus::Approved;
+                        Self::deposit_event(Event::ProposalPassed { proposal_id });
+                    } else {
+                        prop.status = ProposalStatus::Rejected;
+                        Self::deposit_event(Event::ProposalRejected { proposal_id });
+                    }
+                }
+                Ok::<(), Error<T>>(())
+            })?;
             Ok(())
         }
 
-        /// Execute an approved governance proposal.
+        /// Execute an approved governance proposal (sudo only).
         #[pallet::call_index(7)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn execute_proposal(_origin: OriginFor<T>, _proposal_id: u32) -> DispatchResult {
-            // Implementation: check approval, execute action, emit event
+        pub fn execute_proposal(
+            origin: OriginFor<T>,
+            proposal_id: u32,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Proposals::<T>::try_mutate_exists(proposal_id, |maybe_prop| {
+                let prop = maybe_prop.as_mut().ok_or(Error::<T>::ProposalNotApproved)?;
+                ensure!(prop.status == ProposalStatus::Approved, Error::<T>::ProposalNotApproved);
+
+                // Execute action
+                match &prop.action {
+                    ProposalAction::Slash { validator, amount } => {
+                        // Slash logic here (call PoS or custom logic)
+                        // For demo: just eject if amount > 0
+                        if *amount > Zero::zero() {
+                            let _ = Self::eject_validator(validator, EjectionReason::MaxSlashingReached);
+                        }
+                    }
+                    ProposalAction::Reward { validator, amount } => {
+                        // Reward logic here (call PoS or custom logic)
+                        // For demo: boost score
+                        let _ = Self::boost_score(validator, (*amount).saturated_into(), ScoreBoostReason::ManualBoost);
+                    }
+                    ProposalAction::Eject { validator, reason } => {
+                        let _ = Self::eject_validator(validator, reason.clone());
+                    }
+                }
+                prop.status = ProposalStatus::Executed;
+                Self::deposit_event(Event::ProposalExecuted {
+                    proposal_id,
+                    status: prop.status.clone(),
+                });
+                Ok::<(), Error<T>>(())
+            })?;
+            Ok(())
+        }
+
+        /// Sudo propose to slash a validator.
+        #[pallet::call_index(8)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn propose_slash_validator(
+            origin: OriginFor<T>,
+            validator: T::AccountId,
+            amount: <T as pallet::Config>::Balance,
+        ) -> DispatchResult
+        where
+            <T as frame_system::Config>::AccountId: Default,
+        {
+            ensure_root(origin)?;
+            let action = ProposalAction::Slash { validator, amount };
+            let proposal_id = NextProposalId::<T>::get();
+            let proposal = GovernanceProposal {
+                proposer: Default::default(),
+                action: action.clone(),
+                status: ProposalStatus::Pending,
+                votes_for: 0,
+                votes_against: 0,
+            };
+            Proposals::<T>::insert(proposal_id, proposal);
+            NextProposalId::<T>::put(proposal_id + 1);
+            Self::deposit_event(Event::ProposalSubmitted {
+                proposal_id,
+                proposer: Default::default(),
+                action,
+            });
+            Ok(())
+        }
+
+        /// Sudo propose to reward a validator.
+        #[pallet::call_index(9)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn propose_reward_validator(
+            origin: OriginFor<T>,
+            validator: T::AccountId,
+            amount: <T as pallet::Config>::Balance,
+        ) -> DispatchResult
+        where
+            <T as frame_system::Config>::AccountId: Default,
+        {
+            ensure_root(origin)?;
+            let action = ProposalAction::Reward { validator, amount };
+            let proposal_id = NextProposalId::<T>::get();
+            let proposal = GovernanceProposal {
+                proposer: Default::default(),
+                action: action.clone(),
+                status: ProposalStatus::Pending,
+                votes_for: 0,
+                votes_against: 0,
+            };
+            Proposals::<T>::insert(proposal_id, proposal);
+            NextProposalId::<T>::put(proposal_id + 1);
+            Self::deposit_event(Event::ProposalSubmitted {
+                proposal_id,
+                proposer: Default::default(),
+                action,
+            });
+            Ok(())
+        }
+
+        /// Sudo propose to eject a validator.
+        #[pallet::call_index(10)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn propose_eject_validator(
+            origin: OriginFor<T>,
+            validator: T::AccountId,
+            reason: EjectionReason,
+        ) -> DispatchResult
+        where
+            <T as frame_system::Config>::AccountId: Default,
+        {
+            ensure_root(origin)?;
+            let action = ProposalAction::Eject { validator, reason: reason.clone() };
+            let proposal_id = NextProposalId::<T>::get();
+            let proposal = GovernanceProposal {
+                proposer: Default::default(),
+                action: action.clone(),
+                status: ProposalStatus::Pending,
+                votes_for: 0,
+                votes_against: 0,
+            };
+            Proposals::<T>::insert(proposal_id, proposal);
+            NextProposalId::<T>::put(proposal_id + 1);
+            Self::deposit_event(Event::ProposalSubmitted {
+                proposal_id,
+                proposer: Default::default(),
+                action,
+            });
+            Ok(())
+        }
+
+        /// Join the validator set (opt-in).
+        #[pallet::call_index(11)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn join_validators(origin: OriginFor<T>) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            // Check minimum stake
+            let stake = pos::Pallet::<T>::stake(&who);
+            ensure!(
+                stake >= <T as pallet_cbc_pos::Config>::MinStake::get(),
+                Error::<T>::NotEnoughValidators
+            );
+            // Check minimum score
+            let state = ValidatorStates::<T>::get(&who).ok_or(Error::<T>::ValidatorNotFound)?;
+            ensure!(state.current.final_score >= <T as pallet::Config>::MinValidatorScore::get() as u64, Error::<T>::NotValidator);
+            // Add to active set
+            ActiveValidators::<T>::try_mutate(|active| {
+                if !active.contains(&who) {
+                    active.try_push(who.clone()).map_err(|_| Error::<T>::NotEnoughValidators)?;
+                }
+                Ok::<(), Error<T>>(())
+            })?;
+            Self::deposit_event(Event::ValidatorJoined { validator: who });
+            Ok(())
+        }
+
+        /// Leave the validator set (opt-out).
+        #[pallet::call_index(12)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn leave_validators(origin: OriginFor<T>) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            ActiveValidators::<T>::try_mutate(|active| {
+                if let Some(pos) = active.iter().position(|v| v == &who) {
+                    active.remove(pos);
+                }
+                Ok::<(), Error<T>>(())
+            })?;
+            // Optionally reset temporary tracking fields
+            ValidatorStates::<T>::mutate(&who, |maybe_state| {
+                if let Some(state) = maybe_state {
+                    state.uptime = 0;
+                    state.inference_success_count = 0;
+                    state.participation_rate = 0;
+                }
+            });
+            Self::deposit_event(Event::ValidatorLeft { validator: who });
             Ok(())
         }
     }
@@ -709,6 +999,9 @@ pub mod pallet {
                             missed_blocks: 0,
                         },
                         history,
+                        uptime: 0,
+                        inference_success_count: 0,
+                        participation_rate: 0,
                     },
                 );
             }
@@ -746,6 +1039,22 @@ pub mod pallet {
             let idx = (block_number as usize) % validators.len();
             validators.get(idx).cloned()
         }
+
+        /// Get validator profile information.
+        pub fn get_validator_profile(account_id: T::AccountId) -> Option<(u64, u32, u32, u32, u32)> {
+            ValidatorStates::<T>::get(&account_id).map(|state| (
+                state.current.final_score,
+                state.uptime,
+                state.inference_success_count,
+                state.participation_rate,
+                state.current.missed_blocks,
+            ))
+        }
+
+        /// Get the inference result for a validator.
+        pub fn get_inference_result(account_id: T::AccountId) -> Option<u64> {
+            ValidatorStates::<T>::get(&account_id).map(|state| state.current.inference_score)
+        }
     }
 }
 
@@ -778,7 +1087,6 @@ pub enum InferenceErrorSeverity {
     Medium, // Moderate error
     Low,    // Minor error
 }
-
 
 
 
