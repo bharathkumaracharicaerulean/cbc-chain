@@ -189,8 +189,11 @@ impl_runtime_apis! {
 			validators
 				.iter()
 				.map(|validator| {
-					let score = pallet_cbc_dcf::Pallet::<Runtime>::validator_final_scores(validator);
-					(validator.clone(), score.final_score)
+					let state = pallet_cbc_dcf::Pallet::<Runtime>::validator_states(validator);
+					match state {
+						Some(state) => (validator.clone(), state.current.final_score),
+						None => (validator.clone(), 0),
+					}
 				})
 				.collect()
 		}
@@ -200,11 +203,15 @@ impl_runtime_apis! {
 		}
 
 		fn get_validator_stake_score(validator: AccountId) -> u64 {
-			pallet_cbc_dcf::Pallet::<Runtime>::validator_stake_scores(&validator)
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_states(&validator)
+				.map(|state| state.current.stake_score)
+				.unwrap_or_default()
 		}
 
 		fn get_validator_inference_score(validator: AccountId) -> u64 {
-			pallet_cbc_dcf::Pallet::<Runtime>::validator_inference_scores(&validator)
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_states(&validator)
+				.map(|state| state.current.inference_score)
+				.unwrap_or_default()
 		}
 
 		fn get_consensus_weights() -> (u64, u64) {
@@ -215,20 +222,23 @@ impl_runtime_apis! {
 		}
 
 		fn is_validator_active(validator: AccountId) -> bool {
-			pallet_cbc_dcf::Pallet::<Runtime>::is_active_validator(&validator)
+			pallet_cbc_dcf::Pallet::<Runtime>::is_validator_active(&validator)
 		}
 
 		fn get_expected_author(block_number: u32) -> Option<AccountId> {
-			pallet_cbc_dcf::Pallet::<Runtime>::get_expected_author(block_number.into())
+			pallet_cbc_dcf::Pallet::<Runtime>::get_expected_author(block_number)
 		}
 
 		fn get_validator_score_history(validator: AccountId) -> Vec<u64> {
-			pallet_cbc_dcf::Pallet::<Runtime>::validator_score_history(&validator)
-				.into()
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_states(&validator)
+				.map(|state| state.history.iter().map(|stats| stats.final_score).collect())
+				.unwrap_or_default()
 		}
 
 		fn get_validator_participation(validator: AccountId) -> (u32, u32) {
-			pallet_cbc_dcf::Pallet::<Runtime>::validator_participation(&validator)
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_states(&validator)
+				.map(|state| (state.current.authored_blocks, state.current.missed_blocks))
+				.unwrap_or_default()
 		}
 
 		fn get_active_validators() -> Vec<AccountId> {
@@ -236,11 +246,21 @@ impl_runtime_apis! {
 		}
 
 		fn get_validator_last_active(validator: AccountId) -> u32 {
-			pallet_cbc_dcf::Pallet::<Runtime>::validator_last_active(&validator)
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_states(&validator)
+				.map(|state| state.last_active_epoch)
+				.unwrap_or_default()
 		}
 
 		fn validate_block_author(block_number: u32, author: AccountId) {
 			pallet_cbc_dcf::Pallet::<Runtime>::validate_block_author(block_number, author)
+		}
+
+		fn get_validator_profile(validator: AccountId) -> Option<(u64, u32, u32, u32, u32)> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_profile(validator)
+		}
+
+		fn get_inference_result(validator: AccountId) -> Option<u64> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_inference_result(validator)
 		}
 	}
 
