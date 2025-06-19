@@ -64,6 +64,19 @@ parameter_types! {
     pub const MaxChallenges: u32 = 100;
     pub const PosWeight: u64 = 60;
     pub const PoiWeight: u64 = 40;
+    pub const ValidatorScoreDecay: u32 = 5;  // 5% score decay per inactive epoch
+
+    // New parameters for governance
+    pub const GovernanceQuorum: u32 = 50;  // 50% of validators needed for quorum
+    pub const ProposalLifetime: u32 = 1000; // Blocks until proposal expires
+    pub const MinProposalDeposit: Balance = 100_000;
+    pub const MaxProposalsPerValidator: u32 = 5;
+    
+    // Parameters for validator management
+    pub const ValidatorUptimeRequirement: u32 = 90; // 90% uptime requirement
+    pub const MaxMissedBlocksPerEpoch: u32 = 50;
+    pub const MinParticipationRate: u32 = 75; // 75% minimum participation
+    pub const InactivityEjectionBlocks: u32 = 1000;
 }
 
 // === FRAME System Configuration ===
@@ -160,8 +173,8 @@ impl pallet_cbc_pos::Config for Runtime {
 impl pallet_cbc_dcf::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type MaxValidators = MaxValidators;
-    type DefaultPosWeight = ConstU64<60>; // 60% weight for POS
-    type DefaultPoiWeight = ConstU64<40>; // 40% weight for POI
+    type DefaultPosWeight = ConstU64<60>;  // 60% weight for POS
+    type DefaultPoiWeight = ConstU64<40>;  // 40% weight for POI
     type MinActiveValidators = MinActiveValidators;
     type MinValidatorScore = MinValidatorScore;
     type MaxValidatorScore = MaxValidatorScore;
@@ -177,4 +190,24 @@ impl pallet_cbc_dcf::Config for Runtime {
     type MinStake = MinStake;
     type Balance = Balance;
     type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
+    
+    // New configuration items for governance features
+    #[cfg(feature = "runtime-benchmarks")]
+    type ProposalLifetime = ProposalLifetime;
+    #[cfg(feature = "runtime-benchmarks")]
+    type GovernanceQuorum = GovernanceQuorum;
+    #[cfg(feature = "runtime-benchmarks")]
+    type MinProposalDeposit = MinProposalDeposit;
+    #[cfg(feature = "runtime-benchmarks")]
+    type MaxProposalsPerValidator = MaxProposalsPerValidator;
+
+    // New configuration items for validator management
+    #[cfg(feature = "runtime-benchmarks")]
+    type ValidatorUptimeRequirement = ValidatorUptimeRequirement;
+    #[cfg(feature = "runtime-benchmarks")]
+    type MaxMissedBlocksPerEpoch = MaxMissedBlocksPerEpoch;
+    #[cfg(feature = "runtime-benchmarks")]
+    type MinParticipationRate = MinParticipationRate;
+    #[cfg(feature = "runtime-benchmarks")]
+    type InactivityEjectionBlocks = InactivityEjectionBlocks;
 }
