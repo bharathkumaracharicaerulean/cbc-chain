@@ -25,12 +25,8 @@ use super::{
 };
 
 use crate::{
-    MinValidatorScore, MinActiveValidators, ValidatorScoreDecay, MaxSlashingCount,
-    MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward, MaxValidatorScore,
-    BlockAuthorshipBoost, MissedBlockPenalty,
-    InferenceBoostLow, InferenceBoostMedium, InferenceBoostHigh,
-    InferencePenaltyLow, InferencePenaltyMedium, InferencePenaltyHigh,
-
+    MinValidatorScore, MinActiveValidators, MaxSlashingCount,
+    MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward,
 };
 
 // === Constants ===
@@ -167,47 +163,4 @@ impl pallet_cbc_pos::Config for Runtime {
     type MaxSlashingCount = MaxSlashingCount;
     type MinStake = ConstU128<1000>; // Minimum stake of 1000 units
     type Balance = Balance;
-}
-
-// === CBC DCF Pallet Configuration ===
-impl pallet_cbc_dcf::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type MaxValidators = MaxValidators;
-    type DefaultPosWeight = ConstU64<60>;  // 60% weight for POS
-    type DefaultPoiWeight = ConstU64<40>;  // 40% weight for POI
-    type MinActiveValidators = MinActiveValidators;
-    type MinValidatorScore = MinValidatorScore;
-    type MaxValidatorScore = MaxValidatorScore;
-    type BlockAuthorshipBoost = BlockAuthorshipBoost;
-    type MissedBlockPenalty = MissedBlockPenalty;
-    type InferenceBoostLow = InferenceBoostLow;
-    type InferenceBoostMedium = InferenceBoostMedium;
-    type InferenceBoostHigh = InferenceBoostHigh;
-    type InferencePenaltyLow = InferencePenaltyLow;
-    type InferencePenaltyMedium = InferencePenaltyMedium;
-    type InferencePenaltyHigh = InferencePenaltyHigh;
-    type ValidatorScoreDecay = ValidatorScoreDecay;
-    type MinStake = MinStake;
-    type Balance = Balance;
-    type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
-    
-    // New configuration items for governance features
-    #[cfg(feature = "runtime-benchmarks")]
-    type ProposalLifetime = ProposalLifetime;
-    #[cfg(feature = "runtime-benchmarks")]
-    type GovernanceQuorum = GovernanceQuorum;
-    #[cfg(feature = "runtime-benchmarks")]
-    type MinProposalDeposit = MinProposalDeposit;
-    #[cfg(feature = "runtime-benchmarks")]
-    type MaxProposalsPerValidator = MaxProposalsPerValidator;
-
-    // New configuration items for validator management
-    #[cfg(feature = "runtime-benchmarks")]
-    type ValidatorUptimeRequirement = ValidatorUptimeRequirement;
-    #[cfg(feature = "runtime-benchmarks")]
-    type MaxMissedBlocksPerEpoch = MaxMissedBlocksPerEpoch;
-    #[cfg(feature = "runtime-benchmarks")]
-    type MinParticipationRate = MinParticipationRate;
-    #[cfg(feature = "runtime-benchmarks")]
-    type InactivityEjectionBlocks = InactivityEjectionBlocks;
 }

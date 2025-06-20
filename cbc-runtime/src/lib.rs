@@ -269,18 +269,4 @@ impl pallet_cbc_dcf::Config for Runtime {
     type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
 }
 
-// Update the transaction extensions to include any new DCF hooks
-pub type TxExtension = (
-    frame_system::CheckNonZeroSender<Runtime>,
-    frame_system::CheckSpecVersion<Runtime>,
-    frame_system::CheckTxVersion<Runtime>,
-    frame_system::CheckGenesis<Runtime>,
-    frame_system::CheckEra<Runtime>,
-    frame_system::CheckNonce<Runtime>,
-    frame_system::CheckWeight<Runtime>,
-    pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
-    frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
-    frame_system::WeightReclaim<Runtime>,
-);
-
 

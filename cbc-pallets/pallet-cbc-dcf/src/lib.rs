@@ -344,10 +344,7 @@ pub mod pallet {
 
     // --- Dispatchable Calls --- //
     #[pallet::call]
-    impl<T: Config> Pallet<T>
-    where
-        <T as frame_system::Config>::AccountId: Default,
-    {
+    impl<T: Config> Pallet<T> {
         /// Update a validator's stake score (PoS).
         #[pallet::call_index(0)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
@@ -548,17 +545,15 @@ pub mod pallet {
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn propose_slash_validator(
             origin: OriginFor<T>,
+            proposer: T::AccountId,
             validator: T::AccountId,
             amount: <T as pallet::Config>::Balance,
-        ) -> DispatchResult
-        where
-            <T as frame_system::Config>::AccountId: Default,
-        {
+        ) -> DispatchResult {
             ensure_root(origin)?;
             let action = ProposalAction::Slash { validator, amount };
             let proposal_id = NextProposalId::<T>::get();
             let proposal = GovernanceProposal {
-                proposer: Default::default(),
+                proposer: proposer.clone(),
                 action: action.clone(),
                 status: ProposalStatus::Pending,
                 votes_for: 0,
@@ -568,7 +563,7 @@ pub mod pallet {
             NextProposalId::<T>::put(proposal_id + 1);
             Self::deposit_event(Event::ProposalSubmitted {
                 proposal_id,
-                proposer: Default::default(),
+                proposer,
                 action,
             });
             Ok(())
@@ -579,17 +574,15 @@ pub mod pallet {
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn propose_reward_validator(
             origin: OriginFor<T>,
+            proposer: T::AccountId,
             validator: T::AccountId,
             amount: <T as pallet::Config>::Balance,
-        ) -> DispatchResult
-        where
-            <T as frame_system::Config>::AccountId: Default,
-        {
+        ) -> DispatchResult {
             ensure_root(origin)?;
             let action = ProposalAction::Reward { validator, amount };
             let proposal_id = NextProposalId::<T>::get();
             let proposal = GovernanceProposal {
-                proposer: Default::default(),
+                proposer: proposer.clone(),
                 action: action.clone(),
                 status: ProposalStatus::Pending,
                 votes_for: 0,
@@ -599,7 +592,7 @@ pub mod pallet {
             NextProposalId::<T>::put(proposal_id + 1);
             Self::deposit_event(Event::ProposalSubmitted {
                 proposal_id,
-                proposer: Default::default(),
+                proposer,
                 action,
             });
             Ok(())
@@ -610,17 +603,15 @@ pub mod pallet {
         #[pallet::weight(Weight::from_parts(10_000, 0))]
         pub fn propose_eject_validator(
             origin: OriginFor<T>,
+            proposer: T::AccountId,
             validator: T::AccountId,
             reason: EjectionReason,
-        ) -> DispatchResult
-        where
-            <T as frame_system::Config>::AccountId: Default,
-        {
+        ) -> DispatchResult {
             ensure_root(origin)?;
             let action = ProposalAction::Eject { validator, reason: reason.clone() };
             let proposal_id = NextProposalId::<T>::get();
             let proposal = GovernanceProposal {
-                proposer: Default::default(),
+                proposer: proposer.clone(),
                 action: action.clone(),
                 status: ProposalStatus::Pending,
                 votes_for: 0,
@@ -630,7 +621,7 @@ pub mod pallet {
             NextProposalId::<T>::put(proposal_id + 1);
             Self::deposit_event(Event::ProposalSubmitted {
                 proposal_id,
-                proposer: Default::default(),
+                proposer,
                 action,
             });
             Ok(())
