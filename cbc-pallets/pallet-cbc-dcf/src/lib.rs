@@ -264,6 +264,20 @@ pub mod pallet {
         _, Blake2_128Concat, u32, Blake2_128Concat, T::AccountId, bool, OptionQuery
     >;
 
+    /// Pending validator join/leave requests, applied at next epoch.
+    #[pallet::storage]
+    #[pallet::getter(fn pending_validator_actions)]
+    pub type PendingValidatorActions<T: Config> = StorageMap<
+        _, Blake2_128Concat, T::AccountId, ValidatorAction, OptionQuery
+    >;
+
+    /// Join/leave intent for validators.
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub enum ValidatorAction {
+        Join,
+        Leave,
+    }
+
     // --- Events --- //
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -627,50 +641,56 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Join the validator set (opt-in).
-        #[pallet::call_index(11)]
+        /// Request to join the validator set (opt-in, effective next epoch).
+        #[pallet::call_index(13)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn join_validators(origin: OriginFor<T>) -> DispatchResult {
+        pub fn join_validator_set(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            // Check minimum stake
+
+            // Already pending join or already active
+            ensure!(
+                !Self::active_validators().contains(&who),
+                Error::<T>::NotAllowedInGovernanceMode // Reuse or add a new error if needed
+            );
+            ensure!(
+                PendingValidatorActions::<T>::get(&who) != Some(ValidatorAction::Join),
+                Error::<T>::NotAllowedInGovernanceMode
+            );
+
+            // Check minimum stake and score now, but actual addition is at epoch
             let stake = pos::Pallet::<T>::stake(&who);
             ensure!(
                 stake >= <T as pallet_cbc_pos::Config>::MinStake::get(),
                 Error::<T>::NotEnoughValidators
             );
-            // Check minimum score
             let state = ValidatorStates::<T>::get(&who).ok_or(Error::<T>::ValidatorNotFound)?;
-            ensure!(state.current.final_score >= <T as pallet::Config>::MinValidatorScore::get() as u64, Error::<T>::NotValidator);
-            // Add to active set
-            ActiveValidators::<T>::try_mutate(|active| {
-                if !active.contains(&who) {
-                    active.try_push(who.clone()).map_err(|_| Error::<T>::NotEnoughValidators)?;
-                }
-                Ok::<(), Error<T>>(())
-            })?;
+            ensure!(
+                state.current.final_score >= <T as pallet::Config>::MinValidatorScore::get() as u64,
+                Error::<T>::NotValidator
+            );
+
+            PendingValidatorActions::<T>::insert(&who, ValidatorAction::Join);
             Self::deposit_event(Event::ValidatorJoined { validator: who });
             Ok(())
         }
 
-        /// Leave the validator set (opt-out).
-        #[pallet::call_index(12)]
+        /// Request to leave the validator set (opt-out, effective next epoch).
+        #[pallet::call_index(14)]
         #[pallet::weight(Weight::from_parts(10_000, 0))]
-        pub fn leave_validators(origin: OriginFor<T>) -> DispatchResult {
+        pub fn leave_validator_set(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            ActiveValidators::<T>::try_mutate(|active| {
-                if let Some(pos) = active.iter().position(|v| v == &who) {
-                    active.remove(pos);
-                }
-                Ok::<(), Error<T>>(())
-            })?;
-            // Optionally reset temporary tracking fields
-            ValidatorStates::<T>::mutate(&who, |maybe_state| {
-                if let Some(state) = maybe_state {
-                    state.uptime = 0;
-                    state.inference_success_count = 0;
-                    state.participation_rate = 0;
-                }
-            });
+
+            // Already pending leave or not active
+            ensure!(
+                Self::active_validators().contains(&who),
+                Error::<T>::NotValidator
+            );
+            ensure!(
+                PendingValidatorActions::<T>::get(&who) != Some(ValidatorAction::Leave),
+                Error::<T>::NotAllowedInGovernanceMode
+            );
+
+            PendingValidatorActions::<T>::insert(&who, ValidatorAction::Leave);
             Self::deposit_event(Event::ValidatorLeft { validator: who });
             Ok(())
         }
@@ -888,6 +908,9 @@ pub mod pallet {
             let next_epoch = current_epoch.saturating_add(1);
             CurrentEpoch::<T>::put(next_epoch);
 
+            // Apply pending join/leave requests
+            Self::apply_pending_validator_actions();
+
             let active_validators = ActiveValidators::<T>::get();
             Self::deposit_event(Event::EpochStarted {
                 epoch: next_epoch,
@@ -1045,6 +1068,38 @@ pub mod pallet {
         /// Get the inference result for a validator.
         pub fn get_inference_result(account_id: T::AccountId) -> Option<u64> {
             ValidatorStates::<T>::get(&account_id).map(|state| state.current.inference_score)
+        }
+
+        /// Apply pending join/leave actions at epoch transition.
+        fn apply_pending_validator_actions() {
+            let mut active = ActiveValidators::<T>::get();
+            let mut changed = false;
+
+            // Collect all actions to avoid double borrow
+            let actions: Vec<(T::AccountId, ValidatorAction)> =
+                PendingValidatorActions::<T>::iter().collect();
+
+            for (who, action) in actions {
+                match action {
+                    ValidatorAction::Join => {
+                        if !active.contains(&who) && active.len() < active.capacity() {
+                            active.try_push(who.clone()).ok();
+                            changed = true;
+                        }
+                    }
+                    ValidatorAction::Leave => {
+                        if let Some(pos) = active.iter().position(|v| v == &who) {
+                            active.remove(pos);
+                            changed = true;
+                        }
+                    }
+                }
+                PendingValidatorActions::<T>::remove(&who);
+            }
+
+            if changed {
+                ActiveValidators::<T>::put(active);
+            }
         }
     }
 }
