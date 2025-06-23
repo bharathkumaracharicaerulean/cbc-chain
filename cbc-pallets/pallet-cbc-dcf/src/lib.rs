@@ -84,6 +84,8 @@ sp_api::decl_runtime_apis! {
         fn validate_block_author(block_number: u32, author: AccountId);
         fn get_validator_profile(account_id: AccountId) -> Option<(u64, u32, u32, u32, u32)>;
         fn get_inference_result(account_id: AccountId) -> Option<u64>;
+        fn get_epoch_history(epoch_number: u32) -> Option<RuntimeEpochHistory<AccountId>>;
+        fn get_recent_epochs(n: u32) -> Vec<RuntimeEpochHistory<AccountId>>;
     }
 }
 
@@ -158,12 +160,45 @@ pub mod pallet {
         Executed,
     }
 
+    /// History of recent epochs for analytics and tracking.
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+    pub struct EpochHistory<T: Config> {
+        pub epoch_number: u32,
+        pub active_validators: BoundedVec<<T as frame_system::Config>::AccountId, <T as Config>::MaxValidators>,
+        pub score_snapshot: BoundedVec
+            <(<T as frame_system::Config>::AccountId, u64), <T as Config>::MaxValidators>,
+        pub inference_summary: BoundedVec
+            <(<T as frame_system::Config>::AccountId, Option<u64>), <T as Config>::MaxValidators>,
+    }
+
+    /// Non-generic struct for runtime API (AccountId = T::AccountId, all BoundedVecs use MaxValidators, history uses 24).
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+    pub struct RuntimeEpochHistory<AccountId> {
+        pub epoch_number: u32,
+        pub active_validators: BoundedVec<AccountId, ConstU32<24>>,
+        pub score_snapshot: BoundedVec<(AccountId, u64), ConstU32<24>>,
+        pub inference_summary: BoundedVec<(AccountId, Option<u64>), ConstU32<24>>,
+    }
+
+    impl<T: Config> From<EpochHistory<T>> for RuntimeEpochHistory<<T as frame_system::Config>::AccountId> {
+        fn from(e: EpochHistory<T>) -> Self {
+            RuntimeEpochHistory {
+                epoch_number: e.epoch_number,
+                active_validators: BoundedVec::truncate_from(e.active_validators.into_inner()),
+                score_snapshot: BoundedVec::truncate_from(e.score_snapshot.into_inner()),
+                inference_summary: BoundedVec::truncate_from(e.inference_summary.into_inner()),
+            }
+        }
+    }
+
     // --- Pallet Configuration Trait --- //
     #[pallet::config]
-    pub trait Config: frame_system::Config + pos::Config + poi::Config + TypeInfo + fmt::Debug { // <-- Change here
+    pub trait Config: frame_system::Config + pos::Config + poi::Config + TypeInfo + fmt::Debug {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         #[pallet::constant]
         type MaxValidators: Get<u32>;
+        #[pallet::constant]
+        type MaxEpochHistory: Get<u32>;
         #[pallet::constant]
         type DefaultPosWeight: Get<u64>;
         #[pallet::constant]
@@ -277,6 +312,11 @@ pub mod pallet {
         Join,
         Leave,
     }
+
+    /// Stores recent epoch histories in a ring buffer.
+    #[pallet::storage]
+    #[pallet::getter(fn epoch_histories)]
+    pub type EpochHistories<T: Config> = StorageValue<_, BoundedVec<EpochHistory<T>, ConstU32<24>>, ValueQuery>;
 
     // --- Events --- //
     #[pallet::event]
@@ -917,6 +957,30 @@ pub mod pallet {
                 validators: active_validators.clone().into_inner(),
             });
 
+            // --- EpochHistory recording ---
+            let score_snapshot: BoundedVec<_, <T as Config>::MaxValidators> =
+                BoundedVec::truncate_from(active_validators.iter().map(|v| {
+                    let score = ValidatorStates::<T>::get(v).map(|s| s.current.final_score).unwrap_or_default();
+                    (v.clone(), score)
+                }).collect::<Vec<_>>());
+            let inference_summary: BoundedVec<_, <T as Config>::MaxValidators> =
+                BoundedVec::truncate_from(active_validators.iter().map(|v| {
+                    let inf = poi::Pallet::<T>::inference_results(v).map(|(result, _)| result as u64);
+                    (v.clone(), inf)
+                }).collect::<Vec<_>>());
+            let mut histories = EpochHistories::<T>::get();
+            let new_history = EpochHistory::<T> {
+                epoch_number: next_epoch,
+                active_validators: active_validators.clone(),
+                score_snapshot,
+                inference_summary,
+            };
+            if histories.len() == <T as Config>::MaxEpochHistory::get() as usize {
+                histories.remove(0);
+            }
+            let _ = histories.try_push(new_history);
+            EpochHistories::<T>::put(histories);
+
             <T as Config>::WeightInfo::on_initialize()
         }
     }
@@ -1100,6 +1164,19 @@ pub mod pallet {
             if changed {
                 ActiveValidators::<T>::put(active);
             }
+        }
+
+        /// Get the epoch history for a given epoch number (for runtime API).
+        pub fn get_epoch_history_api(epoch_number: u32) -> Option<RuntimeEpochHistory<T::AccountId>> {
+            let histories = Self::epoch_histories();
+            histories.iter().find(|h| h.epoch_number == epoch_number).cloned().map(|h| h.into())
+        }
+
+        /// Get the most recent n epoch histories (for runtime API).
+        pub fn get_recent_epochs_api(n: u32) -> Vec<RuntimeEpochHistory<T::AccountId>> {
+            let histories = Self::epoch_histories();
+            let len = histories.len().min(n as usize);
+            histories.iter().rev().take(len).cloned().map(|h| h.into()).collect::<Vec<_>>().into_iter().rev().collect()
         }
     }
 }

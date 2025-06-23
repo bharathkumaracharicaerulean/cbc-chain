@@ -241,32 +241,11 @@ parameter_types! {
     pub const InferencePenaltyLow: u64 = 1;
     pub const InferencePenaltyMedium: u64 = 3;
     pub const InferencePenaltyHigh: u64 = 7;
+
+    pub const MaxEpochHistory: u32 = 24;
 }
 
 pub use pallet_cbc_poi;
 pub use pallet_cbc_pos;
-
-// Update the DCF pallet configuration in the runtime module
-impl pallet_cbc_dcf::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type MaxValidators = MaxValidators;
-    type DefaultPosWeight = DefaultPosWeight;
-    type DefaultPoiWeight = DefaultPoiWeight;
-    type MinActiveValidators = MinActiveValidators;
-    type MinValidatorScore = MinValidatorScore;
-    type MaxValidatorScore = MaxValidatorScore;
-    type BlockAuthorshipBoost = BlockAuthorshipBoost;
-    type MissedBlockPenalty = MissedBlockPenalty;
-    type InferenceBoostLow = InferenceBoostLow;
-    type InferenceBoostMedium = InferenceBoostMedium;
-    type InferenceBoostHigh = InferenceBoostHigh;
-    type InferencePenaltyLow = InferencePenaltyLow;
-    type InferencePenaltyMedium = InferencePenaltyMedium;
-    type InferencePenaltyHigh = InferencePenaltyHigh;
-    type ValidatorScoreDecay = ValidatorScoreDecay;
-    type MinStake = MinStake;
-    type Balance = Balance;
-    type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
-}
 
 

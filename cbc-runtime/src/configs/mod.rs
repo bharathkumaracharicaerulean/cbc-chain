@@ -25,7 +25,7 @@ use super::{
 };
 
 use crate::{
-    MinValidatorScore, MinActiveValidators, MaxSlashingCount,
+    MinValidatorScore, MaxValidatorScore, MinActiveValidators, MaxSlashingCount,
     MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward,
 };
 
@@ -164,3 +164,28 @@ impl pallet_cbc_pos::Config for Runtime {
     type MinStake = ConstU128<1000>; // Minimum stake of 1000 units
     type Balance = Balance;
 }
+
+// === CBC DCF Pallet Configuration ===
+impl pallet_cbc_dcf::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxValidators = MaxValidators;
+    type DefaultPosWeight = PosWeight;
+    type DefaultPoiWeight = PoiWeight;
+    type MinActiveValidators = MinActiveValidators;
+    type MinValidatorScore = MinValidatorScore;
+    type MaxValidatorScore = MaxValidatorScore;
+    type BlockAuthorshipBoost = ConstU64<10>;
+    type MissedBlockPenalty = ConstU64<5>;
+    type InferenceBoostLow = ConstU64<2>;
+    type InferenceBoostMedium = ConstU64<5>;
+    type InferenceBoostHigh = ConstU64<10>;
+    type InferencePenaltyLow = ConstU64<1>;
+    type InferencePenaltyMedium = ConstU64<3>;
+    type InferencePenaltyHigh = ConstU64<7>;
+    type ValidatorScoreDecay = ValidatorScoreDecay;
+    type MinStake = ConstU128<1000>;
+    type Balance = Balance;
+    type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
+    type MaxEpochHistory = ConstU32<24>;
+}
+

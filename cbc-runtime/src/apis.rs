@@ -262,6 +262,14 @@ impl_runtime_apis! {
 		fn get_inference_result(validator: AccountId) -> Option<u64> {
 			pallet_cbc_dcf::Pallet::<Runtime>::get_inference_result(validator)
 		}
+
+		fn get_epoch_history(epoch_number: u32) -> Option<pallet_cbc_dcf::RuntimeEpochHistory<AccountId>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_epoch_history_api(epoch_number)
+		}
+
+		fn get_recent_epochs(n: u32) -> Vec<pallet_cbc_dcf::RuntimeEpochHistory<AccountId>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_recent_epochs_api(n)
+		}
 	}
 
 	// Runtime Benchmarking API
