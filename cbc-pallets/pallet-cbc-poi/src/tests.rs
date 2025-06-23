@@ -3,7 +3,7 @@ mod tests {
     use crate::mock::*;
     use crate::Error;
     use frame_support::{assert_noop, assert_ok, assert_err};
-    use sp_runtime::traits::BadOrigin;
+    // use sp_runtime::traits::BadOrigin; // unused
 
     #[test]
     fn test_submit_inference_success() {
@@ -109,7 +109,10 @@ mod tests {
     fn test_unauthorized_submit() {
         new_test_ext().execute_with(|| {
             // Try to submit inference with root origin
-            assert_ok!(PalletCbcPoi::submit_inference(RuntimeOrigin::root(), 42, 80));
+            assert_noop!(
+                PalletCbcPoi::submit_inference(RuntimeOrigin::root(), 42, 80),
+                sp_runtime::DispatchError::BadOrigin
+            );
         });
     }
 
@@ -117,7 +120,10 @@ mod tests {
     fn test_unauthorized_challenge() {
         new_test_ext().execute_with(|| {
             // Try to challenge with root origin
-            assert_ok!(PalletCbcPoi::challenge_inference(RuntimeOrigin::root(), 1, 42));
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(RuntimeOrigin::root(), 1, 42),
+                sp_runtime::DispatchError::BadOrigin
+            );
         });
     }
 
@@ -125,7 +131,10 @@ mod tests {
     fn test_challenge_unregistered_validator() {
         new_test_ext().execute_with(|| {
             // Should fail because the validator has not submitted any inference
-            assert_ok!(PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 42));
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 42),
+                Error::<Test>::InferenceNotFound
+            );
         });
     }
 
@@ -147,7 +156,10 @@ mod tests {
                 80
             ));
             // Should fail because validator has already submitted an inference in this epoch
-            assert_ok!(PalletCbcPoi::submit_inference(RuntimeOrigin::signed(1), 43, 85));
+            assert_noop!(
+                PalletCbcPoi::submit_inference(RuntimeOrigin::signed(1), 43, 85),
+                Error::<Test>::InferenceAlreadySubmitted
+            );
         });
     }
 } 

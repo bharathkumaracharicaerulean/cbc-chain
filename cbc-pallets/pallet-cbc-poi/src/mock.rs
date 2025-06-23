@@ -64,6 +64,12 @@ impl system::Config for Test {
 }
 
 // Implement the PoI pallet configuration trait for the mock runtime.
+pub struct DummyPosInterface;
+impl pallet_cbc_poi::PosInterface<u64> for DummyPosInterface {
+    fn boost_score(_validator: &u64, _weight: u32) -> frame_support::dispatch::DispatchResult { Ok(()) }
+    fn slash_score(_validator: &u64, _weight: u32) -> frame_support::dispatch::DispatchResult { Ok(()) }
+}
+
 impl pallet_cbc_poi::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
@@ -72,6 +78,7 @@ impl pallet_cbc_poi::Config for Test {
     type ChallengeWindow = ConstU32<5>;        // Epochs allowed for challenge.
     type InferenceReward = ConstU128<1000>;    // Reward for correct inference.
     type ChallengeReward = ConstU128<500>;     // Reward for successful challenge.
+    type PosInterface = DummyPosInterface;
 }
 
 // Helper function to build genesis storage for tests.

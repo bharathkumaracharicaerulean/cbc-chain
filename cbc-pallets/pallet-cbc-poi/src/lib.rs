@@ -75,6 +75,14 @@ pub mod pallet {
         type InferenceReward: Get<u128>;
         /// Reward for successful challenge.
         type ChallengeReward: Get<u128>;
+        /// Interface to PoS pallet for boosting/slashing scores
+        type PosInterface: PosInterface<Self::AccountId>;
+    }
+
+    /// Trait for PoS score manipulation (to be implemented by PoS pallet or runtime)
+    pub trait PosInterface<AccountId> {
+        fn boost_score(validator: &AccountId, weight: u32) -> DispatchResult;
+        fn slash_score(validator: &AccountId, weight: u32) -> DispatchResult;
     }
 
     /// Genesis configuration for PoI pallet.
@@ -143,10 +151,16 @@ pub mod pallet {
     pub enum Event<T: Config> {
         /// An inference result was submitted. [who, result, confidence]
         InferenceSubmitted { who: T::AccountId, result: u32, confidence: u32 },
+        /// An inference result was accepted. [validator, confidence]
+        InferenceAccepted { validator: T::AccountId, confidence: u32 },
+        /// An inference result was rejected. [validator, confidence]
+        InferenceRejected { validator: T::AccountId, confidence: u32 },
         /// An inference result was challenged. [challenger, challenged, result]
         InferenceChallenged { challenger: T::AccountId, challenged: T::AccountId, result: u32 },
         /// A challenge was resolved. [challenger, challenged, result, success]
         ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
+        /// A validator was slashed. [validator, reason]
+        ValidatorSlashed { validator: T::AccountId, reason: Vec<u8> },
     }
 
     /// Errors returned by the PoI pallet.
@@ -202,8 +216,21 @@ pub mod pallet {
             InferenceResults::<T>::insert(&who, (result, current_epoch));
 
             // Emit an event.
-            Self::deposit_event(Event::InferenceSubmitted { who, result, confidence });
+            Self::deposit_event(Event::InferenceSubmitted { who: who.clone(), result, confidence });
 
+            // --- PoS boost logic ---
+            let boost = if confidence >= 90 {
+                10
+            } else if confidence >= 70 {
+                5
+            } else {
+                2
+            };
+            if let Err(e) = T::PosInterface::boost_score(&who, boost) {
+                log::warn!("Failed to boost PoS score: {:?}", e);
+            } else {
+                Self::deposit_event(Event::InferenceAccepted { validator: who.clone(), confidence });
+            }
             Ok(())
         }
 
@@ -251,11 +278,19 @@ pub mod pallet {
 
             // Emit an event.
             Self::deposit_event(Event::InferenceChallenged {
-                challenger,
-                challenged,
+                challenger: challenger.clone(),
+                challenged: challenged.clone(),
                 result,
             });
 
+            // --- PoS slash logic ---
+            let slash = 7; // Example: fixed penalty, could be parameterized
+            if let Err(e) = T::PosInterface::slash_score(&challenged, slash) {
+                log::warn!("Failed to slash PoS score: {:?}", e);
+            } else {
+                Self::deposit_event(Event::InferenceRejected { validator: challenged.clone(), confidence: 0 });
+                Self::deposit_event(Event::ValidatorSlashed { validator: challenged.clone(), reason: b"Invalid inference".to_vec() });
+            }
             Ok(())
         }
     }

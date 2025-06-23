@@ -142,6 +142,24 @@ impl pallet_sudo::Config for Runtime {
 
 
 // === CBC POI Pallet Configuration ===
+pub struct PosInterfaceImpl;
+impl pallet_cbc_poi::PosInterface<AccountId> for PosInterfaceImpl {
+    fn boost_score(validator: &AccountId, weight: u32) -> frame_support::dispatch::DispatchResult {
+        pallet_cbc_pos::Pallet::<Runtime>::boost_score(
+            frame_system::RawOrigin::Root.into(),
+            validator.clone(),
+            weight,
+        )
+    }
+    fn slash_score(validator: &AccountId, weight: u32) -> frame_support::dispatch::DispatchResult {
+        pallet_cbc_pos::Pallet::<Runtime>::slash_score(
+            frame_system::RawOrigin::Root.into(),
+            validator.clone(),
+            weight,
+        )
+    }
+}
+
 impl pallet_cbc_poi::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_cbc_poi::weights::SubstrateWeight<Runtime>;
@@ -150,6 +168,7 @@ impl pallet_cbc_poi::Config for Runtime {
     type ChallengeWindow = ChallengeWindow;
     type InferenceReward = InferenceReward;
     type ChallengeReward = ChallengeReward;
+    type PosInterface = PosInterfaceImpl;
 }
 
 // === CBC POS Pallet Configuration ===
