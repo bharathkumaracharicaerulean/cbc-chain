@@ -217,6 +217,8 @@ pub mod pallet {
 
             // Emit an event.
             Self::deposit_event(Event::InferenceSubmitted { who: who.clone(), result, confidence });
+            // --- Telemetry: Inference submitted ---
+            ::log::info!("[cerulea::poi][prometheus] inference_submitted{{validator={:?}}} {{result={},confidence={}}}", who, result, confidence);
 
             // --- PoS boost logic ---
             let boost = if confidence >= 90 {
@@ -227,9 +229,11 @@ pub mod pallet {
                 2
             };
             if let Err(e) = T::PosInterface::boost_score(&who, boost) {
-                log::warn!("Failed to boost PoS score: {:?}", e);
+                ::log::warn!("[cerulea::poi][prometheus] boost_score_failed{{validator={:?}}} {:?}", who, e);
             } else {
                 Self::deposit_event(Event::InferenceAccepted { validator: who.clone(), confidence });
+                // --- Telemetry: Inference accepted ---
+                ::log::info!("[cerulea::poi][prometheus] inference_accepted{{validator={:?}}} {{confidence={}}}", who, confidence);
             }
             Ok(())
         }
@@ -282,14 +286,19 @@ pub mod pallet {
                 challenged: challenged.clone(),
                 result,
             });
+            // --- Telemetry: Inference challenged ---
+            ::log::info!("[cerulea::poi][prometheus] inference_challenged{{challenger={:?},challenged={:?}}} {{result={}}}", challenger, challenged, result);
 
             // --- PoS slash logic ---
             let slash = 7; // Example: fixed penalty, could be parameterized
             if let Err(e) = T::PosInterface::slash_score(&challenged, slash) {
-                log::warn!("Failed to slash PoS score: {:?}", e);
+                ::log::warn!("[cerulea::poi][prometheus] slash_score_failed{{validator={:?}}} {:?}", challenged, e);
             } else {
                 Self::deposit_event(Event::InferenceRejected { validator: challenged.clone(), confidence: 0 });
                 Self::deposit_event(Event::ValidatorSlashed { validator: challenged.clone(), reason: b"Invalid inference".to_vec() });
+                // --- Telemetry: Inference rejected and validator slashed ---
+                ::log::info!("[cerulea::poi][prometheus] inference_rejected{{validator={:?}}} 1", challenged);
+                ::log::info!("[cerulea::poi][prometheus] validator_slashed{{validator={:?}}} 1", challenged);
             }
             Ok(())
         }

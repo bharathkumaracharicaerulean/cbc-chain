@@ -855,7 +855,10 @@ pub mod pallet {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
                 state.current.missed_blocks = state.current.missed_blocks.saturating_add(1);
                 Ok::<(), Error<T>>(())
-            }).map_err(|e| sp_runtime::DispatchError::from(e))
+            }).map_err(|e| sp_runtime::DispatchError::from(e))?;
+            // --- Telemetry: Block author failure ---
+            ::log::info!("[cerulea::dcf][prometheus] block_author_failure{{validator={:?}}} 1", validator);
+            Ok(())
         }
 
         /// Record block authorship for a validator and boost score.
@@ -865,6 +868,8 @@ pub mod pallet {
                 state.current.authored_blocks = state.current.authored_blocks.saturating_add(1);
                 Ok::<(), Error<T>>(())
             }).map_err(|e| sp_runtime::DispatchError::from(e))?;
+            // --- Telemetry: Block author success ---
+            ::log::info!("[cerulea::dcf][prometheus] block_author_success{{validator={:?}}} 1", validator);
             Self::boost_score(
                 validator,
                 T::BlockAuthorshipBoost::get(),
@@ -957,6 +962,9 @@ pub mod pallet {
                 validators: active_validators.clone().into_inner(),
             });
 
+            // --- Telemetry: Active validator count ---
+            ::log::info!("[cerulea::dcf][prometheus] active_validators_count{{}} {}", active_validators.len());
+
             // --- EpochHistory recording ---
             let score_snapshot: BoundedVec<_, <T as Config>::MaxValidators> =
                 BoundedVec::truncate_from(active_validators.iter().map(|v| {
@@ -968,6 +976,9 @@ pub mod pallet {
                     let inf = poi::Pallet::<T>::inference_results(v).map(|(result, _)| result as u64);
                     (v.clone(), inf)
                 }).collect::<Vec<_>>());
+            // --- Telemetry: Inference rate per epoch ---
+            let inference_count = inference_summary.iter().filter(|(_, inf)| inf.is_some()).count();
+            ::log::info!("[cerulea::dcf][prometheus] inference_rate_per_epoch{{epoch={}}} {}", next_epoch, inference_count);
             let mut histories = EpochHistories::<T>::get();
             let new_history = EpochHistory::<T> {
                 epoch_number: next_epoch,

@@ -23,6 +23,7 @@ sp-api.workspace = true
 pallet-cbc-pos = { path = "../pallet-cbc-pos", default-features = false }
 pallet-cbc-poi = { path = "../pallet-cbc-poi", default-features = false }
 serde.workspace = true
+log = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 sp-core = { default-features = true, workspace = true }

@@ -21,7 +21,7 @@ sp_api::decl_runtime_apis! {
     pub trait PosApi<AccountId, Balance> 
     where
         AccountId: codec::Codec + Clone + Eq + sp_std::fmt::Debug,
-        Balance: codec::Codec + Clone + Eq + sp_std::fmt::Debug + sp_runtime::traits::AtLeast32BitUnsigned,
+        Balance: codec::Codec + Clone + Eq + sp_runtime::traits::AtLeast32BitUnsigned,
     {
         fn get_validator_stake(validator: AccountId) -> Balance;
         fn get_validator_score(validator: AccountId) -> u32;
@@ -155,7 +155,12 @@ pub mod pallet {
 
             ensure!(!Validators::<T>::contains_key(&who), Error::<T>::ValidatorAlreadyRegistered);
             Validators::<T>::insert(&who, true);
-            Self::deposit_event(Event::ValidatorRegistered { validator: who });
+            Self::deposit_event(Event::ValidatorRegistered { validator: who.clone() });
+            // --- Telemetry: Validator registered ---
+            ::log::info!("[cerulea::pos][prometheus] validator_registered{{validator={:?}}} 1", who);
+            // --- Telemetry: Active validator count ---
+            let active_count = Validators::<T>::iter().filter(|(_, active)| *active).count();
+            ::log::info!("[cerulea::pos][prometheus] active_validators_count{{}} {}", active_count);
             Ok(())
         }
 
@@ -166,7 +171,9 @@ pub mod pallet {
             ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
             ensure!(score >= T::MinValidatorScore::get(), Error::<T>::ScoreTooLow);
             ValidatorScores::<T>::insert(&validator, score);
-            Self::deposit_event(Event::ScoreSubmitted { validator, score });
+            Self::deposit_event(Event::ScoreSubmitted { validator: validator.clone(), score });
+            // --- Telemetry: Score submitted ---
+            ::log::info!("[cerulea::pos][prometheus] score_submitted{{validator={:?}}} {}", validator, score);
             Ok(())
         }
 
@@ -191,7 +198,9 @@ pub mod pallet {
                 SlashingCount::<T>::insert(&validator, count);
             }
             
-            Self::deposit_event(Event::ValidatorSlashed { validator, slashing_count: count });
+            Self::deposit_event(Event::ValidatorSlashed { validator: validator.clone(), slashing_count: count });
+            // --- Telemetry: Validator slashed ---
+            ::log::info!("[cerulea::pos][prometheus] validator_slashed{{validator={:?}}} {}", validator, count);
             Ok(())
         }
 
