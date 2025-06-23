@@ -230,5 +230,33 @@ pub mod pallet {
             
             Ok(())
         }
+
+        #[pallet::call_index(5)]
+        #[pallet::weight(T::WeightInfo::submit_score())] 
+        pub fn boost_score(origin: OriginFor<T>, validator: T::AccountId, weight: u32) -> DispatchResult {
+            let _who = ensure_signed(origin)?;
+            ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
+
+            let current_score = ValidatorScores::<T>::get(&validator).unwrap_or(0);
+            let new_score = current_score.saturating_add(weight);
+            ValidatorScores::<T>::insert(&validator, new_score);
+
+            Self::deposit_event(Event::ScoreSubmitted { validator, score: new_score });
+            Ok(())
+        }
+
+        #[pallet::call_index(6)]
+        #[pallet::weight(T::WeightInfo::submit_score())] 
+        pub fn slash_score(origin: OriginFor<T>, validator: T::AccountId, weight: u32) -> DispatchResult {
+            let _who = ensure_signed(origin)?;
+            ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
+
+            let current_score = ValidatorScores::<T>::get(&validator).unwrap_or(0);
+            let new_score = current_score.saturating_sub(weight);
+            ValidatorScores::<T>::insert(&validator, new_score);
+
+            Self::deposit_event(Event::ScoreSubmitted { validator, score: new_score });
+            Ok(())
+        }
     }
 }
