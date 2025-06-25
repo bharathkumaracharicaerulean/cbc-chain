@@ -58,7 +58,7 @@ use sp_runtime::{
     codec, 
 };
 use sp_std::prelude::*;
-use sp_std::fmt; // <-- Add this import
+use sp_std::fmt; 
 use pallet_cbc_pos as pos;
 use pallet_cbc_poi as poi;
 use serde::{Serialize, Deserialize};
@@ -690,7 +690,7 @@ pub mod pallet {
             // Already pending join or already active
             ensure!(
                 !Self::active_validators().contains(&who),
-                Error::<T>::NotAllowedInGovernanceMode // Reuse or add a new error if needed
+                Error::<T>::NotAllowedInGovernanceMode 
             );
             ensure!(
                 PendingValidatorActions::<T>::get(&who) != Some(ValidatorAction::Join),
