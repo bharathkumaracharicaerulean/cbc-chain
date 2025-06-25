@@ -2,58 +2,268 @@
 
 The **Dynamic Consensus Framework (DCF)** pallet provides advanced validator management, scoring, and on-chain governance for the CBC-Chain. It enables dynamic validator sets, configurable consensus weights, and robust governance mechanisms for slashing, rewards, and ejection.
 
-## Features
+## Key Features
 
-- **Validator Scoring:** Combines Proof-of-Stake (PoS) and Proof-of-Inference (PoI) scores with configurable weights.
-- **Epoch Management:** Handles epoch transitions, validator activity tracking, score decay, and validator set updates.
-- **Governance:** On-chain proposals for slashing, rewarding, and ejecting validators, with voting and execution logic.
-- **Block Authorship Tracking:** Monitors block authorship and missed blocks, applying score boosts or penalties.
-- **Runtime APIs:** Exposes APIs for querying validator scores, participation, epoch state, and expected block authors.
-- **Sudo Controls:** Governance mode toggling and sudo-only operations for manual intervention and testing.
+1. **Validator Scoring**
+   - Combined PoS and PoI scoring
+   - Dynamic score adjustments
+   - Score decay mechanism
+   - Block authorship tracking
 
-## Storage
+2. **Epoch Management**
+   - Automatic epoch transitions
+   - Validator activity tracking
+   - Score updates
+   - Historical tracking
 
-- `ValidatorStates`: State for each validator, including scores and history.
-- `PosWeight` / `PoiWeight`: Current weights for PoS and PoI in scoring.
-- `ValidatorSet` / `ActiveValidators`: All and currently active validators.
-- `EpochConfigStorage`: Current epoch configuration.
-- `CurrentEpoch`: Current epoch number.
-- `GovernanceModeEnabled`: Whether governance mode is enabled.
-- `Proposals`, `ProposalVotes`, `NextProposalId`: Governance proposal tracking.
-- `PendingValidatorActions`: Pending join/leave requests.
-- `EpochHistories`: Recent epoch analytics.
+3. **Governance System**
+   - Proposal submission
+   - Voting mechanism
+   - Proposal execution
+   - Sudo controls
+
+4. **Security Features**
+   - Validator slashing
+   - Score penalties
+   - Ejection mechanism
+   - Governance mode
+
+## Configuration Parameters
+
+```rust
+#[pallet::config]
+pub trait Config: frame_system::Config + pos::Config + poi::Config + TypeInfo + fmt::Debug {
+    type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+    #[pallet::constant]
+    type MaxValidators: Get<u32>;
+    type EpochConfig: Get<EpochConfig>;
+    type ScoreBoostReason: Get<ScoreBoostReason>;
+    type EjectionReason: Get<EjectionReason>;
+    type InferenceErrorSeverity: Get<u32>;
+    type ScoreDecayRate: Get<u32>;
+    type MinValidatorScore: Get<u64>;
+}
+```
+
+## Storage Items
+
+### ValidatorStates
+```rust
+#[pallet::storage]
+pub type ValidatorStates<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, ValidatorState, OptionQuery>;
+```
+
+### CurrentEpoch
+```rust
+#[pallet::storage]
+pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
+```
+
+### EpochHistory
+```rust
+#[pallet::storage]
+pub type EpochHistory<T: Config> = StorageValue<_, BoundedVec<EpochHistory<T>, ConstU32<24>>, ValueQuery>;
+```
 
 ## Events
 
-- `ValidatorScoreUpdated`, `ValidatorScoreBoosted`, `ValidatorScoreDecayed`
-- `EpochStarted`, `ValidatorEjected`, `ValidatorReEntered`
-- `ProposalSubmitted`, `ProposalVoted`, `ProposalExecuted`, `ProposalPassed`, `ProposalRejected`
-- `GovernanceModeToggled`, `ValidatorJoined`, `ValidatorLeft`
+```rust
+#[pallet::event]
+pub enum Event<T: Config> {
+    ValidatorScoreUpdated { validator: T::AccountId, score: u64 },
+    ValidatorScoreBoosted { validator: T::AccountId, amount: u64, reason: ScoreBoostReason },
+    ValidatorScoreDecayed { validator: T::AccountId, amount: u64 },
+    EpochStarted { epoch: u32 },
+    ValidatorEjected { validator: T::AccountId, reason: EjectionReason },
+    ValidatorReEntered { validator: T::AccountId },
+    ProposalSubmitted { proposal_id: u32, proposer: T::AccountId },
+    ProposalVoted { proposal_id: u32, voter: T::AccountId, approve: bool },
+    ProposalExecuted { proposal_id: u32 },
+    ProposalPassed { proposal_id: u32 },
+    ProposalRejected { proposal_id: u32 },
+    GovernanceModeToggled { enabled: bool },
+    ValidatorJoined { validator: T::AccountId },
+    ValidatorLeft { validator: T::AccountId },
+}
+```
 
 ## Errors
 
-- `ValidatorNotFound`, `InvalidWeight`, `InvalidEpochConfig`
-- `NotEnoughValidators`, `NotAllowedInGovernanceMode`, `NotValidator`
-- `AlreadyVoted`, `ProposalNotApproved`, `ProposalAlreadyExecuted`
+```rust
+#[pallet::error]
+pub enum Error<T> {
+    ValidatorNotFound,
+    InvalidWeight,
+    InvalidEpochConfig,
+    NotEnoughValidators,
+    NotAllowedInGovernanceMode,
+    NotValidator,
+    AlreadyVoted,
+    ProposalNotApproved,
+    ProposalAlreadyExecuted,
+    ScoreTooLow,
+    ValidatorInactive,
+    InvalidScoreBoost,
+    InvalidEjectionReason,
+    InvalidInferenceError,
+    EpochTransitionFailed,
+}
+```
 
-## Dispatchable Calls
+## Dispatchable Functions
 
-- `update_validator_stake_score`, `update_validator_inference_score`
-- `update_consensus_weights`, `set_governance_mode`, `sudo_advance_epoch`
-- `submit_proposal`, `vote_proposal`, `execute_proposal`
-- `propose_slash_validator`, `propose_reward_validator`, `propose_eject_validator`
-- `join_validator_set`, `leave_validator_set`
+### Validator Management
+```rust
+pub fn join_validator_set(origin: OriginFor<T>) -> DispatchResult
+pub fn leave_validator_set(origin: OriginFor<T>) -> DispatchResult
+```
 
-## Runtime APIs
+### Score Management
+```rust
+pub fn update_validator_stake_score(origin: OriginFor<T>, validator: T::AccountId) -> DispatchResult
+pub fn update_validator_inference_score(origin: OriginFor<T>, validator: T::AccountId) -> DispatchResult
+pub fn update_consensus_weights(origin: OriginFor<T>, pos_weight: u64, poi_weight: u64) -> DispatchResult
+```
 
-See [`DcfApi`](src/lib.rs) for:
-- Validator scores, epoch info, participation, expected authors, and more.
+### Governance
+```rust
+pub fn submit_proposal(origin: OriginFor<T>, action: ProposalAction<T>) -> DispatchResult
+pub fn vote_proposal(origin: OriginFor<T>, proposal_id: u32, approve: bool) -> DispatchResult
+pub fn execute_proposal(origin: OriginFor<T>, proposal_id: u32) -> DispatchResult
+```
 
-## Usage
+### Sudo Operations
+```rust
+pub fn set_governance_mode(origin: OriginFor<T>, enabled: bool) -> DispatchResult
+pub fn sudo_advance_epoch(origin: OriginFor<T>) -> DispatchResult
 
-Integrate the pallet in your runtime and configure the required parameters. Use the extrinsics and APIs to manage validators, epochs, and governance.
+// Sudo proposal functions
+pub fn propose_slash_validator(
+    origin: OriginFor<T>,
+    proposer: T::AccountId,
+    validator: T::AccountId,
+    amount: <T as pallet::Config>::Balance,
+) -> DispatchResult
+
+pub fn propose_reward_validator(
+    origin: OriginFor<T>,
+    proposer: T::AccountId,
+    validator: T::AccountId,
+    amount: <T as pallet::Config>::Balance,
+) -> DispatchResult
+
+pub fn propose_eject_validator(
+    origin: OriginFor<T>,
+    proposer: T::AccountId,
+    validator: T::AccountId,
+    reason: EjectionReason,
+) -> DispatchResult
+```
+
+## Runtime API
+
+```rust
+#[decl_runtime_apis]
+pub trait DcfApi<AccountId> {
+    fn get_validator_scores() -> Vec<(AccountId, u64)>;
+    fn get_current_epoch() -> u32;
+    fn get_validator_stake_score(validator: AccountId) -> u64;
+    fn get_validator_inference_score(validator: AccountId) -> u64;
+    fn get_consensus_weights() -> (u64, u64);
+    fn is_validator_active(validator: AccountId) -> bool;
+    fn get_expected_author(block_number: u32) -> Option<AccountId>;
+    fn get_validator_score_history(validator: AccountId) -> Vec<u64>;
+    fn get_validator_participation(validator: AccountId) -> (u32, u32);
+    fn get_active_validators() -> Vec<AccountId>;
+    fn get_validator_last_active(validator: AccountId) -> u32;
+    fn validate_block_author(block_number: u32, author: AccountId);
+    fn get_validator_profile(account_id: AccountId) -> Option<(u64, u32, u32, u32, u32)>;
+    fn get_inference_result(account_id: AccountId) -> Option<u64>;
+    fn get_epoch_history(epoch_number: u32) -> Option<RuntimeEpochHistory<AccountId>>;
+    fn get_recent_epochs(n: u32) -> Vec<RuntimeEpochHistory<AccountId>>;
+}
+```
+
+## Genesis Configuration
+
+```rust
+#[pallet::genesis_config]
+pub struct GenesisConfig<T: Config> {
+    pub initial_validators: Vec<T::AccountId>,
+    pub initial_scores: Vec<(T::AccountId, u64)>,
+    pub initial_epoch_config: EpochConfig,
+    pub initial_consensus_weights: (u64, u64),
+    pub initial_governance_mode: bool,
+}
+```
+
+## Benchmarking
+
+The pallet includes benchmarking support for:
+
+- Weight calculation
+- Storage benchmarks
+- Runtime API benchmarks
+- Event benchmarks
+
+## Integration
+
+The DCF pallet integrates with:
+
+1. **Runtime**
+   - FRAME system
+   - Event system
+   - Storage system
+   - Weight system
+
+2. **Other Pallets**
+   - PoS (via pos::Config)
+   - PoI (via poi::Config)
+   - Balances
+   - Timestamp
+
+3. **Runtime APIs**
+   - Validator queries
+   - Score queries
+   - Epoch queries
+   - Governance queries
+
+## Usage Example
+
+```rust
+// Join validator set
+assert_ok!(PalletCbcDcf::join_validator_set(Origin::signed(validator_account)));
+
+// Submit governance proposal
+assert_ok!(PalletCbcDcf::submit_proposal(
+    Origin::signed(proposer_account),
+    ProposalAction::Reward {
+        validator: validator_account,
+        amount: reward_amount
+    }
+));
+
+// Vote on proposal
+assert_ok!(PalletCbcDcf::vote_proposal(
+    Origin::signed(voter_account),
+    proposal_id,
+    true // approve
+));
+
+// Get validator score
+let score = PalletCbcDcf::get_validator_stake_score(validator_account);
+```
 
 ## Testing
+
+The pallet includes comprehensive tests in the `tests` module, covering:
+
+- Validator management
+- Score calculations
+- Governance system
+- Epoch transitions
+- Runtime API
+- Genesis configuration
 
 Run unit tests with:
 
@@ -64,6 +274,9 @@ cargo test -p pallet-cbc-dcf
 ## References
 
 - [Architecture documentation](../../docs/dcf-architecture.md)
+- [PoS Pallet](../pallet-cbc-pos/README.md)
+- [PoI Pallet](../pallet-cbc-poi/README.md)
+- [Runtime Overview](../../docs/runtime-overview.md)
 -
 # CBC DCF Pallet
 
