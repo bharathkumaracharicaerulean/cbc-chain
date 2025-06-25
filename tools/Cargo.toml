@@ -12,7 +12,13 @@ tokio = { version = "1.44.2", features = ["full"] }
 jsonrpsee = { version = "0.24.8", features = ["ws-client"] }
 clap = { version = "4.5.13", features = ["derive"] }
 anyhow = "1.0.86"
+rand = "0.8.5"
+csv = "1.1.6"
 
 [[bin]]
 name = "score-checker"
 path = "score-checker.rs"
+
+[[bin]]
+name = "simulate_scores"
+path = "simulate_scores.rs"
