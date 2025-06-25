@@ -1,7 +1,5 @@
 # CBC Runtime Overview
 
-# CBC Runtime Overview
-
 The CBC runtime implements a blockchain system with a combination of Proof of Stake (PoS) and Proof of Inference (PoI) consensus mechanisms. This document provides an overview of the runtime configuration, pallets, and key parameters.
 
 ---
