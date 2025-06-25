@@ -11,6 +11,7 @@ The `cbc-poi` pallet is responsible for:
 - Enabling validators to challenge inference results submitted by others.
 - Managing rewards for valid inference submissions and successful challenges.
 - Ensuring inference results and challenges are valid within the allowed time frame.
+- Integrating with PoS system for score boosting and slashing.
 
 ---
 
@@ -45,7 +46,7 @@ The `cbc-poi` pallet is responsible for:
 
 ### **CurrentEpoch**
 - **Type**: `StorageValue<_, u32, ValueQuery>`
-- **Description**: Tracks the current epoch or round.
+- **Description**: Tracks the current inference epoch or round.
 
 ---
 
@@ -55,6 +56,14 @@ The `cbc-poi` pallet is responsible for:
 - **Fields**: `{ who: T::AccountId, result: u32, confidence: u32 }`
 - **Description**: Emitted when a validator submits an inference result.
 
+### **InferenceAccepted**
+- **Fields**: `{ validator: T::AccountId, confidence: u32 }`
+- **Description**: Emitted when an inference result is accepted.
+
+### **InferenceRejected**
+- **Fields**: `{ validator: T::AccountId, confidence: u32 }`
+- **Description**: Emitted when an inference result is rejected.
+
 ### **InferenceChallenged**
 - **Fields**: `{ challenger: T::AccountId, challenged: T::AccountId, result: u32 }`
 - **Description**: Emitted when a validator challenges an inference result.
@@ -63,27 +72,31 @@ The `cbc-poi` pallet is responsible for:
 - **Fields**: `{ challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool }`
 - **Description**: Emitted when a challenge is resolved, indicating whether it was successful or not.
 
+### **ValidatorSlashed**
+- **Fields**: `{ validator: T::AccountId, reason: Vec<u8> }`
+- **Description**: Emitted when a validator is slashed for submitting invalid inference results.
+
 ---
 
 ## 5. Key Errors
 
 ### **InferenceAlreadySubmitted**
-- **Description**: The inference result has already been submitted by the validator.
+- **Description**: The inference result already exists for this validator.
 
 ### **InferenceNotFound**
-- **Description**: The inference result being challenged does not exist.
-
-### **ConfidenceTooLow**
-- **Description**: The confidence level of the submitted inference is below the minimum threshold.
-
-### **ChallengeWindowExpired**
-- **Description**: The challenge was submitted after the allowed challenge window.
-
-### **InferenceTooOld**
-- **Description**: The inference result is too old to be challenged.
+- **Description**: The inference result does not exist.
 
 ### **InvalidChallenge**
-- **Description**: The challenge is invalid because the result does not match the stored inference.
+- **Description**: The challenge is invalid (e.g., wrong result).
+
+### **ConfidenceTooLow**
+- **Description**: The confidence level is too low.
+
+### **ChallengeWindowExpired**
+- **Description**: The challenge window has expired.
+
+### **InferenceTooOld**
+- **Description**: The inference is too old to be challenged.
 
 ---
 
@@ -117,7 +130,19 @@ The `tests.rs` file includes unit tests to verify the functionality of the palle
 
 ---
 
-## 7. Mock Runtime
+## 7. Runtime API
+
+The pallet exposes the following runtime API:
+
+```rust
+trait PoiApi<AccountId> {
+    fn get_inference_result(validator: AccountId) -> Option<(u32, u32)>;
+    fn get_challenge(validator: AccountId) -> Option<(AccountId, u32, u32)>;
+    fn get_current_epoch() -> u32;
+}
+```
+
+## 8. Mock Runtime
 
 The `mock.rs` file defines a mock runtime for testing the pallet. Key configurations include:
 
@@ -126,11 +151,12 @@ The `mock.rs` file defines a mock runtime for testing the pallet. Key configurat
 
 ### **Pallet Configuration**
 - Implements `pallet_cbc_poi::Config` with the following constants:
-  - `MinInferenceConfidence`: Minimum confidence threshold for inference submissions.
-  - `MaxInferenceAge`: Maximum age of inference results in epochs.
-  - `ChallengeWindow`: Number of epochs within which challenges can be submitted.
-  - `InferenceReward`: Reward for valid inference submissions.
-  - `ChallengeReward`: Reward for successful challenges.
+  - `MinInferenceConfidence`: Minimum confidence threshold for inference (0-100).
+  - `MaxInferenceAge`: Maximum age of inference in epochs.
+  - `ChallengeWindow`: Number of epochs to challenge an inference.
+  - `InferenceReward`: Reward for correct inference.
+  - `ChallengeReward`: Reward for successful challenge.
+  - `PosInterface`: Interface to PoS pallet for boosting/slashing scores
 
 ### **Genesis Storage**
 - Initializes the mock runtime with default storage values for inference results, challenges, and the current epoch.
@@ -155,15 +181,12 @@ The `benchmarking.rs` file provides benchmarks for the pallet's extrinsics. Key 
 
 ## 9. Weights
 
-The `weights.rs` file defines the weights for the pallet's extrinsics. Key weights include:
+The pallet uses a dedicated weights module (`weights.rs`) that defines weight information for all extrinsics. The weights are automatically benchmarked and include:
 
-### **Submit Inference**
-- **Weight**: `10_000`
-- **Description**: Includes the cost of writing to the `InferenceResults` storage.
+- Weight information for `submit_inference` extrinsic
+- Weight information for `challenge_inference` extrinsic
 
-### **Challenge Inference**
-- **Weight**: `20_000`
-- **Description**: Includes the cost of writing to the `Challenges` storage.
+The actual weight values are determined through runtime benchmarks and can be found in the weights module.
 
 ---
 

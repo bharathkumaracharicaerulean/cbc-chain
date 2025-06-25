@@ -1,27 +1,281 @@
-# Pallet CBC-PoI (Proof of Inference)
+# CBC PoI Pallet
 
-The `pallet-cbc-poi` implements a **Proof of Inference (PoI)** mechanism for the CBC blockchain. It allows validators to submit inference results, challenge incorrect results, and incentivizes accurate submissions while penalizing invalid ones.
+The CBC PoI (Proof of Inference) pallet implements the PoI consensus mechanism for the CBC blockchain. It allows validators to submit inference results, challenge others' results, and provides a mechanism for rewarding or penalizing based on inference correctness.
 
----
+## Key Features
 
-## Features
+1. **Inference Submission**
+   - Submit inference results with confidence scores
+   - Minimum confidence threshold enforcement
+   - Epoch-based result tracking
+   - Rewards for valid submissions
 
-- **Inference Submission**: Validators can submit inference results with confidence scores.
-- **Challenges**: Validators can challenge inference results submitted by others.
-- **Epoch Management**: Tracks the current epoch to ensure inference results and challenges are valid within the allowed time frame.
-- **Rewards**: Validators are rewarded for valid inference submissions, and successful challengers are rewarded for identifying invalid results.
+2. **Challenge Mechanism**
+   - Challenge other validators' results
+   - Configurable challenge window
+   - Challenge resolution system
+   - Rewards for successful challenges
 
----
+3. **Epoch Management**
+   - Track current inference epoch
+   - Result age validation
+   - Challenge window enforcement
+   - Epoch-based updates
 
-## Storage
+4. **Score Integration**
+   - Score boosting for correct results
+   - Score slashing for invalid results
+   - Integration with PoS system
+   - Dynamic score adjustments
 
-### **InferenceResults**
-- **Type**: `StorageMap<_, Blake2_128Concat, T::AccountId, (u32, u32), OptionQuery>`
-- **Description**: Stores inference results submitted by validators, along with the epoch in which they were submitted.
+5. **Reward System**
+   - Inference rewards
+   - Challenge rewards
+   - Penalty system
+   - Score adjustments
 
-### **Challenges**
-- **Type**: `StorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, u32, u32), OptionQuery>`
-- **Description**: Tracks challenges raised against inference results, including the challenger, challenged account, and the result.
+## Configuration Parameters
+
+```rust
+#[pallet::config]
+pub trait Config: frame_system::Config {
+    type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+    type WeightInfo: WeightInfo;
+
+    // Minimum confidence threshold for inference (0-100)
+    type MinInferenceConfidence: Get<u32>;
+    // Maximum age of inference in epochs
+    type MaxInferenceAge: Get<u32>;
+    // Number of epochs to challenge an inference
+    type ChallengeWindow: Get<u32>;
+    // Reward for correct inference
+    type InferenceReward: Get<u128>;
+    // Reward for successful challenge
+    type ChallengeReward: Get<u128>;
+    // Interface to PoS pallet for boosting/slashing scores
+    type PosInterface: PosInterface<Self::AccountId>;
+}
+```
+
+## Storage Items
+
+### InferenceResults
+```rust
+#[pallet::storage]
+pub type InferenceResults<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (u32, u32), OptionQuery>;
+```
+
+### Challenges
+```rust
+#[pallet::storage]
+pub type Challenges<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, u32, u32), OptionQuery>;
+```
+
+### Current Epoch
+```rust
+#[pallet::storage]
+pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
+```
+
+## Events
+
+```rust
+#[pallet::event]
+pub enum Event<T: Config> {
+    InferenceSubmitted { who: T::AccountId, result: u32, confidence: u32 },
+    InferenceAccepted { validator: T::AccountId, confidence: u32 },
+    InferenceRejected { validator: T::AccountId, confidence: u32 },
+    InferenceChallenged { challenger: T::AccountId, challenged: T::AccountId, result: u32 },
+    ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
+    ValidatorSlashed { validator: T::AccountId, reason: Vec<u8> },
+}
+```
+
+## Errors
+
+```rust
+#[pallet::error]
+pub enum Error<T> {
+    InferenceAlreadySubmitted,
+    InferenceNotFound,
+    InvalidChallenge,
+    ConfidenceTooLow,
+    ChallengeWindowExpired,
+    InferenceTooOld,
+}
+```
+
+## Dispatchable Functions
+
+### submit_inference
+```rust
+pub fn submit_inference(
+    origin: OriginFor<T>,
+    result: u32,
+    confidence: u32,
+) -> DispatchResult
+```
+- Submit inference result with confidence
+- Validates minimum confidence
+- Updates inference results
+- Emits `InferenceSubmitted` event
+
+### challenge_inference
+```rust
+pub fn challenge_inference(
+    origin: OriginFor<T>,
+    challenged: T::AccountId,
+    result: u32,
+) -> DispatchResult
+```
+- Challenge another validator's inference
+- Validates challenge window
+- Updates challenges
+- Emits `InferenceChallenged` event
+
+## Runtime API
+
+```rust
+#[decl_runtime_apis]
+pub trait PoiApi<AccountId> {
+    fn get_inference_result(validator: AccountId) -> Option<(u32, u32)>;
+    fn get_challenge(validator: AccountId) -> Option<(AccountId, u32, u32)>;
+    fn get_current_epoch() -> u32;
+}
+```
+
+## Genesis Configuration
+
+```rust
+#[pallet::genesis_config]
+pub struct GenesisConfig<T: Config> {
+    pub inference_results: Vec<(T::AccountId, u32)>,
+    pub challenges: Vec<(T::AccountId, T::AccountId, u32)>,
+    pub current_epoch: u32,
+}
+```
+
+## Usage Example
+
+```rust
+// Submit inference
+assert_ok!(PalletCbcPoi::submit_inference(
+    Origin::signed(validator_account),
+    85, // inference result
+    95, // confidence score
+));
+
+// Challenge inference
+assert_ok!(PalletCbcPoi::challenge_inference(
+    Origin::signed(challenger_account),
+    validator_account,
+    85 // challenged result
+));
+
+// Get inference result
+let result = PalletCbcPoi::get_inference_result(validator_account);
+```
+
+## Security Considerations
+
+1. **Inference Submission**
+   - Minimum confidence requirement
+   - Epoch validation
+   - Duplicate prevention
+
+2. **Challenge System**
+   - Challenge window enforcement
+   - Result age validation
+   - Validity checks
+
+3. **Score Management**
+   - Score boosting for correct results
+   - Score slashing for invalid results
+   - Integration with PoS
+
+4. **Reward System**
+   - Reward validation
+   - Penalty enforcement
+   - Score adjustments
+
+## Performance Optimization
+
+1. **Storage Efficiency**
+   - Compact storage types
+   - Efficient indexing
+   - Value queries
+
+2. **Weight Management**
+   - Weight benchmarks
+   - Weight tracking
+   - Optimization
+
+3. **Event Logging**
+   - Event optimization
+   - Event filtering
+   - Event batching
+
+## Testing
+
+The pallet includes comprehensive tests in the `mock` and `tests` modules, covering:
+
+- Inference submission
+- Challenge mechanism
+- Epoch management
+- Reward system
+- Genesis configuration
+
+## Benchmarking
+
+The pallet includes benchmarking support for:
+
+- Weight calculation
+- Storage benchmarks
+- Runtime API benchmarks
+- Event benchmarks
+
+## Integration
+
+The PoI pallet integrates with:
+
+1. **Runtime**
+   - FRAME system
+   - Event system
+   - Storage system
+   - Weight system
+
+2. **Other Pallets**
+   - PoS (via PosInterface)
+   - DCF (Dynamic Consensus Framework)
+   - Balances
+
+3. **Runtime APIs**
+   - Inference queries
+   - Challenge queries
+   - Epoch queries
+
+## Future Enhancements
+
+1. **Inference System**
+   - Advanced inference algorithms
+   - Result validation
+   - Confidence scoring
+
+2. **Challenge System**
+   - Progressive challenges
+   - Challenge rewards
+   - Challenge penalties
+
+3. **Score Management**
+   - Advanced score algorithms
+   - Score normalization
+   - Score decay
+
+4. **Reward System**
+   - Dynamic rewards
+   - Reward optimization
+   - Penalty system
+
 
 ### **CurrentEpoch**
 - **Type**: `StorageValue<_, u32, ValueQuery>`

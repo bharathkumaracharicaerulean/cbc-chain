@@ -1,17 +1,18 @@
 # CBC-PoS Pallet Documentation
 
-The `cbc-pos` pallet implements a **Proof of Stake (PoS)** mechanism for the CBC blockchain. It manages validators, their scores, slashing, and epoch-based updates to ensure a secure and fair consensus process.
+The `cbc-pos` pallet implements a **Proof of Stake (PoS)** mechanism for the CBC blockchain. It manages validators, their scores, slashing, stake management, and epoch-based updates to ensure a secure and fair consensus process.
 
 ---
 
 ## 1. Purpose
 
 The `cbc-pos` pallet is responsible for:
-- Managing the validator set.
+- Managing the validator set with stake requirements.
 - Allowing validators to register and submit scores.
 - Penalizing misbehaving validators through slashing.
 - Removing validators who exceed the maximum slashing count.
-- Tracking the current epoch and applying score decay over time.
+- Tracking validator stakes and applying score decay over time.
+- Integrating with PoI system for score boosting/slashes.
 
 ---
 
@@ -20,14 +21,23 @@ The `cbc-pos` pallet is responsible for:
 ### **Validator Management**
 - Validators can register to participate in block production.
 - A maximum number of validators is enforced.
+- Validators must maintain minimum stake requirements.
 
-### **Score Submission**
-- Validators can submit scores to indicate their performance or stake.
+### **Stake Management**
+- Validators can bond and unbond stake.
+- Minimum stake amount requirement.
+- Stake tracking per validator.
+
+### **Score Management**
+- Validators can submit scores to indicate their performance.
 - Scores below a minimum threshold are rejected.
+- Score decay applied per epoch.
+- Score boosting/slashes via PoI integration.
 
 ### **Slashing**
 - Validators can be slashed for misbehavior.
 - Validators are removed if their slashing count exceeds the maximum allowed.
+- Slashing count tracked per validator.
 
 ### **Epoch Management**
 - Tracks the current epoch.
@@ -43,11 +53,15 @@ The `cbc-pos` pallet is responsible for:
 
 ### **ValidatorScores**
 - **Type**: `StorageMap<_, Blake2_128Concat, T::AccountId, u32>`
-- **Description**: Stores the scores of validators.
+- **Description**: Stores the current score for each validator.
+
+### **Stake**
+- **Type**: `StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, ValueQuery>`
+- **Description**: Tracks the bonded stake amount for each validator.
 
 ### **CurrentEpoch**
 - **Type**: `StorageValue<_, u32, ValueQuery>`
-- **Description**: Tracks the current epoch or round.
+- **Description**: Tracks the current epoch number.
 
 ### **SlashingCount**
 - **Type**: `StorageMap<_, Blake2_128Concat, T::AccountId, u32>`
@@ -59,7 +73,7 @@ The `cbc-pos` pallet is responsible for:
 
 ### **ValidatorRegistered**
 - **Fields**: `{ validator: T::AccountId }`
-- **Description**: Emitted when a new validator is registered.
+- **Description**: Emitted when a validator successfully registers.
 
 ### **ScoreSubmitted**
 - **Fields**: `{ validator: T::AccountId, score: u32 }`
@@ -71,26 +85,43 @@ The `cbc-pos` pallet is responsible for:
 
 ### **ValidatorRemoved**
 - **Fields**: `{ validator: T::AccountId, reason: Vec<u8> }`
-- **Description**: Emitted when a validator is removed due to exceeding the maximum slashing count.
+- **Description**: Emitted when a validator is removed from the set.
+
+### **StakeBonded**
+- **Fields**: `{ validator: T::AccountId, amount: BalanceOf<T> }`
+- **Description**: Emitted when a validator bonds stake.
+
+### **StakeUnbonded**
+- **Fields**: `{ validator: T::AccountId, amount: BalanceOf<T> }`
+- **Description**: Emitted when a validator unbonds stake.
 
 ---
 
 ## 5. Key Errors
 
 ### **ValidatorAlreadyRegistered**
-- **Description**: The account is already registered as a validator.
+- **Description**: Validator is already registered.
 
 ### **ValidatorNotRegistered**
-- **Description**: The account is not registered as a validator.
+- **Description**: Validator is not registered.
 
-### **ScoreTooLow**
-- **Description**: The submitted score is below the minimum threshold.
+### **InvalidScore**
+- **Description**: Score is invalid.
 
 ### **TooManyValidators**
-- **Description**: The maximum number of validators has been reached.
+- **Description**: Maximum number of validators reached.
+
+### **ScoreTooLow**
+- **Description**: Score is below minimum threshold.
 
 ### **MaxSlashingCountReached**
-- **Description**: The validator has reached the maximum slashing count and is removed.
+- **Description**: Validator has been slashed too many times.
+
+### **InsufficientStake**
+- **Description**: Validator does not meet minimum stake requirements.
+
+### **InvalidStakeAmount**
+- **Description**: Invalid stake amount specified.
 
 ---
 
@@ -130,6 +161,19 @@ The `tests.rs` file includes unit tests to verify the functionality of the palle
 
 ---
 
+## 6. Runtime API
+
+The pallet exposes the following runtime API:
+
+```rust
+trait PosApi<AccountId, Balance> {
+    fn get_validator_stake(validator: AccountId) -> Balance;
+    fn get_validator_score(validator: AccountId) -> u32;
+    fn get_active_validators() -> Vec<AccountId>;
+    fn get_slashing_count(validator: AccountId) -> u32;
+}
+```
+
 ## 7. Mock Runtime
 
 The `mock.rs` file defines a mock runtime for testing the pallet. Key configurations include:
@@ -140,12 +184,14 @@ The `mock.rs` file defines a mock runtime for testing the pallet. Key configurat
 ### **Pallet Configuration**
 - Implements `pallet_cbc_pos::Config` with the following constants:
   - `MinValidatorScore`: Minimum score required for a validator to be considered active.
+  - `MinActiveValidators`: Minimum number of active validators required.
   - `MaxValidators`: Maximum number of validators allowed.
-  - `ValidatorScoreDecay`: Score decay applied at the end of each epoch.
-  - `MaxSlashingCount`: Maximum slashing count before a validator is removed.
+  - `ValidatorScoreDecay`: Score decay per epoch.
+  - `MaxSlashingCount`: Maximum slashing count before removal.
+  - `MinStake`: Minimum stake amount required for validators.
 
 ### **Genesis Storage**
-- Initializes the mock runtime with default storage values.
+- Initializes the mock runtime with default storage values for validators, scores, current epoch, slashing counts, and stakes.
 
 ---
 

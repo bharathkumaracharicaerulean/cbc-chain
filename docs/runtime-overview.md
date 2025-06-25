@@ -1,40 +1,198 @@
 # CBC Runtime Overview
 
-This document provides an overview of the CBC runtime, including the purpose of each pallet, key constants, and the genesis default accounts.
+# CBC Runtime Overview
+
+The CBC runtime implements a blockchain system with a combination of Proof of Stake (PoS) and Proof of Inference (PoI) consensus mechanisms. This document provides an overview of the runtime configuration, pallets, and key parameters.
 
 ---
 
-## 1. Pallets and Their Purpose
+## 1. Runtime Version
+
+- **Spec Name**: `cbc-runtime`
+- **Impl Name**: `cbc-runtime`
+- **Spec Version**: 100
+- **Impl Version**: 1
+- **Transaction Version**: 1
+- **System Version**: 1
+
+---
+
+## 2. Block Parameters
+
+- **Block Time**: 6 seconds (6000 milliseconds)
+- **Slot Duration**: 6 seconds
+- **Block Hash Count**: 2400 blocks (recent blocks stored)
+
+---
+
+## 3. Balance Parameters
+
+- **Base Unit**: 1,000,000,000,000 (10^12)
+- **Milli Unit**: 1,000,000,000 (10^9)
+- **Micro Unit**: 1,000,000 (10^6)
+- **Existential Deposit**: 1,000,000,000 (Milli Unit)
+- **DOLLARS**: 1,000,000,000,000 (Base Unit)
+
+---
+
+## 4. Pallets and Their Purpose
 
 ### **System (`frame_system`)**
 - Manages the basic blockchain system, including accounts, transactions, and block execution.
+- Pallet Index: 0
 
 ### **Timestamp (`pallet_timestamp`)**
 - Sets and validates the timestamp for each block.
 - Used for time-dependent logic in the runtime.
-
-### **Aura (`pallet_aura`)**
-- Provides the Aura consensus mechanism for block production.
-
-### **Grandpa (`pallet_grandpa`)**
-- Provides the Grandpa finality mechanism for finalizing blocks.
+- Pallet Index: 1
 
 ### **Balances (`pallet_balances`)**
 - Manages account balances, token transfers, and existential deposits.
 - Supports reserving, freezing, and slashing balances.
+- Pallet Index: 2
 
 ### **Transaction Payment (`pallet_transaction_payment`)**
 - Handles transaction fees and their payment.
 - Supports weight-based fee calculation.
+- Pallet Index: 3
 
 ### **Sudo (`pallet_sudo`)**
 - Allows a privileged account (sudo key) to execute administrative tasks.
 - Useful for runtime upgrades and testing.
+- Pallet Index: 4
 
+### **Pallet-cbc-PoI**
+- Implements Proof of Inference consensus mechanism.
+- Manages inference results and challenges.
+- Pallet Index: 6
 
 ### **Pallet-cbc-PoS**
-- **Purpose**:  
-  The `pallet-cbc-pos` (Proof of Stake) manages validators and their scores in the CBC blockchain. It ensures that only eligible validators participate in block production and finality, and it handles slashing and removal of validators for misbehavior.
+- Implements Proof of Stake consensus mechanism.
+- Manages validator stakes and scores.
+- Pallet Index: 7
+
+### **Pallet-cbc-Dcf**
+- Combines PoS and PoI scores with configurable weights.
+- Provides governance mechanisms for validator management.
+- Pallet Index: 8
+
+---
+
+## 5. Key Constants
+
+### **Time Constants**
+- **MINUTES**: 10 blocks (60 seconds)
+- **HOURS**: 600 blocks (3600 seconds)
+- **DAYS**: 14400 blocks (86400 seconds)
+
+### **Balance Constants**
+- **UNIT**: 1,000,000,000,000
+- **MILLI_UNIT**: 1,000,000,000
+- **MICRO_UNIT**: 1,000,000
+- **EXISTENTIAL_DEPOSIT**: 1,000,000,000
+- **DOLLARS**: 1,000,000,000,000
+
+### **Blockchain Constants**
+- **Block Hash Count**: 2400 blocks
+- **Block Time**: 6 seconds
+- **Slot Duration**: 6 seconds
+
+---
+
+## 6. Runtime Types
+
+### **Basic Types**
+- **Signature**: MultiSignature
+- **AccountId**: Account identifier
+- **Balance**: u128
+- **Nonce**: u32
+- **Hash**: sp_core::H256
+- **BlockNumber**: u32
+- **Address**: MultiAddress
+- **Header**: generic::Header
+- **Block**: generic::Block
+
+### **Transaction Types**
+- **TxExtension**: Transaction extensions
+- **UncheckedExtrinsic**: Raw transaction type
+- **SignedPayload**: Signed transaction payload
+
+---
+
+## 7. Session Keys
+
+The runtime uses ed25519 keys for DCF consensus:
+- **DcfPublic**: ed25519 application-specific public key
+
+---
+
+## 8. Runtime APIs
+
+The runtime exposes several APIs for external interaction:
+- Runtime API versions defined in `apis::RUNTIME_API_VERSIONS`
+- Used by tools like Polkadot-JS Apps to interact with the chain
+
+---
+
+## 9. Runtime Executive
+
+The runtime uses FRAME's Executive module for:
+- Dispatching calls to appropriate pallets
+- Handling block execution
+- Managing runtime upgrades
+- Processing transactions
+
+---
+
+## 10. Genesis Configuration
+
+The runtime supports genesis configuration presets for:
+- Initial validator set
+- Initial balances
+- Initial PoS/PoI parameters
+- Initial DCF configuration
+
+---
+
+## 11. Transaction Processing
+
+The runtime uses the following transaction extensions:
+- CheckNonZeroSender
+- CheckSpecVersion
+- CheckTxVersion
+- CheckGenesis
+- CheckEra
+- CheckNonce
+- CheckWeight
+- ChargeTransactionPayment
+- CheckMetadataHash
+- WeightReclaim
+
+---
+
+## 12. Security Considerations
+
+1. **Block Time**: Fixed at 6 seconds to ensure consistent block production
+2. **Balance Parameters**: Secure existential deposit to prevent dust accounts
+3. **Transaction Processing**: Multiple checks to prevent replay attacks
+4. **Consensus Security**: Combined PoS/PoI mechanism for enhanced security
+5. **Key Management**: Secure ed25519 keys for consensus
+
+---
+
+## 13. Future Enhancements
+
+1. **Runtime Upgrades**: Support for runtime versioning
+2. **Consensus Improvements**: Potential for additional consensus mechanisms
+3. **Transaction Processing**: Enhanced transaction validation
+4. **API Expansion**: Additional runtime APIs for external interaction
+5. **Configuration**: More flexible runtime configuration options
+
+---
+
+## 14. Conclusion
+
+The CBC runtime implements a robust blockchain system with a unique combination of PoS and PoI consensus mechanisms. It provides a secure and efficient platform for blockchain operations while maintaining flexibility through its modular pallet architecture and configurable parameters.
   
 - **Key Features**:
   - **Validator Registration**: Allows accounts to register as validators, provided the maximum validator limit has not been reached.
