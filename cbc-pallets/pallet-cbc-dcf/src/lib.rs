@@ -42,7 +42,11 @@
 
 // Unit tests module
 #[cfg(test)]
-mod tests;
+pub mod tests;
+
+// Mock module for testing
+#[cfg(test)]
+pub mod mock;
 
 // --- Imports --- //
 use frame_support::{
