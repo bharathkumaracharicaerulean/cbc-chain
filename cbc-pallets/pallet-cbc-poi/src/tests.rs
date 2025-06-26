@@ -2,7 +2,7 @@
 mod tests {
     use crate::mock::*;
     use crate::Error;
-    use frame_support::{assert_noop, assert_ok, assert_err};
+    use frame_support::{assert_noop, assert_ok};
     // use sp_runtime::traits::BadOrigin; // unused
 
     #[test]

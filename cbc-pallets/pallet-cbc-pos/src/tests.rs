@@ -2,8 +2,7 @@
 mod tests {
     use crate::mock::*;
     use crate::Error;
-    use frame_support::{assert_noop, assert_ok, assert_err};
-    use sp_runtime::traits::BadOrigin;
+    use frame_support::{assert_noop, assert_ok};
 
     #[test]
     fn test_register_validator_success() {
