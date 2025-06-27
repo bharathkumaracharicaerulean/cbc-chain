@@ -48,8 +48,9 @@ impl SubstrateCli for Cli {
 	fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
 		// Load the correct chain specification (network config) based on the `--chain` argument
 		Ok(match id {
-			"dev" => Box::new(chain_spec::development_chain_spec()?), // Development config
-			"" | "local" => Box::new(chain_spec::local_chain_spec()?), // Local node config
+			// For now, only support loading from JSON files
+			"dev" => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from("dev.json"))?),
+			"" | "local" => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from("local.json"))?),
 			path => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))?), // Load from a JSON file
 		})
 	}
@@ -193,20 +194,11 @@ pub fn run() -> sc_cli::Result<()> {
 			// Start the full node service and run until shutdown
 			let runner = cli.create_runner(&cli.run)?;
 			runner.run_node_until_exit(|config| async move {
-				match config.network.network_backend.unwrap_or_default() {
-					// Start node with libp2p networking (most common setup)
+				match config.network.network_backend {
 					sc_network::config::NetworkBackendType::Libp2p => 
-						service::new_full::<
-							sc_network::NetworkWorker<
-								cbc_runtime::opaque::Block,
-								<cbc_runtime::opaque::Block as sp_runtime::traits::Block>::Hash,
-							>,
-						>(config).map_err(sc_cli::Error::Service),
-
-					// Start node with Litep2p (experimental/lightweight networking)
+						service::new_full(config).await.map_err(sc_cli::Error::Service),
 					sc_network::config::NetworkBackendType::Litep2p =>
-						service::new_full::<sc_network::Litep2pNetworkBackend>(config)
-							.map_err(sc_cli::Error::Service),
+						service::new_full(config).await.map_err(sc_cli::Error::Service),
 				}
 			})
 		},

@@ -6,8 +6,8 @@
 
 #![warn(missing_docs)] // Emit a warning if any public item is missing Rust doc comments.
 
-use jsonrpsee_core::server::{RpcModule};
 use jsonrpsee_http_server::{HttpServerBuilder};
+use jsonrpsee_http_server::RpcModule;
 
 use sc_rpc_api::DenyUnsafe;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};

@@ -7,12 +7,10 @@
 use futures::FutureExt; // Needed for handling async functions that return futures.
 use sc_client_api::Backend;
 use sc_service::{error::Error as ServiceError, Configuration, TaskManager}; // Core service types.
-use sc_telemetry::{Telemetry, TelemetryWorker}; // Telemetry for monitoring nodes.
-use sc_transaction_pool_api::OffchainTransactionPoolFactory; // For submitting transactions via offchain workers.
 use cbc_runtime::{opaque::Block};
 use cbc_runtime::apis::RuntimeApi;
-use std::{sync::Arc, time::Duration}; // Standard concurrency and time utilities.
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+use std::{sync::Arc}; // Standard concurrency and time utilities.
+use sp_core::traits::SpawnNamed;
 
 // === Type Aliases for Readability ===
 
@@ -77,7 +75,13 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 		.build(),
 	);
 	let block_import = cbc_consensus::DcfBlockImport::new(client.clone());
-	let import_queue = sc_consensus::BasicQueue::new(block_import, None);
+	let import_queue = sc_consensus::BasicQueue::new(
+		sc_consensus::import_queue::BasicVerifier::new(client.clone()),
+		Box::new(block_import),
+		None,
+		&task_manager.spawn_essential_handle(),
+		config.prometheus_registry(),
+	);
 	Ok(sc_service::PartialComponents {
 		client,
 		backend,
@@ -148,12 +152,12 @@ pub async fn new_full(config: Configuration) -> Result<TaskManager, ServiceError
 	// === RPC Setup ===
 	let rpc_builder = {
 		let client = client.clone();
-		Box::new(move |deny_unsafe, _| {
+		Box::new(move |_spawner: Arc<dyn SpawnNamed>| {
 			let deps = crate::rpc::FullDeps {
 				client: client.clone(),
-				deny_unsafe,
+				deny_unsafe: sc_rpc_api::DenyUnsafe::No,
 			};
-			crate::rpc::create_full(deps)
+			Ok(crate::rpc::create_full(deps))
 		})
 	};
 
@@ -162,7 +166,7 @@ pub async fn new_full(config: Configuration) -> Result<TaskManager, ServiceError
 		network: network.clone(),
 		client: client.clone(),
 		keystore: keystore_container.keystore(),
-		task_manager: &mut task_manager.clone(),
+		task_manager: &mut task_manager,
 		transaction_pool: transaction_pool.clone(),
 		rpc_builder,
 		backend,
@@ -170,7 +174,7 @@ pub async fn new_full(config: Configuration) -> Result<TaskManager, ServiceError
 		tx_handler_controller,
 		sync_service,
 		config,
-		telemetry: telemetry.as_ref().map(|x| x.handle()),
+		telemetry: telemetry.as_mut(),
 	})?;
 
 	Ok(task_manager)

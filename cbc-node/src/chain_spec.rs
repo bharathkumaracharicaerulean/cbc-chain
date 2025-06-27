@@ -3,7 +3,7 @@ use cbc_runtime::WASM_BINARY;
 use cbc_runtime::genesis_config_presets::{development_config_genesis, local_config_genesis};
 
 /// Specialized `ChainSpec`.
-pub type ChainSpec = sc_service::GenericChainSpec;
+pub type ChainSpec = sc_service::GenericChainSpec<cbc_runtime::RuntimeGenesisConfig, Option<()>>;
 
 /// Generates the chain specification for a development chain.
 pub fn development_chain_spec() -> Result<ChainSpec, String> {
@@ -13,8 +13,8 @@ pub fn development_chain_spec() -> Result<ChainSpec, String> {
         "cbc",
         ChainType::Development,
         move || development_config_genesis(),
-        wasm_binary,
         vec![],
+        None,
         None,
         None,
         None,
@@ -29,8 +29,8 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
         "local_testnet",
         ChainType::Local,
         move || local_config_genesis(),
-        wasm_binary,
         vec![],
+        None,
         None,
         None,
         None,

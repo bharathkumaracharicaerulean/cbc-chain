@@ -9,7 +9,7 @@ use crate::{
 };
 use std::{sync::Arc, time::Duration};
 use log::{error, info};
-use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait, SaturatedConversion};
+use sp_runtime::traits::{Block as BlockTrait, SaturatedConversion};
 use sc_consensus::{BlockImport, BlockImportParams, BlockCheckParams, ImportResult};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
@@ -18,11 +18,12 @@ use tokio::time::sleep;
 use sp_core::sr25519::Public;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use cbc_runtime::AccountId;
+use sp_consensus::Error;
 
 /// DCF consensus engine implementation
 pub struct DcfConsensus<B, C, P>
 where
-    B: BlockTrait + HeaderTrait,
+    B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
     P: Pair,
@@ -37,7 +38,7 @@ where
 
 impl<B, C, P> DcfConsensus<B, C, P>
 where
-    B: BlockTrait + HeaderTrait,
+    B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
     P: Pair,
@@ -123,7 +124,7 @@ where
 /// Block import implementation for DCF
 pub struct DcfBlockImport<B, C>
 where
-    B: BlockTrait + HeaderTrait,
+    B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
 {
@@ -133,7 +134,7 @@ where
 
 impl<B, C> DcfBlockImport<B, C>
 where
-    B: BlockTrait + HeaderTrait,
+    B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
 {
@@ -149,16 +150,16 @@ where
 #[async_trait::async_trait]
 impl<B, C> BlockImport<B> for DcfBlockImport<B, C>
 where
-    B: BlockTrait + HeaderTrait,
+    B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
 {
-    type Error = ConsensusError;
+    type Error = Error;
 
     async fn check_block(
         &self,
         block: BlockCheckParams<B>,
-    ) -> Result<ImportResult> {
+    ) -> std::result::Result<ImportResult, Self::Error> {
         let api = self.client.runtime_api();
         // TODO: Extract author from header/extrinsics
         let author: Public = Default::default();
@@ -175,7 +176,7 @@ where
     async fn import_block(
         &self,
         _block: BlockImportParams<B>,
-    ) -> Result<ImportResult> {
+    ) -> std::result::Result<ImportResult, Self::Error> {
         // Import block logic here
         // ...
 
@@ -188,7 +189,7 @@ pub async fn start_dcf_consensus<B, C>(
     client: Arc<C>,
     params: ConsensusParams,
 ) where
-    B: BlockTrait + HeaderTrait,
+    B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
 {
