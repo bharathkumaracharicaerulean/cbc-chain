@@ -1,36 +1,49 @@
 //! Block proposer factory implementation
-//! 
-//! This module handles the creation of block proposers and block headers.
+//!
+//! This module now delegates author selection to the DCF runtime API.
 
 use crate::error::{ConsensusError, Result};
-use crate::types::ValidatorInfo;
-use crate::author_selection::AuthorSelection;
-use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait};
-use sp_runtime::traits::Zero;
+use sp_api::ProvideRuntimeApi;
+use sp_blockchain::HeaderBackend;
+use sp_core::sr25519::Public;
+use cbc_runtime::AccountId;
+use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
+use std::sync::Arc;
+use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait, Zero};
 use std::time::{Duration, Instant};
 use std::marker::PhantomData;
 
-/// Factory for creating block proposers and headers
-pub struct ProposerFactory<B: BlockTrait> {
-    author_selection: AuthorSelection,
+/// Factory for creating block proposers and headers using DCF runtime API for author selection
+pub struct ProposerFactory<B: BlockTrait, C>
+where
+    B: sp_runtime::traits::Block,
+    C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
+    C::Api: RuntimeDcfApi<B, AccountId>,
+{
+    client: Arc<C>,
     min_block_time: Duration,
     last_block_time: Option<Instant>,
     _phantom: PhantomData<B>,
 }
 
-impl<B: BlockTrait> ProposerFactory<B> {
+impl<B: BlockTrait, C> ProposerFactory<B, C>
+where
+    B: sp_runtime::traits::Block,
+    C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
+    C::Api: RuntimeDcfApi<B, AccountId>,
+{
     /// Create a new proposer factory with the specified parameters
-    pub fn new(author_selection: AuthorSelection, min_block_time: Duration) -> Self {
+    pub fn new(client: Arc<C>, min_block_time: Duration) -> Self {
         Self {
-            author_selection,
+            client,
             min_block_time,
             last_block_time: None,
             _phantom: PhantomData,
         }
     }
 
-    /// Create a new block with the specified parent hash and slot
-    pub fn create_block(&mut self, parent_hash: B::Hash, slot: u64) -> Result<(B::Header, ValidatorInfo)> {
+    /// Create a new block with the expected author from the DCF runtime API
+    pub fn create_block(&mut self, parent_hash: B::Hash, slot: u64) -> Result<(B::Header, Public)> {
         // Check if enough time has passed since last block
         if let Some(last_time) = self.last_block_time {
             if last_time.elapsed() < self.min_block_time {
@@ -40,8 +53,15 @@ impl<B: BlockTrait> ProposerFactory<B> {
             }
         }
 
-        // Select block author
-        let author = self.author_selection.select_author(slot)?;
+        // Fetch expected author from runtime API
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        let block_number = slot as u32;
+        let author = match api.get_expected_author(best_hash, block_number) {
+            Ok(Some(account_id)) => Public::from_raw(*account_id.as_ref()),
+            Ok(None) => return Err(ConsensusError::AuthorSelection("No expected author returned by runtime".into())),
+            Err(e) => return Err(ConsensusError::AuthorSelection(format!("Runtime API error: {:?}", e))),
+        };
 
         // Create block header
         let number = <<B as BlockTrait>::Header as HeaderTrait>::Number::zero();
@@ -54,12 +74,7 @@ impl<B: BlockTrait> ProposerFactory<B> {
         );
 
         self.last_block_time = Some(Instant::now());
-        Ok((header, author.clone()))
-    }
-
-    /// Update the author selection with new validators
-    pub fn update_author_selection(&mut self, validators: Vec<ValidatorInfo>) {
-        self.author_selection.update_validators(validators);
+        Ok((header, author))
     }
 
     /// Set the minimum time between blocks
@@ -67,7 +82,7 @@ impl<B: BlockTrait> ProposerFactory<B> {
         self.min_block_time = min_block_time;
     }
 
-    /// Create a new block proposer
+    /// Create a new block proposer (header only, for compatibility)
     pub fn create_proposer(&self) -> Result<B::Header> {
         let number = <<B as BlockTrait>::Header as HeaderTrait>::Number::zero();
         let header = B::Header::new(

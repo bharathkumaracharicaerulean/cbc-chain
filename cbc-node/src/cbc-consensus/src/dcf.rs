@@ -4,12 +4,11 @@
 //! It handles block production, validation, and author selection.
 
 use crate::{
-    author_selection::AuthorSelection,
     error::{ConsensusError, Result},
     types::{ConsensusParams, ValidatorMetrics},
 };
 use std::{sync::Arc, time::Duration};
-use log::{error, warn, info};
+use log::{error, info};
 use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait, SaturatedConversion};
 use sc_consensus::{BlockImport, BlockImportParams, BlockCheckParams, ImportResult};
 use sp_api::ProvideRuntimeApi;
@@ -29,7 +28,6 @@ where
     P: Pair,
 {
     client: Arc<C>,
-    author_selection: AuthorSelection,
     params: ConsensusParams,
     metrics: ValidatorMetrics,
     last_block_time: Duration,
@@ -45,10 +43,9 @@ where
     P: Pair,
 {
     /// Create a new DCF consensus engine instance
-    pub fn new(client: Arc<C>, author_selection: AuthorSelection, params: ConsensusParams) -> Self {
+    pub fn new(client: Arc<C>, params: ConsensusParams) -> Self {
         Self {
             client,
-            author_selection,
             params,
             metrics: ValidatorMetrics::default(),
             last_block_time: Duration::from_secs(0),
@@ -65,18 +62,13 @@ where
             if self.should_produce_block() {
                 match self.select_next_author() {
                     Ok(author) => {
-                        if self.is_valid_author(&author) {
-                            if let Err(e) = self.produce_block(&author).await {
-                                error!("Failed to produce block: {:?}", e);
-                            }
-                        } else {
-                            warn!("Invalid block author selected: {:?}", author);
+                        if let Err(e) = self.produce_block(&author).await {
+                            error!("Failed to produce block: {:?}", e);
                         }
                     }
                     Err(e) => error!("Failed to select next author: {:?}", e),
                 }
             }
-            
             sleep(Duration::from_millis(100)).await;
         }
     }
@@ -87,19 +79,15 @@ where
         now.saturating_sub(self.last_block_time) >= Duration::from_secs(self.params.block_time)
     }
 
-    /// Select the next block author
+    /// Select the next block author using the DCF runtime API
     fn select_next_author(&mut self) -> Result<Public> {
-        self.author_selection.select_author(self.current_slot).map(|v| v.account_id.clone())
-    }
-
-    /// Check if the author is valid for the current epoch
-    fn is_valid_author(&self, author: &Public) -> bool {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
-        let author_account_id: AccountId = author.clone().into();
-        match api.get_active_validators(best_hash) {
-            Ok(validators) => validators.contains(&author_account_id),
-            Err(_) => false,
+        let block_number = self.current_slot as u32;
+        match api.get_expected_author(best_hash, block_number) {
+            Ok(Some(account_id)) => Ok(Public::from_raw(*account_id.as_ref())),
+            Ok(None) => Err(ConsensusError::AuthorSelection("No expected author returned by runtime".into())),
+            Err(e) => Err(ConsensusError::AuthorSelection(format!("Runtime API error: {:?}", e))),
         }
     }
 
@@ -133,7 +121,12 @@ where
 }
 
 /// Block import implementation for DCF
-pub struct DcfBlockImport<B, C> {
+pub struct DcfBlockImport<B, C>
+where
+    B: BlockTrait + HeaderTrait,
+    C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
+    C::Api: RuntimeDcfApi<B, AccountId>,
+{
     client: Arc<C>,
     _phantom: std::marker::PhantomData<B>,
 }
@@ -193,14 +186,13 @@ where
 /// Start the DCF consensus engine
 pub async fn start_dcf_consensus<B, C>(
     client: Arc<C>,
-    author_selection: AuthorSelection,
     params: ConsensusParams,
 ) where
     B: BlockTrait + HeaderTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
 {
-    let mut consensus: DcfConsensus<B, C, sp_core::sr25519::Pair> = DcfConsensus::new(client, author_selection, params);
+    let mut consensus: DcfConsensus<B, C, sp_core::sr25519::Pair> = DcfConsensus::new(client, params);
     consensus.run().await;
 }
 
@@ -234,7 +226,6 @@ mod tests {
     #[tokio::test]
     async fn test_dcf_consensus_creation() {
         let client = create_test_client();
-        let author_selection = AuthorSelection::new(crate::author_selection::AuthorSelectionMode::RoundRobin);
         let params = ConsensusParams {
             slot_duration: Duration::from_secs(6),
             min_block_time: 1000,
@@ -243,7 +234,6 @@ mod tests {
 
         let consensus = DcfConsensus::<TestBlock, TestClient, Pair>::new(
             client,
-            author_selection,
             params,
         );
 
@@ -253,7 +243,6 @@ mod tests {
     #[tokio::test]
     async fn test_should_produce_block() {
         let client = create_test_client();
-        let author_selection = AuthorSelection::new(crate::author_selection::AuthorSelectionMode::RoundRobin);
         let params = ConsensusParams {
             slot_duration: Duration::from_secs(6),
             min_block_time: 1000,
@@ -262,7 +251,6 @@ mod tests {
 
         let mut consensus = DcfConsensus::<TestBlock, TestClient, Pair>::new(
             client,
-            author_selection,
             params,
         );
 
@@ -306,7 +294,6 @@ mod tests {
     #[tokio::test]
     async fn test_author_selection() {
         let client = create_test_client();
-        let author_selection = AuthorSelection::new(crate::author_selection::AuthorSelectionMode::RoundRobin);
         let params = ConsensusParams {
             slot_duration: Duration::from_secs(6),
             min_block_time: 1000,
@@ -315,7 +302,6 @@ mod tests {
 
         let consensus = DcfConsensus::<TestBlock, TestClient, Pair>::new(
             client,
-            author_selection,
             params,
         );
 
@@ -325,30 +311,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_validator_authorization() {
-        let client = create_test_client();
-        let author_selection = AuthorSelection::new(crate::author_selection::AuthorSelectionMode::RoundRobin);
-        let params = ConsensusParams {
-            slot_duration: Duration::from_secs(6),
-            min_block_time: 1000,
-            author_selection_mode: crate::author_selection::AuthorSelectionMode::RoundRobin,
-        };
-
-        let consensus = DcfConsensus::<TestBlock, TestClient, Pair>::new(
-            client,
-            author_selection,
-            params,
-        );
-
-        let author = create_test_author();
-        let is_valid = consensus.is_valid_author(&author);
-        assert!(!is_valid); // Should be false since author is not in validator set
-    }
-
-    #[tokio::test]
     async fn test_metrics_update() {
         let client = create_test_client();
-        let author_selection = AuthorSelection::new(crate::author_selection::AuthorSelectionMode::RoundRobin);
         let params = ConsensusParams {
             slot_duration: Duration::from_secs(6),
             min_block_time: 1000,
@@ -357,7 +321,6 @@ mod tests {
 
         let mut consensus = DcfConsensus::<TestBlock, TestClient, Pair>::new(
             client,
-            author_selection,
             params,
         );
 

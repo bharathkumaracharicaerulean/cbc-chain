@@ -49,49 +49,38 @@ pub type Service = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
-	DcfBlockImport<Block, FullClient, sp_core::ed25519::Pair>,
+	cbc_consensus::DcfBlockImport<Block, FullClient>,
 	sc_transaction_pool::TransactionPoolHandle<Block, FullClient>,
-	Option<Telemetry>,
+	Option<sc_telemetry::Telemetry>,
 >;
 
 /// Builds the partial components of a node (used for both full and light nodes).
 /// Returns the essential pieces to create the full node later.
 pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
-	// Setup telemetry
 	let telemetry = config
 		.telemetry_endpoints
 		.clone()
 		.filter(|x| !x.is_empty())
 		.map(|endpoints| -> Result<_, sc_telemetry::Error> {
-			let worker = TelemetryWorker::new(16)?;
+			let worker = sc_telemetry::TelemetryWorker::new(16)?;
 			let telemetry = worker.handle().new_telemetry(endpoints);
 			Ok((worker, telemetry))
 		})
 		.transpose()?;
 
-	// Create WASM executor for executing runtime logic.
 	let executor = sc_service::new_wasm_executor::<sp_io::SubstrateHostFunctions>(&config.executor);
-
-	// Build the core node components (client, backend, keystore, task_manager)
 	let (client, backend, keystore_container, task_manager) =
 		sc_service::new_full_parts::<Block, RuntimeApi, _>(
 			config,
 			telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
 			executor,
 		)?;
-
 	let client = Arc::new(client);
-
-	// Spawn telemetry worker if enabled
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
 		telemetry
 	});
-
-	// Longest chain fork choice rule
 	let select_chain = sc_consensus::LongestChain::new(backend.clone());
-
-	// Create the transaction pool
 	let transaction_pool = Arc::from(
 		sc_transaction_pool::Builder::new(
 			task_manager.spawn_essential_handle(),
@@ -102,26 +91,7 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 		.with_prometheus(config.prometheus_registry())
 		.build(),
 	);
-
-	// Create DCF import queue
-	let dcf_config = DcfConfig {
-		author_selection: AuthorSelection::new(AuthorSelectionMode::RoundRobin),
-		params: ConsensusParams {
-			author_selection_mode: AuthorSelectionMode::RoundRobin,
-			finality_threshold: 2,
-			block_time: std::time::Duration::from_secs(6),
-			max_block_size: 1024 * 1024,
-			max_transactions_per_block: 1000,
-		},
-	};
-	let dcf_consensus = DcfConsensus::new(
-		client.clone(),
-		dcf_config.author_selection,
-		dcf_config.params,
-	);
-	let import_queue = DcfBlockImport::new(Arc::new(dcf_consensus));
-
-	// Return all the components as a tuple for building the full node.
+	let import_queue = cbc_consensus::DcfBlockImport::new(client.clone());
 	Ok(sc_service::PartialComponents {
 		client,
 		backend,

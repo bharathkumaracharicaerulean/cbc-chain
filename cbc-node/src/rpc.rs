@@ -8,14 +8,12 @@
 
 use jsonrpsee_core::server::{RpcModule};
 use jsonrpsee_http_server::{HttpServerBuilder};
-use jsonrpsee_http_server::server::AccessControlAllowOrigin;
 
 use sc_rpc_api::DenyUnsafe;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::sync::Arc;
 use cbc_runtime::{opaque::Block, apis::RuntimeApi};
 use sc_transaction_pool_api::TransactionPool;
-use substrate_frame_rpc_system::{System};
 
 /// Full client dependencies for setting up RPC extensions.
 ///
@@ -56,18 +54,10 @@ where
 // Example async HTTP server starter for jsonrpsee
 pub async fn start_http(
 	addr: std::net::SocketAddr,
-	cors: Option<Vec<String>>,
+	_cors: Option<Vec<String>>,
 	module: RpcModule<()>,
-) -> anyhow::Result<()> {
-	let mut builder = HttpServerBuilder::default();
-	if let Some(cors_origins) = cors {
-		builder = builder.set_access_control_allow_origin(
-			cors_origins
-				.into_iter()
-				.map(|origin| AccessControlAllowOrigin::Value(origin.parse().unwrap()))
-				.collect(),
-		);
-	}
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+	let builder = HttpServerBuilder::default();
 	let server = builder.build(addr).await?;
 	server.start(module)?.await;
 	Ok(())

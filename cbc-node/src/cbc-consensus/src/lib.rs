@@ -74,11 +74,7 @@ pub use error::{
 };
 
 // Re-export commonly used types from other modules
-pub use author_selection::AuthorSelection;
-pub use validator_set::ValidatorSet;
 pub use proposer_factory::ProposerFactory;
-pub use import_queue::ImportQueue;
-pub use epoch_manager::EpochManager;
 pub use finality::FinalityEngine;
 pub use metrics::ConsensusMetrics;
 
