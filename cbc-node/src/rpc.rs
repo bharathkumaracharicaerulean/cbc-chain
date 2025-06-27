@@ -12,14 +12,14 @@ use jsonrpsee_http_server::{HttpServerBuilder};
 use sc_rpc_api::DenyUnsafe;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::sync::Arc;
-use cbc_runtime::{opaque::Block, apis::RuntimeApi};
-use sc_transaction_pool_api::TransactionPool;
+use cbc_runtime::opaque::Block;
+use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 
 /// Full client dependencies for setting up RPC extensions.
 ///
 /// This structure groups all dependencies needed to extend the JSON-RPC server
 /// with runtime-specific APIs (like account nonces or transaction fees).
-pub struct FullDeps<C, P> {
+pub struct FullDeps<C> {
 	/// Shared reference to the full Substrate client.
 	pub client: Arc<C>,
 	pub deny_unsafe: DenyUnsafe,
@@ -30,14 +30,12 @@ pub struct FullDeps<C, P> {
 ///
 /// # Type Parameters:
 /// - `C`: The type of the client (must implement runtime API access and block metadata)
-/// - `P`: The transaction pool type (must implement basic transaction pool operations)
-pub fn create_full<C, P>(
-	deps: FullDeps<C, P>,
+pub fn create_full<C>(
+	deps: FullDeps<C>,
 ) -> RpcModule<()>
 where
 	C: sp_api::ProvideRuntimeApi<Block> + sp_blockchain::HeaderBackend<Block> + Send + Sync + 'static,
-	C::Api: RuntimeApi<Block>,
-	P: TransactionPool + 'static,
+	C::Api: RuntimeDcfApi<Block, cbc_runtime::AccountId>,
 {
 	let FullDeps {
 		client,

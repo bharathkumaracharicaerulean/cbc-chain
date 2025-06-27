@@ -14,21 +14,6 @@ use cbc_runtime::apis::RuntimeApi;
 use std::{sync::Arc, time::Duration}; // Standard concurrency and time utilities.
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
-// Import DCF consensus components
-use cbc_consensus::{
-	DcfConsensus,
-	DcfBlockImport,
-	ValidatorSet,
-	AuthorSelection,
-	EpochManager,
-	ProposerFactory,
-	ImportQueue,
-	FinalityEngine,
-	AuthorSelectionMode,
-	ConsensusParams,
-	EpochConfig,
-};
-
 // === Type Aliases for Readability ===
 
 /// Full CBC client type (using the runtime's `Block` and `RuntimeApi`)
@@ -49,7 +34,7 @@ pub type Service = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
-	cbc_consensus::DcfBlockImport<Block, FullClient>,
+	sc_consensus::BasicQueue<Block>,
 	sc_transaction_pool::TransactionPoolHandle<Block, FullClient>,
 	Option<sc_telemetry::Telemetry>,
 >;
@@ -91,7 +76,8 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 		.with_prometheus(config.prometheus_registry())
 		.build(),
 	);
-	let import_queue = cbc_consensus::DcfBlockImport::new(client.clone());
+	let block_import = cbc_consensus::DcfBlockImport::new(client.clone());
+	let import_queue = sc_consensus::BasicQueue::new(block_import, None);
 	Ok(sc_service::PartialComponents {
 		client,
 		backend,
@@ -109,48 +95,22 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 /// offchain workers, and RPC server.
 ///
 /// `N` is the type of network backend (e.g., Libp2p or Litep2p).
-pub async fn new_full(config: Configuration) -> Result<NewFull<Block, FullClient, FullBackend>, ServiceError> {
-	let (client, backend, keystore_container, task_manager) =
-		sc_service::new_full_parts::<Block, RuntimeApi, _>(
-			&config,
-			None,
-		)?;
-	let client = Arc::new(client);
-
-	let dcf_config = DcfConfig {
-		author_selection: AuthorSelection::new(AuthorSelectionMode::RoundRobin),
-		params: ConsensusParams {
-			author_selection_mode: AuthorSelectionMode::RoundRobin,
-			finality_threshold: 2,
-			block_time: std::time::Duration::from_secs(6),
-			max_block_size: 1024 * 1024,
-			max_transactions_per_block: 1000,
-		},
-	};
-
-	let dcf_consensus = DcfConsensus::new(
-		client.clone(),
-		dcf_config.author_selection,
-		dcf_config.params,
-	);
-
-	let import_queue = DcfBlockImport::new(Arc::new(dcf_consensus));
+pub async fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
+	let Service {
+		client,
+		backend,
+		task_manager,
+		import_queue,
+		keystore_container,
+		select_chain: _,
+		transaction_pool,
+		other: telemetry,
+	} = new_partial(&config)?;
 
 	// === Network Setup ===
-	let mut net_config = sc_network::config::FullNetworkConfiguration::<
-		Block,
-		<Block as sp_runtime::traits::Block>::Hash,
-		N,
-	>::new(&config.network, config.prometheus_registry().cloned());
-
-	let metrics = N::register_notification_metrics(config.prometheus_registry());
-	let peer_store_handle = net_config.peer_store_handle();
-
-	// === Build the network ===
 	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
-			net_config,
 			client: client.clone(),
 			transaction_pool: transaction_pool.clone(),
 			spawn_handle: task_manager.spawn_handle(),
@@ -158,7 +118,8 @@ pub async fn new_full(config: Configuration) -> Result<NewFull<Block, FullClient
 			block_announce_validator_builder: None,
 			warp_sync_config: None,
 			block_relay: None,
-			metrics,
+			net_config: sc_network::config::FullNetworkConfiguration::new(&config.network, config.prometheus_registry().cloned()),
+			metrics: sc_network::config::NotificationMetrics::new(None),
 		})?;
 
 	// === Offchain Workers ===
@@ -169,7 +130,7 @@ pub async fn new_full(config: Configuration) -> Result<NewFull<Block, FullClient
 				is_validator: config.role.is_authority(),
 				keystore: Some(keystore_container.keystore()),
 				offchain_db: backend.offchain_storage(),
-				transaction_pool: Some(OffchainTransactionPoolFactory::new(
+				transaction_pool: Some(sc_transaction_pool_api::OffchainTransactionPoolFactory::new(
 					transaction_pool.clone(),
 				)),
 				network_provider: Arc::new(network.clone()),
@@ -184,73 +145,12 @@ pub async fn new_full(config: Configuration) -> Result<NewFull<Block, FullClient
 		);
 	}
 
-	// === DCF Consensus Setup ===
-	let dcf_config = DcfConfig {
-		author_selection: AuthorSelection::new(AuthorSelectionMode::RoundRobin),
-		params: ConsensusParams {
-			author_selection_mode: AuthorSelectionMode::RoundRobin,
-			finality_threshold: 2,
-			block_time: std::time::Duration::from_secs(6),
-			max_block_size: 1024 * 1024,
-			max_transactions_per_block: 1000,
-		},
-	};
-	let dcf_consensus = DcfConsensus::new(
-		client.clone(),
-		dcf_config.author_selection,
-		dcf_config.params,
-	);
-	
-	// Setup validator set
-	let validator_set_config = ValidatorSetConfig {
-		max_validators: 100,
-		min_stake: 1000,
-	};
-	let validator_set = ValidatorSet::new(
-		validator_set_config.max_validators,
-		validator_set_config.min_stake,
-	);
-
-	// Setup epoch manager
-	let epoch_config = EpochConfig {
-		epoch_length: 100,
-		min_validators: 4,
-		max_validators: 100,
-		min_stake: 1000,
-	};
-	let epoch_manager = EpochManager::new(epoch_config);
-
-	// Setup proposer factory
-	let proposer_factory = ProposerFactory::new(
-		dcf_config.author_selection,
-		dcf_config.params.block_time,
-	);
-
-	// Setup finality engine
-	let finality_engine = FinalityEngine::new(dcf_config.params.finality_threshold);
-
-	// Setup import queue
-	let import_queue = ImportQueue::new(validator_set);
-	
-	// Start consensus tasks
-	task_manager.spawn_essential_handle().spawn(
-		"consensus",
-		None,
-		Box::pin(async move {
-			epoch_manager.run().await;
-			finality_engine.run().await;
-		}),
-	);
-
 	// === RPC Setup ===
 	let rpc_builder = {
 		let client = client.clone();
-		let pool = transaction_pool.clone();
-
 		Box::new(move |deny_unsafe, _| {
 			let deps = crate::rpc::FullDeps {
 				client: client.clone(),
-				pool: pool.clone(),
 				deny_unsafe,
 			};
 			crate::rpc::create_full(deps)
@@ -262,7 +162,7 @@ pub async fn new_full(config: Configuration) -> Result<NewFull<Block, FullClient
 		network: network.clone(),
 		client: client.clone(),
 		keystore: keystore_container.keystore(),
-		task_manager: &mut task_manager,
+		task_manager: &mut task_manager.clone(),
 		transaction_pool: transaction_pool.clone(),
 		rpc_builder,
 		backend,

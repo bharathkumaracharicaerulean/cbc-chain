@@ -1247,6 +1247,7 @@ dependencies = [
  "jsonrpsee",
  "jsonrpsee-core 0.25.1",
  "jsonrpsee-http-server",
+ "pallet-cbc-dcf",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc",
  "sc-basic-authorship",

@@ -20,6 +20,10 @@ build = "build.rs"                    # Specifies the build script for this pack
 targets = ["x86_64-unknown-linux-gnu"] # Target platforms for which documentation is built
 
 [dependencies]
+
+pallet-cbc-dcf = { path = "../cbc-pallets/pallet-cbc-dcf" }
+
+
 # === CLI and Command-Line Parsing ===
 clap = { features = ["derive"], workspace = true } # Command-line argument parsing library
 
@@ -142,3 +146,5 @@ try-runtime = [
     "cbc-runtime/try-runtime",                  # Enable try-runtime for CBC runtime
     "sp-runtime/try-runtime",                   # Enable try-runtime for runtime primitives
 ]
+
+
