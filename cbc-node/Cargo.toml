@@ -70,8 +70,8 @@ sc-consensus.default-features = true        # General consensus utilities
 sc-consensus.workspace = true               # Use workspace version
 sc-executor.default-features = true         # Substrate executor
 sc-executor.workspace = true                # Use workspace version
-sc-network.default-features = true          # Substrate networking
-sc-network.workspace = true                 # Use workspace version
+sc-network = { workspace = true, default-features = false }
+sc-network-types = { workspace = true, default-features = false }
 sc-offchain.default-features = true         # Offchain worker utilities
 sc-offchain.workspace = true                # Use workspace version
 sc-service.default-features = true          # Substrate service utilities

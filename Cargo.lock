@@ -599,9 +599,9 @@ dependencies = [
 
 [[package]]
 name = "async-channel"
-version = "2.3.1"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89b47800b0be77592da0afd425cc03468052844aff33b84e33cc696f64e77b6a"
+checksum = "16c74e56284d2188cabb6ad99603d1ace887a5d7e7b695d01b728155ed9ed427"
 dependencies = [
  "concurrent-queue",
  "event-listener-strategy",
@@ -681,7 +681,7 @@ version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cde3f4e40e6021d7acffc90095cbd6dc54cb593903d1de5832f435eb274b85dc"
 dependencies = [
- "async-channel 2.3.1",
+ "async-channel 2.4.0",
  "async-io",
  "async-lock",
  "async-signal",
@@ -1060,7 +1060,7 @@ version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "703f41c54fc768e63e091340b424302bb1c29ef4aa0c7f10fe849dfb114d29ea"
 dependencies = [
- "async-channel 2.3.1",
+ "async-channel 2.4.0",
  "async-task",
  "futures-io",
  "futures-lite",
@@ -1257,6 +1257,7 @@ dependencies = [
  "sc-consensus",
  "sc-executor",
  "sc-network",
+ "sc-network-types",
  "sc-offchain",
  "sc-rpc",
  "sc-rpc-api",
@@ -2878,12 +2879,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
-name = "fixedbitset"
-version = "0.5.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4416,15 +4411,6 @@ name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
@@ -6227,7 +6213,7 @@ dependencies = [
  "expander",
  "indexmap 2.10.0",
  "itertools 0.11.0",
- "petgraph 0.6.5",
+ "petgraph",
  "proc-macro-crate 3.3.0",
  "proc-macro2",
  "quote",
@@ -6623,17 +6609,7 @@ version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
- "fixedbitset 0.4.2",
- "indexmap 2.10.0",
-]
-
-[[package]]
-name = "petgraph"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
-dependencies = [
- "fixedbitset 0.5.7",
+ "fixedbitset",
  "indexmap 2.10.0",
 ]
 
@@ -7277,11 +7253,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
- "petgraph 0.7.1",
+ "petgraph",
  "prettyplease",
  "prost 0.13.5",
  "prost-types",
@@ -7310,7 +7286,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.104",
@@ -8156,9 +8132,9 @@ dependencies = [
 
 [[package]]
 name = "sc-cli"
-version = "0.51.1"
+version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dea0c73012c8460533a4f1527be212c9998c6e2788d8564cd61b2f8666cde568"
+checksum = "fea0f6424aacf055719cee01d59a1153aa8aed9739cff3beec0aea5675b13afe"
 dependencies = [
  "array-bytes",
  "chrono",
@@ -8405,9 +8381,9 @@ dependencies = [
 
 [[package]]
 name = "sc-network"
-version = "0.49.2"
+version = "0.49.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad6a716a158c92e43bf9081ab5a5bf73fccfd0bcd82ba65660d5481b4a49b427"
+checksum = "df65eb7a3c4c141de3f14b12a9832c75c7ada1fd580b0bc440263cb8ca2c5b77"
 dependencies = [
  "array-bytes",
  "async-channel 1.9.0",
@@ -8545,13 +8521,15 @@ dependencies = [
 
 [[package]]
 name = "sc-network-types"
-version = "0.15.5"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5432f4f7d0b9608be6650cb35c04dd8db3a982ce63fb643df974e2ec088dccda"
+checksum = "7ff910b7a20f14b1a77b2616de21d509cf51ce1a006e30b2d1f293a8fae72555"
 dependencies = [
  "bs58",
+ "bytes",
  "ed25519-dalek",
  "libp2p-identity",
+ "libp2p-kad",
  "litep2p",
  "log",
  "multiaddr 0.18.2",
@@ -8563,9 +8541,9 @@ dependencies = [
 
 [[package]]
 name = "sc-offchain"
-version = "44.0.1"
+version = "44.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c739497e3fefaa64f2fa013a5fe293eafc52b086030e424e42ef949bd8c4ea96"
+checksum = "721798adf89fdf7068912c91cae8b7174bb561201a54ba7b788ae2ef36da154d"
 dependencies = [
  "bytes",
  "fnv",
@@ -9516,7 +9494,7 @@ version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a33bd3e260892199c3ccfc487c88b2da2265080acb316cd920da72fdfd7c599f"
 dependencies = [
- "async-channel 2.3.1",
+ "async-channel 2.4.0",
  "async-executor",
  "async-fs",
  "async-io",
@@ -9587,7 +9565,7 @@ version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a33b06891f687909632ce6a4e3fd7677b24df930365af3d0bcb078310129f3f"
 dependencies = [
- "async-channel 2.3.1",
+ "async-channel 2.4.0",
  "async-lock",
  "base64 0.22.1",
  "blake2-rfc",
