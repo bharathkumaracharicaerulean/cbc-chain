@@ -25,9 +25,7 @@ frame-system-benchmarking = { optional = true, workspace = true }               
 frame-system-rpc-runtime-api.workspace = true                                    # System runtime APIs for RPC
 frame-system.workspace = true                                                    # Core system pallet
 frame-try-runtime = { optional = true, workspace = true }                        # Optional try-runtime feature
-pallet-aura.workspace = true                                                     # Aura consensus pallet
 pallet-balances.workspace = true                                                 # Balances pallet
-pallet-grandpa.workspace = true                                                  # Grandpa consensus pallet
 pallet-sudo.workspace = true                                                     # Sudo pallet for superuser access                                              # Custom template pallet
 pallet-cbc-poi.workspace = true
 pallet-cbc-pos.workspace = true
@@ -42,8 +40,6 @@ serde_json = { workspace = true, default-features = false, features = ["alloc"] 
 sp-api.workspace = true                                                          # Substrate runtime API interface
 sp-application-crypto.workspace = true                                           # Application-specific crypto types
 sp-block-builder.workspace = true                                                # Block building traits
-sp-consensus-aura = { features = ["serde"], workspace = true }                   # Aura consensus engine
-sp-consensus-grandpa = { features = ["serde"], workspace = true }                # Grandpa consensus engine
 sp-core = { features = ["serde"], workspace = true }                             # Core Substrate types
 sp-genesis-builder.workspace = true                                              # Genesis block builder
 sp-inherents.workspace = true                                                    # Support for inherents (e.g., timestamp)
@@ -74,9 +70,7 @@ std = [
 	"frame-system-rpc-runtime-api/std",
 	"frame-system/std",
 	"frame-try-runtime?/std",
-	"pallet-aura/std",
 	"pallet-balances/std",
-	"pallet-grandpa/std",
 	"pallet-sudo/std",
 	"pallet-cbc-poi/std",
 	"pallet-cbc-pos/std",
@@ -89,8 +83,6 @@ std = [
 	"sp-api/std",
 	"sp-application-crypto/std",
 	"sp-block-builder/std",
-	"sp-consensus-aura/std",
-	"sp-consensus-grandpa/std",
 	"sp-core/std",
 	"sp-genesis-builder/std",
 	"sp-inherents/std",
@@ -111,7 +103,6 @@ runtime-benchmarks = [
 	"frame-system-benchmarking/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
 	"pallet-balances/runtime-benchmarks",
-	"pallet-grandpa/runtime-benchmarks",
 	"pallet-sudo/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
 	"pallet-transaction-payment/runtime-benchmarks",
@@ -124,9 +115,7 @@ try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
 	"frame-try-runtime/try-runtime",
-	"pallet-aura/try-runtime",
 	"pallet-balances/try-runtime",
-	"pallet-grandpa/try-runtime",
 	"pallet-sudo/try-runtime",
 	"pallet-cbc-poi/try-runtime",
 	"pallet-cbc-pos/try-runtime",

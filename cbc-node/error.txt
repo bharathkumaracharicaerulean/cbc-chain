@@ -1,0 +1,233 @@
+⚡ Found 3 strongly connected components which includes at least one cycle each
+cycle(001) ∈ α: DisputeCoordinator ~~{"DisputeDistributionMessage"}~~> DisputeDistribution ~~{"DisputeCoordinatorMessage"}~~>  *
+cycle(002) ∈ β: CandidateBacking ~~{"CollatorProtocolMessage"}~~> CollatorProtocol ~~{"CandidateBackingMessage"}~~>  *
+cycle(003) ∈ γ: NetworkBridgeRx ~~{"GossipSupportMessage"}~~> GossipSupport ~~{"NetworkBridgeRxMessage"}~~>  *
+   Compiling cbc-node v0.1.0 (/home/bharat/Documents/CBC-Chain/cbc-node)
+error[E0433]: failed to resolve: could not find `BasicVerifier` in `import_queue`
+  --> cbc-node/src/service.rs:79:31
+   |
+79 |         sc_consensus::import_queue::BasicVerifier::new(client.clone()),
+   |                                     ^^^^^^^^^^^^^ could not find `BasicVerifier` in `import_queue`
+
+error[E0271]: expected `{closure@service.rs:155:12}` to return `Result<RpcModule<_>, Error>`, but it returns `Result<RpcModule<()>, _>`
+   --> cbc-node/src/service.rs:160:4
+    |
+155 |         Box::new(move |_spawner: Arc<dyn SpawnNamed>| {
+    |                  ------------------------------------ this closure
+...
+160 |             Ok(crate::rpc::create_full(deps))
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Result<RpcModule<_>, Error>`, found `Result<RpcModule<()>, _>`
+...
+171 |         rpc_builder,
+    |         ----------- closure used here
+    |
+note: two different versions of crate `jsonrpsee_core` are being used; two types coming from two different versions of the same crate are different types even if they look the same
+   --> /home/bharat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonrpsee-core-0.24.9/src/server/rpc_module.rs:533:1
+    |
+533 | pub struct RpcModule<Context> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the expected type `jsonrpsee_core::server::rpc_module::RpcModule`
+    |
+   ::: /home/bharat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonrpsee-core-0.15.1/src/server/rpc_module.rs:527:1
+    |
+527 | pub struct RpcModule<Context> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the found type `RpcModule`
+    |
+   ::: cbc-node/src/benchmarking.rs:8:5
+    |
+8   | use sc_cli::Result;
+    |     ------ one version of crate `jsonrpsee_core` used here, as a dependency of crate `jsonrpsee_server`
+    |
+   ::: cbc-node/src/rpc.rs:9:5
+    |
+9   | use jsonrpsee_http_server::{HttpServerBuilder};
+    |     --------------------- one version of crate `jsonrpsee_core` used here, as a dependency of crate `jsonrpsee_http_server`
+    = help: you can use `cargo tree` to explore your dependency tree
+    = note: required for the cast from `Box<{closure@cbc-node/src/service.rs:155:12: 155:48}>` to `Box<dyn Fn(Arc<dyn SpawnNamed>) -> Result<RpcModule<_>, Error>>`
+    = note: the full name for the type has been written to '/home/bharat/Documents/CBC-Chain/target/release/deps/cbc_node-617511cd6241cbe9.long-type-17649382559342401345.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0599]: no function or associated item named `from_genesis` found for struct `GenericChainSpec` in the current scope
+   --> cbc-node/src/chain_spec.rs:11:19
+    |
+11  |     Ok(ChainSpec::from_genesis(
+    |                   ^^^^^^^^^^^^ function or associated item not found in `GenericChainSpec<RuntimeGenesisConfig, Option<()>>`
+    |
+note: if you're trying to build a new `GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>` consider using one of the following associated functions:
+      GenericChainSpec::<E, EHF>::from_json_bytes
+      GenericChainSpec::<E, EHF>::from_json_file
+   --> /home/bharat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sc-chain-spec-42.0.0/src/chain_spec.rs:528:2
+    |
+528 |     pub fn from_json_bytes(json: impl Into<Cow<'static, [u8]>>) -> Result<Self, String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+541 |     pub fn from_json_file(path: PathBuf) -> Result<Self, String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: there is an associated function `from_ref` with a similar name
+   --> /home/bharat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/frame-support-40.1.0/src/traits/misc.rs:752:2
+    |
+752 |     fn from_ref(t: &T) -> &Self;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no function or associated item named `from_genesis` found for struct `GenericChainSpec` in the current scope
+   --> cbc-node/src/chain_spec.rs:27:19
+    |
+27  |     Ok(ChainSpec::from_genesis(
+    |                   ^^^^^^^^^^^^ function or associated item not found in `GenericChainSpec<RuntimeGenesisConfig, Option<()>>`
+    |
+note: if you're trying to build a new `GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>` consider using one of the following associated functions:
+      GenericChainSpec::<E, EHF>::from_json_bytes
+      GenericChainSpec::<E, EHF>::from_json_file
+   --> /home/bharat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sc-chain-spec-42.0.0/src/chain_spec.rs:528:2
+    |
+528 |     pub fn from_json_bytes(json: impl Into<Cow<'static, [u8]>>) -> Result<Self, String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+541 |     pub fn from_json_file(path: PathBuf) -> Result<Self, String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: there is an associated function `from_ref` with a similar name
+   --> /home/bharat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/frame-support-40.1.0/src/traits/misc.rs:752:2
+    |
+752 |     fn from_ref(t: &T) -> &Self;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `std::option::Option<()>: sc_executor::HostFunctions` is not satisfied
+  --> cbc-node/src/command.rs:52:13
+   |
+52 |             "dev" => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from("dev.json"))?),
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `sc_executor::HostFunctions` is not implemented for `std::option::Option<()>`
+   |
+   = help: the following other types implement trait `sc_executor::HostFunctions`:
+             ()
+             (TupleElement0, TupleElement1)
+             (TupleElement0, TupleElement1, TupleElement2)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5, TupleElement6)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5, TupleElement6, TupleElement7)
+           and 40 others
+   = note: required for `GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>` to implement `sc_cli::ChainSpec`
+   = note: required for the cast from `Box<GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>>` to `Box<dyn sc_cli::ChainSpec>`
+
+error[E0277]: the trait bound `RuntimeGenesisConfig: ChainSpecExtension` is not satisfied
+  --> cbc-node/src/command.rs:52:13
+   |
+52 |             "dev" => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from("dev.json"))?),
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ChainSpecExtension` is not implemented for `RuntimeGenesisConfig`
+   |
+   = help: the following other types implement trait `ChainSpecExtension`:
+             frame_benchmarking_cli::overhead::command::ParachainExtension
+             sc_chain_spec::extension::Forks<B, E>
+             std::option::Option<()>
+   = note: required for `RuntimeGenesisConfig` to implement `sc_chain_spec::extension::GetExtension`
+   = note: required for `GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>` to implement `sc_cli::ChainSpec`
+   = note: required for the cast from `Box<GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>>` to `Box<dyn sc_cli::ChainSpec>`
+
+error[E0277]: the trait bound `std::option::Option<()>: sc_executor::HostFunctions` is not satisfied
+  --> cbc-node/src/command.rs:53:20
+   |
+53 |             "" | "local" => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from("local.json"))?),
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `sc_executor::HostFunctions` is not implemented for `std::option::Option<()>`
+   |
+   = help: the following other types implement trait `sc_executor::HostFunctions`:
+             ()
+             (TupleElement0, TupleElement1)
+             (TupleElement0, TupleElement1, TupleElement2)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5, TupleElement6)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5, TupleElement6, TupleElement7)
+           and 40 others
+   = note: required for `GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>` to implement `sc_cli::ChainSpec`
+   = note: required for the cast from `Box<GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>>` to `Box<dyn sc_cli::ChainSpec>`
+
+error[E0277]: the trait bound `RuntimeGenesisConfig: ChainSpecExtension` is not satisfied
+  --> cbc-node/src/command.rs:53:20
+   |
+53 |             "" | "local" => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from("local.json"))?),
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ChainSpecExtension` is not implemented for `RuntimeGenesisConfig`
+   |
+   = help: the following other types implement trait `ChainSpecExtension`:
+             frame_benchmarking_cli::overhead::command::ParachainExtension
+             sc_chain_spec::extension::Forks<B, E>
+             std::option::Option<()>
+   = note: required for `RuntimeGenesisConfig` to implement `sc_chain_spec::extension::GetExtension`
+   = note: required for `GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>` to implement `sc_cli::ChainSpec`
+   = note: required for the cast from `Box<GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>>` to `Box<dyn sc_cli::ChainSpec>`
+
+error[E0277]: the trait bound `std::option::Option<()>: sc_executor::HostFunctions` is not satisfied
+  --> cbc-node/src/command.rs:54:12
+   |
+54 |             path => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))?), // Load from a JSON file
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `sc_executor::HostFunctions` is not implemented for `std::option::Option<()>`
+   |
+   = help: the following other types implement trait `sc_executor::HostFunctions`:
+             ()
+             (TupleElement0, TupleElement1)
+             (TupleElement0, TupleElement1, TupleElement2)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5, TupleElement6)
+             (TupleElement0, TupleElement1, TupleElement2, TupleElement3, TupleElement4, TupleElement5, TupleElement6, TupleElement7)
+           and 40 others
+   = note: required for `GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>` to implement `sc_cli::ChainSpec`
+   = note: required for the cast from `Box<GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>>` to `Box<dyn sc_cli::ChainSpec>`
+
+error[E0277]: the trait bound `RuntimeGenesisConfig: ChainSpecExtension` is not satisfied
+  --> cbc-node/src/command.rs:54:12
+   |
+54 |             path => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))?), // Load from a JSON file
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ChainSpecExtension` is not implemented for `RuntimeGenesisConfig`
+   |
+   = help: the following other types implement trait `ChainSpecExtension`:
+             frame_benchmarking_cli::overhead::command::ParachainExtension
+             sc_chain_spec::extension::Forks<B, E>
+             std::option::Option<()>
+   = note: required for `RuntimeGenesisConfig` to implement `sc_chain_spec::extension::GetExtension`
+   = note: required for `GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>` to implement `sc_cli::ChainSpec`
+   = note: required for the cast from `Box<GenericChainSpec<RuntimeGenesisConfig, std::option::Option<()>>>` to `Box<dyn sc_cli::ChainSpec>`
+
+warning: unused import: `Block`
+  --> cbc-node/src/rpc.rs:13:26
+   |
+13 | use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+   |                          ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `Header`
+  --> cbc-node/src/rpc.rs:13:43
+   |
+13 | use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+   |                                           ^^^^^^
+
+warning: unused variable: `client`
+  --> cbc-node/src/rpc.rs:41:3
+   |
+41 |         client,
+   |         ^^^^^^ help: try ignoring the field: `client: _`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `deny_unsafe`
+  --> cbc-node/src/rpc.rs:42:3
+   |
+42 |         deny_unsafe,
+   |         ^^^^^^^^^^^ help: try ignoring the field: `deny_unsafe: _`
+
+warning: variable does not need to be mutable
+  --> cbc-node/src/rpc.rs:44:6
+   |
+44 |     let mut module = RpcModule::new(());
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` on by default
+
+Some errors have detailed explanations: E0271, E0277, E0433, E0599.
+For more information about an error, try `rustc --explain E0271`.
+warning: `cbc-node` (bin "cbc-node") generated 5 warnings
+error: could not compile `cbc-node` (bin "cbc-node") due to 10 previous errors; 5 warnings emitted
