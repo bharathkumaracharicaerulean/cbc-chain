@@ -19,8 +19,6 @@ use sp_block_builder::BlockBuilder;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use pallet_cbc_dcf::DcfApi;
-use jsonrpsee::core::error as RpcError;
 
 
 /// Simple rate limiter implementation
@@ -86,9 +84,9 @@ pub trait ChainApi {
     #[method(name = "chain_getChainName")]
     fn get_chain_name(&self) -> RpcResult<String>;
 
-    // Example DCF-specific RPC: get validator scores
-    #[method(name = "dcf_getValidatorScores")]
-    fn get_validator_scores(&self) -> RpcResult<Vec<(AccountId, u64)>>;
+    // Placeholder for DCF-specific RPC: get validator scores
+    // Note: You'll need to implement the actual DCF API in your runtime
+    // and expose it through the runtime API
 }
 
 /// Implementation of the CustomApi trait.
@@ -104,15 +102,7 @@ where
         Ok("CBC-Chain".to_string())
     }
 
-    fn get_validator_scores(&self) -> RpcResult<Vec<(AccountId, u64)>> {
-        // Use the DCF runtime API to fetch validator scores
-        let best_hash = self.client.info().best_hash;
-        let api = self.client.runtime_api();
-        match api.get_validator_scores(best_hash) {
-            Ok(scores) => Ok(scores),
-            Err(e) => Err(Custom(format!("Runtime API error: {:?}", e))),
-        }
-    }
+
 }
 
 /// Creates a complete RPC module with all CBC-specific runtime extensions.

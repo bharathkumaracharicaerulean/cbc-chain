@@ -26,6 +26,7 @@ pallet-cbc-dcf = { path = "../cbc-pallets/pallet-cbc-dcf" }
 
 # === CLI and Command-Line Parsing ===
 clap = { features = ["derive"], workspace = true } # Command-line argument parsing library
+anyhow = { version = "1.0", default-features = false } # Error handling
 
 # === new packages ===
 hex-literal = { workspace = true }

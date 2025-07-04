@@ -1236,6 +1236,7 @@ dependencies = [
 name = "cbc-node"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cbc-consensus",
  "cbc-runtime",
  "clap",

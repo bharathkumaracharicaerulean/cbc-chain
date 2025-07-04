@@ -13,14 +13,11 @@ use cbc_runtime::{self, apis::RuntimeApi, opaque::Block};
 use std::{sync::Arc};
 // DCF Consensus imports
 use cbc_consensus::{DcfConsensus, ConsensusParams, AuthorSelectionMode};
-use sc_service::ImportQueue;
+
 use sc_consensus::import_queue::{ImportQueueService, Link};
 use std::pin::Pin;
 use std::future::Future;
 use sp_core::sr25519::Pair;
-use sc_consensus::IncomingBlock;
-use sc_network::PeerId;
-use sp_runtime::Justifications;
 use sp_consensus::BlockOrigin;
 
 // Minimal dummy import queue for DCF-only node
@@ -30,19 +27,19 @@ impl<B: sp_runtime::traits::Block> sc_service::ImportQueue<B> for DummyImportQue
     fn service(&self) -> Box<(dyn ImportQueueService<B> + 'static)> {
         struct DummyService;
         impl<B: sp_runtime::traits::Block> ImportQueueService<B> for DummyService {
-            fn import_blocks(&mut self, _origin: BlockOrigin, _blocks: Vec<IncomingBlock<B>>) {}
-            fn import_justifications(&mut self, _peer_id: PeerId, _hash: <B as sp_runtime::traits::Block>::Hash, _number: <<B as sp_runtime::traits::Block>::Header as sp_runtime::traits::Header>::Number, _justifications: Justifications) {}
+            fn import_blocks(&mut self, _origin: BlockOrigin, _blocks: Vec<sc_consensus::IncomingBlock<B>>) {}
+            fn import_justifications(&mut self, _peer_id: sc_network::PeerId, _hash: <B as sp_runtime::traits::Block>::Hash, _number: <<B as sp_runtime::traits::Block>::Header as sp_runtime::traits::Header>::Number, _justifications: sp_runtime::Justifications) {}
         }
         Box::new(DummyService)
     }
     fn service_ref(&mut self) -> &mut dyn ImportQueueService<B> {
         struct DummyService;
         impl<B: sp_runtime::traits::Block> ImportQueueService<B> for DummyService {
-            fn import_blocks(&mut self, _origin: BlockOrigin, _blocks: Vec<IncomingBlock<B>>) {}
-            fn import_justifications(&mut self, _peer_id: PeerId, _hash: <B as sp_runtime::traits::Block>::Hash, _number: <<B as sp_runtime::traits::Block>::Header as sp_runtime::traits::Header>::Number, _justifications: Justifications) {}
+            fn import_blocks(&mut self, _origin: BlockOrigin, _blocks: Vec<sc_consensus::IncomingBlock<B>>) {}
+            fn import_justifications(&mut self, _peer_id: sc_network::PeerId, _hash: <B as sp_runtime::traits::Block>::Hash, _number: <<B as sp_runtime::traits::Block>::Header as sp_runtime::traits::Header>::Number, _justifications: sp_runtime::Justifications) {}
         }
-        static mut DUMMY: DummyService = DummyService;
-        unsafe { &mut DUMMY }
+        static mut SERVICE: DummyService = DummyService;
+        unsafe { &mut SERVICE }
     }
     fn run<'life0, 'async_trait>(
         self,
@@ -90,7 +87,7 @@ pub struct NodeConfig {
 /// Returns the essential pieces to create the full node later.
 pub fn new_partial(
     config: &Configuration,
-    node_config: NodeConfig,
+    node_config: &NodeConfig,
 ) -> Result<Service, ServiceError> {
     // Setup optional telemetry (for Prometheus/Grafana dashboards).
     let telemetry = config
@@ -155,7 +152,7 @@ pub fn new_full<
     N: sc_network::NetworkBackend<Block, <Block as sp_runtime::traits::Block>::Hash>,
 >(
     config: Configuration,
-    node_config: NodeConfig,
+    node_config: &NodeConfig,
 ) -> Result<TaskManager, ServiceError>
 where
     N: sc_network::NetworkBackend<Block, <Block as sp_runtime::traits::Block>::Hash>,
@@ -165,22 +162,22 @@ where
         client,
         backend,
         mut task_manager,
-        keystore_container,
-        select_chain,
-        transaction_pool,
         import_queue,
+        keystore_container,
+        select_chain: _,
+        transaction_pool,
         ..
-    } = new_partial(&config, node_config.clone())?;
+    } = new_partial(&config, &node_config)?;
 
     // === Network Setup ===
-    let mut net_config = sc_network::config::FullNetworkConfiguration::<
+    let net_config = sc_network::config::FullNetworkConfiguration::<
         Block,
         <Block as sp_runtime::traits::Block>::Hash,
         N,
     >::new(&config.network, config.prometheus_registry().cloned());
 
     let metrics = N::register_notification_metrics(config.prometheus_registry());
-    let peer_store_handle = net_config.peer_store_handle();
+    let _peer_store_handle = net_config.peer_store_handle();
 
     // === Build the network ===
     let (network, system_rpc_tx, tx_handler_controller, sync_service) =

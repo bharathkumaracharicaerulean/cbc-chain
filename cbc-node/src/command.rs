@@ -3,7 +3,7 @@ use crate::{
     benchmarking::{inherent_benchmark_data, RemarkBuilder, TransferKeepAliveBuilder},
     chain_spec,
     cli::{Cli, Subcommand},
-    service::FullClient,
+
 };
 
 use frame_benchmarking_cli::{BenchmarkCmd, ExtrinsicFactory, SUBSTRATE_REFERENCE_HARDWARE};
@@ -102,7 +102,7 @@ pub fn run() -> sc_cli::Result<()> {
                             },
                         };
                         let sc_service::PartialComponents { client, .. } =
-                            crate::service::new_partial(&config, node_config)?;
+                            crate::service::new_partial(&config, &node_config)?;
                         cmd.run(client)
                     },
                     #[cfg(not(feature = "runtime-benchmarks"))]
@@ -118,7 +118,7 @@ pub fn run() -> sc_cli::Result<()> {
                             },
                         };
                         let sc_service::PartialComponents { client, backend, .. } =
-                            crate::service::new_partial(&config, node_config)?;
+                            crate::service::new_partial(&config, &node_config)?;
                         let db = backend.expose_db();
                         let storage = backend.expose_storage();
                         cmd.run(config, client, db, storage)
@@ -133,7 +133,7 @@ pub fn run() -> sc_cli::Result<()> {
                             },
                         };
                         let sc_service::PartialComponents { client, .. } =
-                            crate::service::new_partial(&config, node_config)?;
+                            crate::service::new_partial(&config, &node_config)?;
                         let ext_builder = RemarkBuilder::new(client.clone());
                         cmd.run(config.chain_spec.name().into(), client, inherent_benchmark_data()?, Vec::new(), &ext_builder, false)
                     },
@@ -147,7 +147,7 @@ pub fn run() -> sc_cli::Result<()> {
                             },
                         };
                         let sc_service::PartialComponents { client, .. } =
-                            crate::service::new_partial(&config, node_config)?;
+                            crate::service::new_partial(&config, &node_config)?;
                         let ext_factory = ExtrinsicFactory(vec![
                             Box::new(RemarkBuilder::new(client.clone())),
                             Box::new(TransferKeepAliveBuilder::new(
@@ -186,9 +186,9 @@ pub fn run() -> sc_cli::Result<()> {
                                 cbc_runtime::opaque::Block,
                                 <cbc_runtime::opaque::Block as sp_runtime::traits::Block>::Hash,
                             >,
-                        >(config, node_config).map_err(sc_cli::Error::Service),
+                        >(config, &node_config).map_err(sc_cli::Error::Service),
                     sc_network::config::NetworkBackendType::Litep2p =>
-                        crate::service::new_full::<sc_network::Litep2pNetworkBackend>(config, node_config)
+                        crate::service::new_full::<sc_network::Litep2pNetworkBackend>(config, &node_config)
                             .map_err(sc_cli::Error::Service),
                 }
             })
