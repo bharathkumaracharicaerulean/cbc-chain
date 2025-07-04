@@ -43,7 +43,7 @@ where
 	} = deps;
 	let mut module = RpcModule::new(());
 
-	// Example: Add system RPCs (you may need to adapt this for jsonrpsee)
+
 	// module.merge(SystemApi::to_delegate(System::new(client.clone(), deny_unsafe))).unwrap();
 
 	module

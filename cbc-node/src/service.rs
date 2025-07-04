@@ -76,7 +76,7 @@ pub fn new_partial(config: &Configuration) -> Result<Service, ServiceError> {
 	);
 	let block_import = cbc_consensus::DcfBlockImport::new(client.clone());
 	let import_queue = sc_consensus::BasicQueue::new(
-		sc_consensus::import_queue::BasicVerifier::new(client.clone()),
+		None, // No verifier
 		Box::new(block_import),
 		None,
 		&task_manager.spawn_essential_handle(),
@@ -157,7 +157,12 @@ pub async fn new_full(config: Configuration) -> Result<TaskManager, ServiceError
 				client: client.clone(),
 				deny_unsafe: sc_rpc_api::DenyUnsafe::No,
 			};
-			Ok(crate::rpc::create_full(deps))
+			crate::rpc::create_full(deps)
+				.and_then(|module| {
+					module
+						.into_submodule::<Box<dyn Send + Sync>>()
+						.ok_or_else(|| sc_service::Error::Other("Failed to convert RPC module context".into()))
+				})
 		})
 	};
 

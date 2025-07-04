@@ -255,7 +255,7 @@ The CBC runtime implements a robust blockchain system with a unique combination 
 
 ### **Development Configuration**
 - **Authorities**:
-  - Alice (Aura and Grandpa authority).
+  - Alice 
 - **Endowed Accounts**:
   - Alice: Pre-funded with a large balance.
   - Bob: Pre-funded with a large balance.
@@ -264,7 +264,7 @@ The CBC runtime implements a robust blockchain system with a unique combination 
 
 ### **Local Testnet Configuration**
 - **Authorities**:
-  - Alice and Bob (Aura and Grandpa authorities).
+  - Alice and Bob 
 - **Endowed Accounts**:
   - All keyring accounts except "One" and "Two" are pre-funded.
 - **Sudo Key**:
