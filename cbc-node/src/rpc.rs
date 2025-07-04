@@ -19,8 +19,9 @@ use sp_block_builder::BlockBuilder;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use pallet_cbc_dcf::DcfApi as _;
-use jsonrpsee::core::Error as RpcError;
+use pallet_cbc_dcf::DcfApi;
+use jsonrpsee::core::error as RpcError;
+
 
 /// Simple rate limiter implementation
 #[derive(Clone)]
@@ -109,7 +110,7 @@ where
         let api = self.client.runtime_api();
         match api.get_validator_scores(best_hash) {
             Ok(scores) => Ok(scores),
-            Err(e) => Err(RpcError::Custom(format!("Runtime API error: {:?}", e))),
+            Err(e) => Err(Custom(format!("Runtime API error: {:?}", e))),
         }
     }
 }

@@ -19,9 +19,9 @@ use std::pin::Pin;
 use std::future::Future;
 use sp_core::sr25519::Pair;
 use sc_consensus::IncomingBlock;
-use sc_consensus::BlockOrigin;
 use sc_network::PeerId;
 use sp_runtime::Justifications;
+use sp_consensus::BlockOrigin;
 
 // Minimal dummy import queue for DCF-only node
 pub struct DummyImportQueue;
@@ -274,3 +274,4 @@ where
     // All services have started successfully.
     Ok(task_manager)
 }
+
