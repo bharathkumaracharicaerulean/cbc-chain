@@ -1,8 +1,3 @@
-//! A collection of node-specific RPC methods for CBC-Chain with DCF consensus only.
-//!
-//! This file extends the Substrate RPC layer with runtime-specific capabilities for the CBC chain.
-//! It is fully compatible with the DCF-only node and runtime.
-
 #![warn(missing_docs)]
 
 use std::sync::Arc;
@@ -20,8 +15,6 @@ use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 
-
-/// Simple rate limiter implementation
 #[derive(Clone)]
 pub struct RateLimiter {
     window: Duration,
@@ -51,7 +44,6 @@ impl RateLimiter {
     }
 }
 
-/// Configuration for RPC security settings
 #[derive(Clone, Debug)]
 pub struct RpcSecurityConfig {
     pub enable_cbc_extensions: bool,
@@ -71,25 +63,18 @@ impl Default for RpcSecurityConfig {
     }
 }
 
-/// Full client dependencies for setting up RPC extensions.
 pub struct FullDeps<C, P> {
     pub client: Arc<C>,
     pub pool: Arc<P>,
     pub rpc_config: RpcSecurityConfig,
 }
 
-/// Custom RPC trait for CBC node (example: chain name).
 #[rpc(server)]
 pub trait ChainApi {
     #[method(name = "chain_getChainName")]
     fn get_chain_name(&self) -> RpcResult<String>;
-
-    // Placeholder for DCF-specific RPC: get validator scores
-    // Note: You'll need to implement the actual DCF API in your runtime
-    // and expose it through the runtime API
 }
 
-/// Implementation of the CustomApi trait.
 pub struct ChainApiImpl<C: ProvideRuntimeApi<Block> + Send + Sync + 'static> {
     pub client: Arc<C>,
 }
@@ -101,11 +86,8 @@ where
     fn get_chain_name(&self) -> RpcResult<String> {
         Ok("CBC-Chain".to_string())
     }
-
-
 }
 
-/// Creates a complete RPC module with all CBC-specific runtime extensions.
 pub fn create_full<C, P>(
     deps: FullDeps<C, P>,
 ) -> Result<RpcModule<()>, Box<dyn std::error::Error + Send + Sync>>
@@ -129,19 +111,15 @@ where
         rpc_config.rate_limit_requests,
     );
 
-    // Always enable safe methods
     module.merge(System::new(client.clone(), pool).into_rpc())?;
     module.merge(TransactionPayment::new(client.clone()).into_rpc())?;
 
-    // Enable CBC custom RPCs if configured
     if rpc_config.enable_cbc_extensions {
         let chain_api = ChainApiImpl { client: client.clone() };
         module.merge(ChainApiServer::into_rpc(chain_api))?;
     }
 
-    // Only expose unsafe methods if configured
     if rpc_config.expose_unsafe_methods {
-        // Add any unsafe methods here
     }
 
     Ok(module)

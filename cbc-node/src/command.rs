@@ -1,9 +1,7 @@
-// Import necessary components and traits used in this CLI entry point for the CBC Chain node.
 use crate::{
     benchmarking::{inherent_benchmark_data, RemarkBuilder, TransferKeepAliveBuilder},
     chain_spec,
     cli::{Cli, Subcommand},
-
 };
 
 use frame_benchmarking_cli::{BenchmarkCmd, ExtrinsicFactory, SUBSTRATE_REFERENCE_HARDWARE};
@@ -11,8 +9,6 @@ use sc_cli::SubstrateCli;
 use cbc_runtime::{Block, EXISTENTIAL_DEPOSIT};
 use sp_keyring::Sr25519Keyring;
 
-/// Implement the `SubstrateCli` trait for the `Cli` struct, which allows Substrate to understand
-/// how to interpret and respond to CLI arguments for this specific node.
 impl SubstrateCli for Cli {
     fn impl_name() -> String {
         "CBC CHAIN".into()
@@ -47,8 +43,6 @@ impl SubstrateCli for Cli {
     }
 }
 
-/// Entry point for CLI command execution. This function is typically called from `main.rs`.
-/// It handles dispatching each CLI subcommand to the correct logic.
 pub fn run() -> sc_cli::Result<()> {
     let cli = Cli::from_args();
 
@@ -68,7 +62,6 @@ pub fn run() -> sc_cli::Result<()> {
             runner.sync_run(|config| cmd.run(config.chain_spec, config.network))
         },
 
-        // DCF-only: CheckBlock, ImportBlocks, ExportBlocks, ExportState, Revert are not supported
         Some(Subcommand::CheckBlock(_))
         | Some(Subcommand::ImportBlocks(_))
         | Some(Subcommand::ExportBlocks(_))
