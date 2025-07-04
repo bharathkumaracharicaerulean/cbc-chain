@@ -23,6 +23,9 @@ use super::{
 	RuntimeCall, RuntimeGenesisConfig, SessionKeys, System, TransactionPayment, VERSION,
 };
 
+// Add these lines for pallet aliases
+use crate::{PalletCbcPos, PalletCbcPoi};
+
 // Begin API Implementations
 impl_runtime_apis! {
 	// Core Runtime API
@@ -231,5 +234,46 @@ impl_runtime_apis! {
 		fn preset_names() -> Vec<sp_genesis_builder::PresetId> {
 			crate::genesis_config_presets::preset_names()
 		}
+	}
+
+	impl crate::apis::CbcCustomApi<Block> for Runtime {
+		fn get_validator_profile(account: AccountId) -> ValidatorProfile {
+			ValidatorProfile {
+				score: PalletCbcPos::validator_scores(&account),
+				slashing_count: PalletCbcPos::slashing_count(&account),
+			}
+		}
+		fn get_inference_result(account: AccountId) -> Option<u32> {
+			PalletCbcPoi::inference_results(&account)
+		}
+		fn get_current_epoch() -> u32 {
+			PalletCbcPos::current_epoch()
+		}
+		fn get_expected_block_author() -> Option<AccountId> {
+			// Placeholder: No logic for expected block author in current pallets
+			None
+		}
+	}
+}
+
+// --- Custom Runtime APIs ---
+
+/// Validator profile information for get_validator_profile.
+#[derive(codec::Encode, codec::Decode, scale_info::TypeInfo, Clone, PartialEq, Eq, Debug)]
+pub struct ValidatorProfile {
+	pub score: Option<u32>,
+	pub slashing_count: Option<u32>,
+}
+
+sp_api::decl_runtime_apis! {
+	pub trait CbcCustomApi {
+		/// Get the validator profile for a given account.
+		fn get_validator_profile(account: AccountId) -> ValidatorProfile;
+		/// Get the inference result for a given account.
+		fn get_inference_result(account: AccountId) -> Option<u32>;
+		/// Get the current epoch (from POS or POI pallet).
+		fn get_current_epoch() -> u32;
+		/// Get the expected block author (if available).
+		fn get_expected_block_author() -> Option<AccountId>;
 	}
 }
