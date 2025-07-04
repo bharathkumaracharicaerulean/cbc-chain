@@ -18,10 +18,23 @@ mod command;      // Command execution logic — this is where the `run()` funct
 mod rpc;          // RPC configuration and endpoint setup (used if custom RPCs are defined)
 mod service;      // Node service construction (e.g., partial and full service builders)
 
+use clap::Parser;
+use std::path::PathBuf;
+
 /// The entry point of the application.
 /// This function is executed when you run the binary (e.g., `./cbc-node --help`)
 fn main() -> sc_cli::Result<()> {
-	// Delegate execution to the `run()` function defined in the `command` module.
-	// This function parses CLI arguments and invokes the appropriate subcommand.
-	command::run()
+    // Parse command-line arguments
+    let cli = cli::Cli::parse();
+
+    // Create log directory if specified
+    if let Some(log_file) = &cli.log_file {
+        let log_path = PathBuf::from(log_file);
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent).expect("Failed to create log directory");
+        }
+    }
+
+    // Execute the command - Substrate will handle logger initialization
+    command::run()
 }
