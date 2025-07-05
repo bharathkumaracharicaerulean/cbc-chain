@@ -91,9 +91,14 @@ pub fn local_config_genesis() -> Value {
 /// Fetches the JSON representation of the genesis config for the given `PresetId`.
 /// - Supports "dev" and "local" presets.
 /// - Returns None for unknown presets.
-pub fn get_preset(_id: &Option<PresetId>) -> Option<Vec<u8>> {
-	// Implement your logic here, for now just return None or a default
-	None
+pub fn get_preset(id: &Option<PresetId>) -> Option<Vec<u8>> {
+    match id.as_deref() {
+        Some("development") => Some(serde_json::to_vec(&development_config_genesis()).unwrap()),
+        Some("local") => Some(serde_json::to_vec(&local_config_genesis()).unwrap()),
+        Some("bob_sudo") => Some(serde_json::to_vec(&local_config_genesis()).unwrap()),
+        Some("local_testnet") => Some(serde_json::to_vec(&local_config_genesis()).unwrap()),
+        _ => None,
+    }
 }
 
 /// Returns the list of preset names that are supported by this runtime.
