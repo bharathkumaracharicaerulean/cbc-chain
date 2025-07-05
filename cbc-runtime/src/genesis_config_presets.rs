@@ -93,6 +93,7 @@ pub fn local_config_genesis() -> Value {
 /// - Returns None for unknown presets.
 pub fn get_preset(id: &Option<PresetId>) -> Option<Vec<u8>> {
     match id.as_deref() {
+        None => Some(serde_json::to_vec(&development_config_genesis()).unwrap()), // Default to dev
         Some("development") => Some(serde_json::to_vec(&development_config_genesis()).unwrap()),
         Some("local") => Some(serde_json::to_vec(&local_config_genesis()).unwrap()),
         Some("bob_sudo") => Some(serde_json::to_vec(&local_config_genesis()).unwrap()),
