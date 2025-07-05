@@ -69,6 +69,8 @@ sc-client-api.default-features = true       # Substrate client API
 sc-client-api.workspace = true              # Use workspace version
 sc-consensus.default-features = true        # General consensus utilities
 sc-consensus.workspace = true               # Use workspace version
+sp-consensus.default-features = true        # General consensus utilities
+sp-consensus.workspace = true               # Use workspace version
 sc-executor.default-features = true         # Substrate executor
 sc-executor.workspace = true                # Use workspace version
 sc-network = { workspace = true, default-features = false }
