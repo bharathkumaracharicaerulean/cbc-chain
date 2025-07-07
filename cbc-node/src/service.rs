@@ -1,3 +1,4 @@
+#![allow(unused_variables, static_mut_refs)]
 use futures::FutureExt;
 use sc_client_api::Backend;
 use sc_service::{error::Error as ServiceError, Configuration, TaskManager};

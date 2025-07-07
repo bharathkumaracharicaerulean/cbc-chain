@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+
 
 mod benchmarking;
 mod chain_spec;
