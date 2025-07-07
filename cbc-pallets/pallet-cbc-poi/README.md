@@ -1,202 +1,88 @@
-# CBC PoI Pallet
+# pallet-cbc-poi
 
-The CBC PoI (Proof of Inference) pallet implements the PoI consensus mechanism for the CBC blockchain. It allows validators to submit inference results, challenge others' results, and provides a mechanism for rewarding or penalizing based on inference correctness.
+A Substrate pallet implementing Proof-of-Inference (PoI) consensus for the CBC-Chain, enabling decentralized validation of AI/ML inference results through a challenge-based mechanism.
 
-## Key Features
+## Features
 
-1. **Inference Submission**
-   - Submit inference results with confidence scores
-   - Minimum confidence threshold enforcement
-   - Epoch-based result tracking
-   - Rewards for valid submissions
+### Core Functionality
+- **Inference Submission**: Validators submit results with confidence scores
+- **Challenge Mechanism**: Dispute resolution for inference results
+- **Epoch-based Tracking**: Results and challenges tracked per epoch
+- **PoS Integration**: Seamless integration with Proof of Stake system
 
-2. **Challenge Mechanism**
-   - Challenge other validators' results
-   - Configurable challenge window
-   - Challenge resolution system
-   - Rewards for successful challenges
+### Key Components
+- **Inference Management**: Store and validate inference submissions
+- **Challenge System**: Handle disputes between validators
+- **Epoch Control**: Manage epoch transitions and validity windows
+- **Reward Distribution**: Incentivize accurate reporting and challenging
 
-3. **Epoch Management**
-   - Track current inference epoch
-   - Result age validation
-   - Challenge window enforcement
-   - Epoch-based updates
+## Storage
 
-4. **Score Integration**
-   - Score boosting for correct results
-   - Score slashing for invalid results
-   - Integration with PoS system
-   - Dynamic score adjustments
+### Primary Storage
+- `InferenceResults`: Maps validators to their latest (result, epoch) tuple
+- `Challenges`: Tracks active challenges as (challenged_account, result, epoch)
+- `CurrentEpoch`: Current inference epoch counter
 
-5. **Reward System**
-   - Inference rewards
-   - Challenge rewards
-   - Penalty system
-   - Score adjustments
+## Configuration
 
-## Configuration Parameters
+### Runtime Configuration
+- `MinInferenceConfidence`: Minimum confidence threshold (0-100)
+- `MaxInferenceAge`: Maximum age of inferences (in epochs)
+- `ChallengeWindow`: Duration for challenging results (in epochs)
+- `InferenceReward`: Reward for correct inferences
+- `ChallengeReward`: Reward for successful challenges
+- `PosInterface`: Hook for PoS integration (score adjustments)
 
-```rust
-#[pallet::config]
-pub trait Config: frame_system::Config {
-    type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-    type WeightInfo: WeightInfo;
+## Extrinsics
 
-    // Minimum confidence threshold for inference (0-100)
-    type MinInferenceConfidence: Get<u32>;
-    // Maximum age of inference in epochs
-    type MaxInferenceAge: Get<u32>;
-    // Number of epochs to challenge an inference
-    type ChallengeWindow: Get<u32>;
-    // Reward for correct inference
-    type InferenceReward: Get<u128>;
-    // Reward for successful challenge
-    type ChallengeReward: Get<u128>;
-    // Interface to PoS pallet for boosting/slashing scores
-    type PosInterface: PosInterface<Self::AccountId>;
-}
-```
+### `submit_inference`
+- **Purpose**: Submit an inference result with confidence score
+- **Parameters**:
+  - `result`: The inference result (u32)
+  - `confidence`: Confidence score (0-100)
+- **Events**: `InferenceSubmitted`, `InferenceAccepted`
+- **Errors**: `InferenceAlreadySubmitted`, `ConfidenceTooLow`
 
-## Storage Items
-
-### InferenceResults
-```rust
-#[pallet::storage]
-pub type InferenceResults<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (u32, u32), OptionQuery>;
-```
-
-### Challenges
-```rust
-#[pallet::storage]
-pub type Challenges<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, u32, u32), OptionQuery>;
-```
-
-### Current Epoch
-```rust
-#[pallet::storage]
-pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
-```
-
-## Events
-
-```rust
-#[pallet::event]
-pub enum Event<T: Config> {
-    InferenceSubmitted { who: T::AccountId, result: u32, confidence: u32 },
-    InferenceAccepted { validator: T::AccountId, confidence: u32 },
-    InferenceRejected { validator: T::AccountId, confidence: u32 },
-    InferenceChallenged { challenger: T::AccountId, challenged: T::AccountId, result: u32 },
-    ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
-    ValidatorSlashed { validator: T::AccountId, reason: Vec<u8> },
-}
-```
-
-## Errors
-
-```rust
-#[pallet::error]
-pub enum Error<T> {
-    InferenceAlreadySubmitted,
-    InferenceNotFound,
-    InvalidChallenge,
-    ConfidenceTooLow,
-    ChallengeWindowExpired,
-    InferenceTooOld,
-}
-```
-
-## Dispatchable Functions
-
-### submit_inference
-```rust
-pub fn submit_inference(
-    origin: OriginFor<T>,
-    result: u32,
-    confidence: u32,
-) -> DispatchResult
-```
-- Submit inference result with confidence
-- Validates minimum confidence
-- Updates inference results
-- Emits `InferenceSubmitted` event
-
-### challenge_inference
-```rust
-pub fn challenge_inference(
-    origin: OriginFor<T>,
-    challenged: T::AccountId,
-    result: u32,
-) -> DispatchResult
-```
-- Challenge another validator's inference
-- Validates challenge window
-- Updates challenges
-- Emits `InferenceChallenged` event
+### `challenge_inference`
+- **Purpose**: Challenge another validator's inference
+- **Parameters**:
+  - `challenged`: Account being challenged
+  - `result`: The disputed result
+- **Events**: `InferenceChallenged`, `ChallengeResolved`, `ValidatorSlashed`
+- **Errors**: `InferenceNotFound`, `InvalidChallenge`, `ChallengeWindowExpired`, `InferenceTooOld`
 
 ## Runtime API
 
-```rust
-#[decl_runtime_apis]
-pub trait PoiApi<AccountId> {
-    fn get_inference_result(validator: AccountId) -> Option<(u32, u32)>;
-    fn get_challenge(validator: AccountId) -> Option<(AccountId, u32, u32)>;
-    fn get_current_epoch() -> u32;
-}
-```
+### `get_inference_result(account)`
+- Returns: `Option<(u32, u32)>` - (result, epoch) if exists
 
-## Genesis Configuration
+### `get_challenge(account)`
+- Returns: `Option<(AccountId, u32, u32)>` - (challenged, result, epoch) if challenged
 
-```rust
-#[pallet::genesis_config]
-pub struct GenesisConfig<T: Config> {
-    pub inference_results: Vec<(T::AccountId, u32)>,
-    pub challenges: Vec<(T::AccountId, T::AccountId, u32)>,
-    pub current_epoch: u32,
-}
-```
+### `get_current_epoch()`
+- Returns: `u32` - Current epoch number
 
-## Usage Example
+## Events
 
-```rust
-// Submit inference
-assert_ok!(PalletCbcPoi::submit_inference(
-    Origin::signed(validator_account),
-    85, // inference result
-    95, // confidence score
-));
+### Inference Events
+- `InferenceSubmitted { who, result, confidence }`
+- `InferenceAccepted { validator, confidence }`
+- `InferenceRejected { validator, confidence }`
 
-// Challenge inference
-assert_ok!(PalletCbcPoi::challenge_inference(
-    Origin::signed(challenger_account),
-    validator_account,
-    85 // challenged result
-));
+### Challenge Events
+- `InferenceChallenged { challenger, challenged, result }`
+- `ChallengeResolved { challenger, challenged, result, success }`
+- `ValidatorSlashed { validator, reason }`
 
-// Get inference result
-let result = PalletCbcPoi::get_inference_result(validator_account);
-```
+## Error Handling
 
-## Security Considerations
-
-1. **Inference Submission**
-   - Minimum confidence requirement
-   - Epoch validation
-   - Duplicate prevention
-
-2. **Challenge System**
-   - Challenge window enforcement
-   - Result age validation
-   - Validity checks
-
-3. **Score Management**
-   - Score boosting for correct results
-   - Score slashing for invalid results
-   - Integration with PoS
-
-4. **Reward System**
-   - Reward validation
-   - Penalty enforcement
-   - Score adjustments
+### Validation Errors
+- `InferenceAlreadySubmitted`: Validator already submitted this epoch
+- `InferenceNotFound`: No inference to challenge
+- `InvalidChallenge`: Challenge doesn't match stored result
+- `ConfidenceTooLow`: Below minimum threshold
+- `ChallengeWindowExpired`: Too late to challenge
+- `InferenceTooOld`: Result from previous epoch
 
 ## Performance Optimization
 

@@ -7,28 +7,37 @@ CBC-Chain is a blockchain platform developed by Caerulean ByteChains Private Lim
 CBC-Chain is a next-generation blockchain platform designed for high-performance and secure decentralized applications. The platform features:
 
 1. **Hybrid Consensus Mechanism**
-   - Combined PoS and PoI consensus
-   - Dynamic Consensus Framework (DCF)
-   - Validator score management
-   - Epoch-based updates
+   - **Dynamic Consensus Framework (DCF)**: Core engine combining PoS and PoI
+   - **Validator Management**: On-chain validator set with rotation and scoring
+   - **Epoch-based Operation**: Time-based epochs for validator set updates
+   - **Finality Gadget**: Ensures transaction finality with configurable confirmations
+   - **Performance Metrics**: Built-in monitoring for consensus health and performance
 
 2. **Key Components**
-   - **cbc-node**: Blockchain node implementation
-   - **cbc-runtime**: Blockchain runtime
+   - **cbc-node**: Blockchain node implementation with built-in consensus
+   - **cbc-runtime**: Blockchain runtime with custom consensus logic
    - **cbc-pallets**: FRAME pallets for PoS, PoI, and DCF
-   - **tools**: Development and testing tools
+     - `pallet-cbc-poi`: Proof of Inference implementation
+     - `pallet-cbc-pos`: Proof of Stake implementation
+     - `pallet-cbc-dcf`: Dynamic Consensus Framework core
+   - **cbc-consensus**: Consensus engine implementation
+     - Validator selection and management
+     - Block production and finalization
+     - Epoch and reward management
 
 ## Project Structure
 
 ```
 CBC-Chain/
-├── cbc-node/              # Blockchain node implementation
-├── cbc-runtime/           # Blockchain runtime
-├── cbc-pallets/           # FRAME pallets
-│   ├── pallet-cbc-poi/    # Proof of Inference pallet
-│   ├── pallet-cbc-pos/    # Proof of Stake pallet
-│   └── pallet-cbc-dcf/    # Dynamic Consensus Framework pallet
-├── docs/                 # Project documentation
+├── cbc-node/                  # Blockchain node implementation
+│   └── src/
+│       └── cbc-consensus/     # Consensus engine implementation
+├── cbc-runtime/               # Blockchain runtime
+├── cbc-pallets/               # FRAME pallets
+│   ├── pallet-cbc-poi/        # Proof of Inference pallet
+│   ├── pallet-cbc-pos/        # Proof of Stake pallet
+│   └── pallet-cbc-dcf/        # Dynamic Consensus Framework pallet
+├── docs/                     # Project documentation
 ├── tools/                # Development tools
 ├── .github/              # GitHub workflows and configurations
 └── target/              # Build artifacts
@@ -79,6 +88,25 @@ CBC-Chain/
    - Validator management
    - Configuration updates
 
+## Consensus Mechanism
+
+The CBC-Chain implements a hybrid consensus mechanism that combines:
+
+### Proof of Stake (PoS)
+- Validator selection based on stake amount
+- Slashing conditions for misbehavior
+- Staking rewards and penalties
+
+### Proof of Inference (PoI)
+- Computational work verification
+- Model inference validation
+- Work difficulty adjustment
+
+### Dynamic Consensus Framework (DCF)
+- Combines PoS and PoI scores
+- Adaptive validator set management
+- Configurable consensus parameters
+
 ## Building the Project
 
 ### Prerequisites
@@ -126,26 +154,3 @@ Detailed documentation is available in the `docs` directory:
 - [PoS Pallet](docs/cbc-PoS.md)
 - [DCF Pallet](docs/dcf-pallet.md)
 
-## Support
-
-For support or questions about CBC-Chain, please contact:
-- GitHub Issues: https://github.com/CAERULEAN-BYTECHAINS-PRIVATE-LIMITED/CBC-Chain/issues
-- Documentation: https://github.com/CAERULEAN-BYTECHAINS-PRIVATE-LIMITED/CBC-Chain/tree/main/docs
-- Website: https://cbytechains.com/
-
-
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines before submitting pull requests.
-
-## Security
-
-If you discover a security vulnerability, please report it through our security policy.
-
-## Acknowledgments
-
-- Substrate framework
-- FRAME pallets
-- Rust development community
-- Caerulean ByteChains team

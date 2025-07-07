@@ -1,31 +1,111 @@
 # pallet-cbc-dcf
 
-The **Dynamic Consensus Framework (DCF)** pallet provides advanced validator management, scoring, and on-chain governance for the CBC-Chain. It enables dynamic validator sets, configurable consensus weights, and robust governance mechanisms for slashing, rewards, and ejection.
+The **Dynamic Consensus Framework (DCF)** pallet manages validators, scoring, and governance for the CBC-Chain using a hybrid PoS/PoI system.
 
 ## Key Features
 
-1. **Validator Scoring**
-   - Combined PoS and PoI scoring
-   - Dynamic score adjustments
-   - Score decay mechanism
-   - Block authorship tracking
+### Validator Management
+- Dynamic validator set with opt-in/out functionality
+- Dual scoring: Combines PoS (stake) and PoI (inference)
+- Comprehensive state tracking and statistics
+- Score adjustments with decay and boost mechanisms
 
-2. **Epoch Management**
-   - Automatic epoch transitions
-   - Validator activity tracking
-   - Score updates
-   - Historical tracking
+### Epoch System
+- Configurable epoch duration
+- Automatic validator set rotation
+- Historical data tracking (24 epochs)
+- Block production monitoring
 
-3. **Governance System**
-   - Proposal submission
-   - Voting mechanism
-   - Proposal execution
-   - Sudo controls
+### Governance
+- On-chain proposal system
+- Stake-weighted voting
+- Emergency governance mode
+- Validator management actions
+- **Slashing**: Penalize malicious behavior
+- **Ejection**: Remove underperforming validators
+- **Score Management**: Decay for inactivity, boosts for good performance
+- **Missed Block Handling**: Tracks and penalizes missed blocks
 
-4. **Security Features**
-   - Validator slashing
-   - Score penalties
-   - Ejection mechanism
+## Core Functionality
+
+### Validator Operations
+- Join/leave validator set
+- Update stake (PoS) and inference (PoI) scores
+- Track performance and participation
+
+### Governance
+- Submit and vote on proposals
+- Execute approved actions
+- Emergency governance controls
+- Validator management (slash/reward/eject)
+
+### Runtime API
+- Validator scores and states
+- Epoch information and configuration
+- Governance status
+- Historical data access
+
+## Integration
+
+The DCF pallet integrates with other CBC-Chain components:
+- `pallet-cbc-pos`: Proof of Stake functionality
+- `pallet-cbc-poi`: Proof of Inference scoring
+- `frame-system`: Core blockchain functionality
+
+## Development
+
+### Building
+
+```bash
+# Build with all features
+cargo build --release --features runtime-benchmarks
+```
+
+### Testing
+
+Run the test suite:
+```bash
+cargo test
+```
+
+### Benchmarking
+
+To generate weights and benchmarks:
+```bash
+cargo test --features runtime-benchmarks --bench benchmarking
+```
+
+## Storage
+
+### Key Storage
+- Validator states and statistics
+- Active validator set
+- Epoch configuration and history
+- Governance proposals and votes
+- Pending validator actions
+
+## Configuration
+
+### Main Parameters
+- Validator limits and thresholds
+- Score calculation weights
+- Governance controls
+- Epoch settings
+- Block production parameters
+
+## Security Considerations
+
+- **Validator Rotation**: The active validator set can change at epoch boundaries
+- **Score Manipulation**: The score decay mechanism prevents score inflation
+- **Governance Attacks**: The voting mechanism is protected by stake weighting
+- **Front-running**: Critical operations are protected against front-running
+
+## Future Improvements
+
+- On-chain parameter adjustment through governance
+- More sophisticated score calculation algorithms
+- Enhanced validator set selection mechanisms
+- Cross-chain governance capabilities
    - Governance mode
 
 ## Configuration Parameters
@@ -67,54 +147,40 @@ pub type EpochHistory<T: Config> = StorageValue<_, BoundedVec<EpochHistory<T>, C
 
 ## Events
 
-```rust
-#[pallet::event]
-pub enum Event<T: Config> {
-    ValidatorScoreUpdated { validator: T::AccountId, score: u64 },
-    ValidatorScoreBoosted { validator: T::AccountId, amount: u64, reason: ScoreBoostReason },
-    ValidatorScoreDecayed { validator: T::AccountId, amount: u64 },
-    EpochStarted { epoch: u32 },
-    ValidatorEjected { validator: T::AccountId, reason: EjectionReason },
-    ValidatorReEntered { validator: T::AccountId },
-    ProposalSubmitted { proposal_id: u32, proposer: T::AccountId },
-    ProposalVoted { proposal_id: u32, voter: T::AccountId, approve: bool },
-    ProposalExecuted { proposal_id: u32 },
-    ProposalPassed { proposal_id: u32 },
-    ProposalRejected { proposal_id: u32 },
-    GovernanceModeToggled { enabled: bool },
-    ValidatorJoined { validator: T::AccountId },
-    ValidatorLeft { validator: T::AccountId },
-}
-```
+### Validator Events
+- Score updates and adjustments
+- Epoch transitions
+- Validator status changes (ejected/re-entered)
+- Invalid block detection
 
-## Errors
+### Governance Events
+- Proposal submission and voting
+- Governance mode changes
+- Proposal execution results
 
-```rust
-#[pallet::error]
-pub enum Error<T> {
-    ValidatorNotFound,
-    InvalidWeight,
-    InvalidEpochConfig,
-    NotEnoughValidators,
-    NotAllowedInGovernanceMode,
-    NotValidator,
-    AlreadyVoted,
-    ProposalNotApproved,
-    ProposalAlreadyExecuted,
-    ScoreTooLow,
-    ValidatorInactive,
-    InvalidScoreBoost,
-    InvalidEjectionReason,
-    InvalidInferenceError,
-    EpochTransitionFailed,
-}
-```
+## Error Cases
+
+### Validation Errors
+- Validator not found
+- Invalid configurations
+- Insufficient validators
+
+### Governance Errors
+- Unauthorized actions
+- Invalid proposals
+- Voting violations
+
+### System Errors
+- Epoch transition failures
+- State inconsistencies
+- Invalid operations
 
 ## Dispatchable Functions
 
 ### Validator Management
 ```rust
 pub fn join_validator_set(origin: OriginFor<T>) -> DispatchResult
+{{ ... }}
 pub fn leave_validator_set(origin: OriginFor<T>) -> DispatchResult
 ```
 

@@ -1,6 +1,6 @@
 # CBC Runtime
 
-The CBC Runtime is the core blockchain implementation for the CBC (Cerulean Blockchain Chain) network. It implements a unique consensus mechanism combining Proof of Stake (PoS) and Proof of Inference (PoI) through the Dynamic Consensus Framework (DCF).
+The CBC Runtime is the core blockchain implementation for the CBC (Caerulean ByteChains). It implements a unique consensus mechanism combining Proof of Stake (PoS) and Proof of Inference (PoI) through the Dynamic Consensus Framework (DCF).
 
 ## Project Structure
 
@@ -12,6 +12,9 @@ cbc-runtime/
 │   ├── apis.rs        # Runtime APIs exposed to the outside world
 │   ├── benchmarks.rs  # Runtime benchmarking logic
 │   ├── configs/       # Runtime configuration files
+│   │   ├── constants.rs  # Runtime constants and parameters
+│   │   ├── mod.rs     # Configuration module definitions
+│   │   └── weights.rs # Weight calculations for extrinsics
 │   ├── genesis_config_presets.rs # Genesis block configuration presets
 │   └── lib.rs         # Main runtime implementation
 └── README.md          # This file
@@ -94,8 +97,7 @@ cbc-runtime/
 
 ## Building the Runtime
 
-To build the runtime:
-
+### Basic Build
 ```bash
 # Build native runtime
 cargo build
@@ -104,13 +106,41 @@ cargo build
 cargo build --release --target wasm32-unknown-unknown
 ```
 
+### Feature Flags
+
+- `runtime-benchmarks`: Enables runtime benchmarking
+  ```bash
+  cargo build --features runtime-benchmarks
+  ```
+
+- `try-runtime`: Enables try-runtime for testing upgrades
+  ```bash
+  cargo build --features try-runtime
+  ```
+
+- `on-chain-release-build`: Prepares runtime for on-chain release
+  ```bash
+  cargo build --features on-chain-release-build
+  ```
+
+### WASM Build with All Features
+```bash
+cargo build --release --features runtime-benchmarks,try-runtime --target wasm32-unknown-unknown
+```
+
 ## Runtime Version
 
-Current runtime version:
-- Spec Version: 100
-- Impl Version: 1
-- Transaction Version: 1
-- System Version: 1
+The runtime version is defined in `src/lib.rs`. To check the current version:
+
+```bash
+grep -A 5 "pub const VERSION" src/lib.rs
+```
+
+Or build the node and check the version:
+
+```bash
+cargo run -- --version
+```
 
 ## Block Parameters
 
@@ -128,6 +158,9 @@ Current runtime version:
 
 ## Pallets
 
+The runtime includes the following pallets:
+
+### Core Pallets
 1. **System (`frame_system`)**
    - Basic blockchain system management
    - Accounts, transactions, block execution
@@ -144,25 +177,31 @@ Current runtime version:
 4. **Transaction Payment (`pallet_transaction_payment`)**
    - Transaction fee handling
    - Weight-based fee calculation
+   - RPC API for fee queries
 
 5. **Sudo (`pallet_sudo`)**
    - Administrative operations
    - Runtime upgrades
+   - Emergency interventions
 
+### Custom Pallets
 6. **Pallet-cbc-PoI**
    - Proof of Inference implementation
    - Inference result management
    - Challenge handling
+   - On-chain verification
 
 7. **Pallet-cbc-PoS**
    - Proof of Stake implementation
    - Validator stake management
    - Score tracking
+   - Epoch-based rewards
 
 8. **Pallet-cbc-Dcf**
    - Dynamic Consensus Framework
    - Combined PoS/PoI scoring
    - Governance mechanisms
+   - Consensus parameter adjustments
 
 ## Security Considerations
 
@@ -172,17 +211,28 @@ Current runtime version:
 4. **Consensus Security**: Combined PoS/PoI mechanism
 5. **Key Management**: Secure ed25519 keys
 
-## Future Enhancements
+## Development
 
-1. **Runtime Upgrades**: Support for runtime versioning
-2. **Consensus Improvements**: Additional mechanisms
-3. **Transaction Processing**: Enhanced validation
-4. **API Expansion**: Additional runtime APIs
-5. **Configuration**: More flexible options
+### Testing
 
-## Support
+Run tests with:
+```bash
+cargo test
+```
 
-For support or questions about the CBC Runtime, please contact:
-- GitHub Issues: https://github.com/CAERULEAN-BYTECHAINS-PRIVATE-LIMITED/CBC-Chain/issues
-- Documentation: https://github.com/CAERULEAN-BYTECHAINS-PRIVATE-LIMITED/CBC-Chain/tree/main/docs
+### Benchmarking
+
+To run benchmarks:
+```bash
+cargo test --features runtime-benchmarks --bench benchmarking
+```
+
+### Try Runtime
+
+For testing runtime upgrades:
+```bash
+cargo test --features try-runtime
+```
+
+
 
