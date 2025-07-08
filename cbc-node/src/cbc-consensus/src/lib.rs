@@ -1,31 +1,4 @@
-//! CBC Consensus Library
-//!
-//! This library provides the consensus mechanism for the CBC blockchain,
-//! implementing a decentralized consensus framework that combines Proof of Stake
-//! and Proof of Inference.
-//!
-//! # Overview
-//!
-//! The consensus system is composed of several key components:
-//!
-//! - Core consensus engine (DCF)
-//! - Validator management and selection
-//! - Block production and import
-//! - Epoch management
-//! - Finality tracking
-//! - Metrics collection
-//!
-//! # Usage
-//!
-//! ```rust
-//! use cbc_consensus::{
-//!     DcfConsensus,
-//!     DcfConfig,
-//!     ValidatorSet,
-//!     EpochManager,
-//! };
-//! ```
-
+//! CBC Consensus Engine
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs)]
 
