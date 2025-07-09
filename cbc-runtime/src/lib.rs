@@ -13,7 +13,7 @@ pub mod apis; // Runtime APIs exposed to the outside world.
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks; // Benchmarking logic for runtime performance.
 pub mod configs; // Configuration settings for the runtime.
-
+pub mod types;
 extern crate alloc; // Import the `alloc` crate for heap-allocated data structures in `no_std` environments.
 use alloc::vec::Vec; // Import the `Vec` type for dynamic arrays.
 

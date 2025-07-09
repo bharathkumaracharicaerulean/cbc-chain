@@ -60,6 +60,7 @@ use super::{
 
 // Add these lines for pallet aliases
 use crate::{PalletCbcPos, PalletCbcPoi};
+use crate::types::{ValidatorProfile, InferenceResult, ValidatorStatus, InferenceStatus};
 
 // Begin API Implementations
 impl_runtime_apis! {
@@ -310,16 +311,42 @@ impl_runtime_apis! {
 
 	// Custom CBC API - CBC Chain specific functionality
 	impl crate::apis::CbcCustomApi<Block> for Runtime {
-		/// Retrieves validator profile information including score and slashing history
-		fn get_validator_profile(account: AccountId) -> ValidatorProfile {
+		/// Retrieves validator profile information including account_id, score, uptime, display_name, inference_count, and status
+		fn get_validator_profile(account: AccountId) -> ValidatorProfile<AccountId> {
+			let is_validator = PalletCbcPos::validators(&account).is_some();
+			let slashing_count = PalletCbcPos::slashing_count(&account).unwrap_or(0);
+			let status = if slashing_count > 0 {
+				ValidatorStatus::Slashed
+			} else if is_validator {
+				ValidatorStatus::Active
+			} else {
+				ValidatorStatus::Inactive
+			};
 			ValidatorProfile {
+				account_id: account.clone(),
 				score: PalletCbcPos::validator_scores(&account),
-				slashing_count: PalletCbcPos::slashing_count(&account),
+				uptime: None, // TODO: Track and store uptime in pallet-cbc-pos
+				display_name: None, // TODO: Add display_name storage to pallet-cbc-pos
+				inference_count: None, // TODO: Count inferences in pallet-cbc-poi or pos
+				status,
 			}
 		}
 		/// Retrieves inference result for a given account from the POI pallet
-		fn get_inference_result(account: AccountId) -> Option<u32> {
-			PalletCbcPoi::inference_results(&account)
+		fn get_inference_result(account: AccountId) -> Option<InferenceResult> {
+			let accuracy = PalletCbcPoi::inference_results(&account);
+			let submitted = accuracy.is_some();
+			// TODO: If challenged, set to Rejected; otherwise, Verified or Pending. Requires challenge tracking.
+			let status = if submitted {
+				InferenceStatus::Verified // Placeholder: add challenge logic for real status
+			} else {
+				InferenceStatus::Pending
+			};
+			Some(InferenceResult {
+				submitted,
+				accuracy,
+				status,
+				last_submission_block: None, // TODO: Track last submission block in pallet-cbc-poi
+			})
 		}
 		/// Returns the current epoch from the POS pallet
 		fn get_current_epoch() -> u32 {
@@ -335,26 +362,16 @@ impl_runtime_apis! {
 
 // --- Custom Runtime APIs ---
 
-/// Validator profile information returned by get_validator_profile.
-/// Contains score and slashing count information for a validator.
-#[derive(codec::Encode, codec::Decode, scale_info::TypeInfo, Clone, PartialEq, Eq, Debug)]
-pub struct ValidatorProfile {
-	/// The validator's current score (if available)
-	pub score: Option<u32>,
-	/// The number of times the validator has been slashed
-	pub slashing_count: Option<u32>,
-}
-
 /// Custom runtime API trait for CBC Chain specific functionality.
 /// This trait defines the interface for CBC-specific runtime operations.
 sp_api::decl_runtime_apis! {
 	pub trait CbcCustomApi {
 		/// Get the validator profile for a given account.
-		/// Returns score and slashing count information.
-		fn get_validator_profile(account: AccountId) -> ValidatorProfile;
+		/// Returns profile information including account_id, score, uptime, display_name, inference_count, and status.
+		fn get_validator_profile(account: AccountId) -> ValidatorProfile<AccountId>;
 		/// Get the inference result for a given account from the POI pallet.
 		/// Returns None if no inference result is available.
-		fn get_inference_result(account: AccountId) -> Option<u32>;
+		fn get_inference_result(account: AccountId) -> Option<InferenceResult>;
 		/// Get the current epoch from the POS pallet.
 		/// Used for epoch-based operations and time tracking.
 		fn get_current_epoch() -> u32;

@@ -37,6 +37,7 @@ pallet-transaction-payment-rpc-runtime-api.workspace = true                     
 pallet-transaction-payment.workspace = true                                      # Transaction fee pallet
 scale-info = { features = ["derive", "serde"], workspace = true }                # Type metadata generation with serde
 serde_json = { workspace = true, default-features = false, features = ["alloc"] }# JSON support with alloc only
+sp-std = { version = "6.0.0", default-features = false }
 
 # Substrate primitives and runtime libraries
 sp-api.workspace = true                                                          # Substrate runtime API interface
