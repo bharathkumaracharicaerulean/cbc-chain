@@ -36,6 +36,8 @@ fn testnet_genesis(
 		},
 		// Assign the sudo (root) key to the provided account
 		sudo: SudoConfig { key: Some(root) },
+		system: frame_system::GenesisConfig::default(),
+		transaction_payment: pallet_transaction_payment::GenesisConfig::default(),
 		// Configure initial validators
 		pallet_cbc_pos: pallet_cbc_pos::GenesisConfig {
 			validators: initial_validators.clone(),
