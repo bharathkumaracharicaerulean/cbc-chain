@@ -38,7 +38,16 @@ fn testnet_genesis(
 		sudo: SudoConfig { key: Some(root) },
 		system: frame_system::GenesisConfig::default(),
 		transaction_payment: pallet_transaction_payment::GenesisConfig::default(),
-		dcf: pallet_cbc_dcf::GenesisConfig::default(),
+		dcf: pallet_cbc_dcf::GenesisConfig {
+			validators: initial_validators.clone(),
+			validator_scores: validator_scores.clone(),
+			current_epoch: 0,
+			epoch_config: pallet_cbc_dcf::EpochConfig {
+				blocks_per_epoch: 10,      
+				min_stake: 1,              
+				max_validators: 24,        
+			},
+		},
 		// Configure initial validators
 		pallet_cbc_pos: pallet_cbc_pos::GenesisConfig {
 			validators: initial_validators.clone(),

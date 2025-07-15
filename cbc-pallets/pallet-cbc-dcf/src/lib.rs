@@ -131,6 +131,7 @@ pub mod pallet {
 
     /// Configuration for epochs (block count, min stake, max validators).
     #[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, Default, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct EpochConfig {
         pub blocks_per_epoch: u32,
         pub min_stake: u128,
