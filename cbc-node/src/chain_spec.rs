@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 use sc_service::ChainType; // Import the ChainType enum to specify the type of blockchain (e.g., Development, Local, etc.)
 use cbc_runtime::WASM_BINARY; // Import the WASM binary for the runtime, which is required to build the chain specification.
 
@@ -48,6 +49,38 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
         .with_chain_type(ChainType::Local) // Specify that this is a local testnet chain.
         .with_genesis_config_preset_name(sp_genesis_builder::LOCAL_TESTNET_RUNTIME_PRESET) // Use the local testnet runtime preset for the genesis configuration.
         .build() // Build and return the chain specification.
+=======
+use sc_service::ChainType;
+use cbc_runtime::WASM_BINARY;
+
+pub type ChainSpec = sc_service::GenericChainSpec;
+
+pub fn development_chain_spec() -> Result<ChainSpec, String> {
+    Ok(
+        ChainSpec::builder(
+            WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
+            None,
+        )
+        .with_name("CBC-CHAIN")
+        .with_id("CBC")
+        .with_chain_type(ChainType::Development)
+        .with_genesis_config_preset_name(sp_genesis_builder::DEV_RUNTIME_PRESET)
+        .build()
+    )
+}
+
+pub fn local_chain_spec() -> Result<ChainSpec, String> {
+    Ok(
+        ChainSpec::builder(
+            WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
+            None,
+        )
+        .with_name("Local Testnet")
+        .with_id("local_testnet")
+        .with_chain_type(ChainType::Local)
+        .with_genesis_config_preset_name(sp_genesis_builder::LOCAL_TESTNET_RUNTIME_PRESET)
+        .build()
+>>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
     )
 }
 
@@ -60,6 +93,7 @@ pub fn bob_sudo_chain_spec() -> Result<ChainSpec, String> {
         .with_name("Bob Sudo Chain")
         .with_id("bob_sudo")
         .with_chain_type(ChainType::Development)
+<<<<<<< HEAD
         .with_genesis_config_preset_name("bob_sudo") // Use custom preset
         .build()
     )
@@ -376,3 +410,9 @@ pub fn bob_sudo_chain_spec() -> Result<ChainSpec, String> {
 //  *      $ ./target/release/cbc-node --chain=chain-spec-raw.json --port 30334 --ws-port 9945 \
 //  *        --bootnodes /ip4/127.0.0.1/tcp/30333/p2p/FIRST_NODE_PEER_ID
 //  */
+=======
+        .with_genesis_config_preset_name("bob_sudo")
+        .build()
+    )
+}
+>>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc

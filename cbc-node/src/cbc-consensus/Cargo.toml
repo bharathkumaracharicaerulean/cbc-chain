@@ -1,0 +1,59 @@
+[package]
+name = "cbc-consensus"
+version = "0.1.0"
+edition = "2021"
+authors = ["CBC Team"]
+description = "Consensus mechanism for CBC blockchain"
+
+[dependencies]
+codec = { features = ["derive", "std"], workspace = true }
+frame-benchmarking = { optional = true, features = ["std"], workspace = true }
+frame-support = { features = ["std"], workspace = true }
+frame-system = { features = ["std"], workspace = true }
+scale-info = { features = ["derive", "std"], workspace = true }
+sp-std = { features = ["std"], workspace = true }
+sp-core = { features = ["std"], workspace = true }
+sp-runtime = { features = ["std"], workspace = true }
+sp-api = { features = ["std"], workspace = true }
+sp-blockchain = { workspace = true }
+sp-consensus = { workspace = true }
+sp-inherents = { features = ["std"], workspace = true }
+sc-consensus = { workspace = true, default-features = true }
+serde = { workspace = true, features = ["derive", "std"] }
+cbc-runtime = { features = ["std"], workspace = true }
+tokio = { version = "1.37", features = ["rt", "macros", "time"] }
+log = "0.4"
+thiserror = "1.0"
+async-trait = "0.1"
+pallet-cbc-dcf = { workspace = true }
+
+
+[dev-dependencies]
+sp-core = { default-features = true, workspace = true }
+sp-io = { default-features = true, workspace = true }
+sp-runtime = { default-features = true, workspace = true }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"frame-benchmarking?/std",
+	"frame-support/std",
+	"frame-system/std",
+	"scale-info/std",
+	"sp-std/std",
+	"sp-core/std",
+	"sp-runtime/std",
+	"sp-api/std"
+]
+runtime-benchmarks = [
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
+]
+try-runtime = [
+	"frame-support/try-runtime",
+	"frame-system/try-runtime",
+	"sp-runtime/try-runtime",
+]

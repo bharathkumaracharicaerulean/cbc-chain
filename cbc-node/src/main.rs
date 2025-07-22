@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 //! CBC Node Template CLI library.
 //!
 //! This file acts as the main entry point for the CBC node's command-line interface.
@@ -17,10 +18,21 @@ mod cli;          // CLI argument parsing using StructOpt or clap
 mod command;      // Command execution logic — this is where the `run()` function lives
 mod rpc;          // RPC configuration and endpoint setup (used if custom RPCs are defined)
 mod service;      // Node service construction (e.g., partial and full service builders)
+=======
+
+
+mod benchmarking;
+mod chain_spec;
+mod cli;
+mod command;
+mod rpc;
+mod service;
+>>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 
 use clap::Parser;
 use std::path::PathBuf;
 
+<<<<<<< HEAD
 /// The entry point of the application.
 /// This function is executed when you run the binary (e.g., `./cbc-node --help`)
 fn main() -> sc_cli::Result<()> {
@@ -28,6 +40,11 @@ fn main() -> sc_cli::Result<()> {
     let cli = cli::Cli::parse();
 
     // Create log directory if specified
+=======
+fn main() -> sc_cli::Result<()> {
+    let cli = cli::Cli::parse();
+
+>>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
     if let Some(log_file) = &cli.log_file {
         let log_path = PathBuf::from(log_file);
         if let Some(parent) = log_path.parent() {
@@ -35,6 +52,11 @@ fn main() -> sc_cli::Result<()> {
         }
     }
 
+<<<<<<< HEAD
     // Execute the command - Substrate will handle logger initialization
     command::run()
 }
+=======
+    command::run()
+}
+>>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
