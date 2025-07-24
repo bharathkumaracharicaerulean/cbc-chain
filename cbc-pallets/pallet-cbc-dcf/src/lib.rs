@@ -385,6 +385,7 @@ pub mod pallet {
         ProposalRejected { proposal_id: u32 },
         ValidatorJoined { validator: T::AccountId },
         ValidatorLeft { validator: T::AccountId },
+        ValidatorsDebug(Vec<T::AccountId>),
     }
 
     // --- Errors --- //
