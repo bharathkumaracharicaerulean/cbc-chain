@@ -60,12 +60,18 @@ use sp_runtime::{
     traits::{SaturatedConversion, AtLeast32BitUnsigned},
     DigestItem,
     codec, 
+    offchain::{
+        storage::StorageValueRef,
+        storage_lock::{StorageLock, BlockAndTime},
+        Duration,
+    },
 };
 use sp_std::prelude::*;
 use sp_std::fmt; 
 use pallet_cbc_pos as pos;
 use pallet_cbc_poi as poi;
 use serde::{Serialize, Deserialize};
+use sp_runtime::traits::Zero;
 
 // --- Runtime API Declarations --- //
 // These APIs are exposed to the runtime for querying validator and consensus state.
@@ -316,6 +322,26 @@ pub mod pallet {
     pub enum ValidatorAction {
         Join,
         Leave,
+    }
+
+    /// Data structure for inference data collected by off-chain workers
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo)]
+    pub struct InferenceData<T: Config> {
+        pub validator: T::AccountId,
+        pub epoch: u32,
+        pub inference_result: u32,
+        pub confidence_score: u32,
+        pub timestamp: u64,
+        pub data_sources: Vec<Vec<u8>>,
+    }
+
+    /// Off-chain storage structure for PoI scores
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo)]
+    pub struct OffchainPoiScore<T: Config> {
+        pub validator: T::AccountId,
+        pub score: u64,
+        pub block_number: u32,
+        pub timestamp: u64,
     }
 
     /// Stores recent epoch histories in a ring buffer.
@@ -1048,6 +1074,178 @@ pub mod pallet {
                 let _ = Self::update_final_score(validator);
             }
         }
+
+        /// Off-chain worker for automatic PoI score computation and submission
+        fn offchain_worker(block_number: BlockNumberFor<T>) {
+            log::info!("DCF off-chain worker starting at block {:?}", block_number);
+            
+            // Run off-chain worker every 5 blocks to reduce overhead
+            if (block_number.saturated_into::<u32>()) % 5 != 0 {
+                return;
+            }
+
+            let result = Self::run_offchain_computation(block_number);
+            if let Err(e) = result {
+                log::error!("Off-chain worker error: {:?}", e);
+            }
+        }
+    }
+
+    // --- Off-chain Worker Implementation --- //
+    impl<T: Config> Pallet<T> {
+        /// Run off-chain computation for PoI score collection and submission
+        fn run_offchain_computation(block_number: BlockNumberFor<T>) -> Result<(), &'static str> {
+            // Create a lock to prevent multiple workers from running simultaneously
+            let mut lock = StorageLock::<BlockAndTime<frame_system::Pallet<T>>>::with_block_and_time_deadline(
+                b"dcf::offchain_worker",
+                block_number.saturated_into::<u32>(),
+                Duration::from_millis(30000), // 30 second timeout
+            );
+
+            let _guard = lock.try_lock().map_err(|_| "Failed to acquire lock")?;
+
+            log::info!("DCF off-chain worker acquired lock, starting computation");
+
+            // Get current validators
+            let validators = Self::validator_set();
+            let current_epoch = Self::current_epoch();
+
+            for validator in validators.iter() {
+                // Collect inference data for this validator
+                if let Ok(inference_data) = Self::collect_inference_data(validator, current_epoch) {
+                    // Compute PoI score based on collected data
+                    let poi_score = Self::compute_poi_score(&inference_data);
+                    
+                    // Submit unsigned transaction to update the score
+                    if let Err(e) = Self::submit_poi_score_update(validator.clone(), poi_score, block_number) {
+                        log::error!("Failed to submit PoI score update for {:?}: {:?}", validator, e);
+                    }
+                }
+            }
+
+            log::info!("DCF off-chain worker completed computation");
+            Ok(())
+        }
+
+        /// Collect inference data for a validator from external sources
+        fn collect_inference_data(
+            validator: &T::AccountId,
+            epoch: u32,
+        ) -> Result<InferenceData<T>, &'static str> {
+            // Check if we have cached inference results from PoI pallet
+            if let Some((result, confidence)) = poi::Pallet::<T>::inference_results(validator) {
+                return Ok(InferenceData {
+                    validator: validator.clone(),
+                    epoch,
+                    inference_result: result,
+                    confidence_score: confidence,
+                    timestamp: Self::get_current_timestamp(),
+                    data_sources: vec![b"poi_pallet".to_vec()],
+                });
+            }
+
+            // Try to collect from external inference endpoints
+            Self::collect_from_external_sources(validator, epoch)
+        }
+
+        /// Collect inference data from external sources via HTTP requests
+        fn collect_from_external_sources(
+            validator: &T::AccountId,
+            epoch: u32,
+        ) -> Result<InferenceData<T>, &'static str> {
+            // This is a placeholder for external data collection
+            // In a real implementation, you would make HTTP requests to inference providers
+            
+            // For now, we'll simulate inference data collection
+            let simulated_result = Self::simulate_inference_computation(validator, epoch);
+            
+            Ok(InferenceData {
+                validator: validator.clone(),
+                epoch,
+                inference_result: simulated_result.0,
+                confidence_score: simulated_result.1,
+                timestamp: Self::get_current_timestamp(),
+                data_sources: vec![b"simulation".to_vec()],
+            })
+        }
+
+        /// Simulate inference computation (placeholder for real implementation)
+        fn simulate_inference_computation(validator: &T::AccountId, epoch: u32) -> (u32, u32) {
+            // Use validator account and epoch to generate deterministic but varied results
+            let validator_bytes = validator.encode();
+            let mut hash_input = validator_bytes;
+            hash_input.extend_from_slice(&epoch.to_le_bytes());
+            
+            // Simple hash-based simulation
+            let hash = sp_core::hashing::blake2_256(&hash_input);
+            let result = u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]]) % 100;
+            let confidence = 70 + (u32::from_le_bytes([hash[4], hash[5], hash[6], hash[7]]) % 30);
+            
+            (result, confidence)
+        }
+
+        /// Compute PoI score based on inference data
+        fn compute_poi_score(data: &InferenceData<T>) -> u64 {
+            let base_score = data.inference_result as u64;
+            let confidence_multiplier = data.confidence_score as u64;
+            
+            // Apply confidence weighting: higher confidence = higher score
+            let weighted_score = (base_score * confidence_multiplier) / 100;
+            
+            // Cap the score at maximum allowed
+            weighted_score.min(<T as Config>::MaxValidatorScore::get())
+        }
+
+        /// Submit unsigned transaction to update PoI score
+        fn submit_poi_score_update(
+            validator: T::AccountId,
+            poi_score: u64,
+            block_number: BlockNumberFor<T>,
+        ) -> Result<(), &'static str> {
+            // Create the call to update validator inference score
+            let _call: Call<T> = Call::update_validator_inference_score { validator: validator.clone() };
+            
+            // In a real implementation, you would submit this as an unsigned transaction
+            // For now, we'll just log the intended update
+            log::info!(
+                "Would submit PoI score update: validator={:?}, score={}, block={}",
+                validator,
+                poi_score,
+                block_number.saturated_into::<u32>()
+            );
+            
+            // Store the computed score in off-chain storage for later retrieval
+            Self::store_offchain_poi_score(&validator, poi_score, block_number)?;
+            
+            Ok(())
+        }
+
+        /// Store computed PoI score in off-chain storage
+        fn store_offchain_poi_score(
+            validator: &T::AccountId,
+            score: u64,
+            block_number: BlockNumberFor<T>,
+        ) -> Result<(), &'static str> {
+            let key = format!("dcf::poi_score::{:?}::{}", validator, block_number.saturated_into::<u32>());
+            let storage_ref = StorageValueRef::persistent(key.as_bytes());
+            
+            let score_data: OffchainPoiScore<T> = OffchainPoiScore {
+                validator: validator.clone(),
+                score,
+                block_number: block_number.saturated_into::<u32>(),
+                timestamp: Self::get_current_timestamp(),
+            };
+            
+            storage_ref.set(&score_data);
+            Ok(())
+        }
+
+        /// Get current timestamp (placeholder implementation)
+        fn get_current_timestamp() -> u64 {
+            // In a real implementation, you would get the actual timestamp
+            // For now, return a placeholder
+            0
+        }
     }
 
     // --- Genesis Configuration --- //
@@ -1226,6 +1424,26 @@ pub enum InferenceErrorSeverity {
     High,   // Major error, significant impact
     Medium, // Moderate error
     Low,    // Minor error
+}
+
+/// Data structure for inference data collected off-chain
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug)]
+pub struct InferenceData<T: Config> {
+    pub validator: T::AccountId,
+    pub epoch: u32,
+    pub inference_result: u32,
+    pub confidence_score: u32,
+    pub timestamp: u64,
+    pub data_sources: Vec<Vec<u8>>,
+}
+
+/// Off-chain storage structure for PoI scores
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug)]
+pub struct OffchainPoiScore<T: Config> {
+    pub validator: T::AccountId,
+    pub score: u64,
+    pub block_number: u32,
+    pub timestamp: u64,
 }
 
 
