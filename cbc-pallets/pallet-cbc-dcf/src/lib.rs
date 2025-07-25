@@ -72,7 +72,7 @@ use pallet_cbc_pos as pos;
 use pallet_cbc_poi as poi;
 use serde::{Serialize, Deserialize};
 use sp_runtime::traits::Zero;
-
+use scale_info::prelude::format;
 // --- Runtime API Declarations --- //
 // These APIs are exposed to the runtime for querying validator and consensus state.
 sp_api::decl_runtime_apis! {
