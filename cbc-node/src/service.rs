@@ -6,12 +6,13 @@ use sc_telemetry::TelemetryWorker;
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use cbc_runtime::{self, apis::RuntimeApi, opaque::Block};
 use std::{sync::Arc};
-use cbc_consensus::{DcfConsensus, ConsensusParams, AuthorSelectionMode};
+use crate::service::cbc_runtime::Dcf;
 use sc_consensus::import_queue::{ImportQueueService, Link};
 use std::pin::Pin;
 use std::future::Future;
 use sp_core::sr25519::Pair;
 use sp_consensus::BlockOrigin;
+use cbc_consensus::{DcfConsensus, ConsensusParams, AuthorSelectionMode};
 
 pub struct DummyImportQueue;
 impl<B: sp_runtime::traits::Block> sc_service::ImportQueue<B> for DummyImportQueue {
@@ -191,6 +192,9 @@ where
         );
     }
 
+
+    // --- Start DCF Consensus Service ---
+    // Create and start the DCF consensus engine using the pallet_cbc_dcf::Dcf struct
     let consensus_params = ConsensusParams {
         author_selection_mode: AuthorSelectionMode::RoundRobin,
         finality_threshold: 10,
