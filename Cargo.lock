@@ -1248,6 +1248,7 @@ dependencies = [
  "jsonrpsee",
  "jsonrpsee-core 0.25.1",
  "jsonrpsee-http-server",
+ "log",
  "pallet-cbc-dcf",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc",
@@ -1280,6 +1281,7 @@ dependencies = [
  "sp-timestamp",
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
+ "tokio",
 ]
 
 [[package]]
@@ -6253,8 +6255,10 @@ dependencies = [
  "frame-support",
  "frame-system",
  "log",
+ "pallet-balances",
  "pallet-cbc-poi",
  "pallet-cbc-pos",
+ "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
  "serde",

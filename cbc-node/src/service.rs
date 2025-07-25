@@ -4,7 +4,7 @@ use sc_client_api::Backend;
 use sc_service::{error::Error as ServiceError, Configuration, TaskManager};
 use sc_telemetry::TelemetryWorker;
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
-use cbc_runtime::{self, apis::RuntimeApi, opaque::Block, Dcf};
+use cbc_runtime::{self, apis::RuntimeApi, opaque::Block};
 use std::{sync::Arc};
 use sc_consensus::import_queue::{ImportQueueService, Link};
 use std::pin::Pin;
@@ -12,6 +12,9 @@ use std::future::Future;
 use sp_core::sr25519::Pair;
 use sp_consensus::BlockOrigin;
 use cbc_consensus::{DcfConsensus, ConsensusParams, AuthorSelectionMode};
+use sp_api::ProvideRuntimeApi;
+use sp_blockchain::HeaderBackend;
+use pallet_cbc_dcf::DcfApi;
 
 pub struct DummyImportQueue;
 impl<B: sp_runtime::traits::Block> sc_service::ImportQueue<B> for DummyImportQueue {
@@ -193,7 +196,7 @@ where
 
 
     // --- Start DCF Consensus Service ---
-    // Create and start the DCF consensus engine using the pallet_cbc_dcf::Dcf struct
+    // Create and start the DCF consensus engine integrated with the runtime
     let consensus_params = ConsensusParams {
         author_selection_mode: AuthorSelectionMode::RoundRobin,
         finality_threshold: 10,
@@ -201,14 +204,49 @@ where
         max_block_size: 2 * 1024 * 1024,
         max_transactions_per_block: 1000,
     };
+    
+    // Create DCF block import that validates blocks against runtime
+    let dcf_block_import = cbc_consensus::DcfBlockImport::new(client.clone());
+    
+    // Start the consensus engine with proper runtime integration
     let client_for_consensus = client.clone();
+    let keystore_for_consensus = keystore_container.keystore();
+    
     task_manager.spawn_essential_handle().spawn_blocking(
         "dcf-consensus",
         None,
         async move {
+            // Initialize DCF consensus with runtime integration
             let mut dcf = DcfConsensus::<_, _, Pair>::new(client_for_consensus, consensus_params);
+            
+            // Start the consensus engine
             dcf.run().await;
+            log::info!("DCF consensus engine completed");
         },
+    );
+    
+    // Start DCF epoch management service
+    let client_for_epoch = client.clone();
+    task_manager.spawn_essential_handle().spawn(
+        "dcf-epoch-manager",
+        None,
+        async move {
+            loop {
+                // Check if epoch transition is needed every 30 seconds
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                
+                let api = client_for_epoch.runtime_api();
+                let best_hash = client_for_epoch.info().best_hash;
+                
+                // Get current epoch and check if transition is needed
+                if let Ok(current_epoch) = api.get_current_epoch(best_hash) {
+                    log::debug!("Current DCF epoch: {}", current_epoch);
+                    
+                    // In a real implementation, you would check block numbers and trigger
+                    // epoch transitions through extrinsics when needed
+                }
+            }
+        }.boxed(),
     );
 
     let rpc_extensions_builder = {

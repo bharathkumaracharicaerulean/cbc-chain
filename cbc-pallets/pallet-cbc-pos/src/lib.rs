@@ -15,6 +15,7 @@ mod tests;
 mod benchmarking;
 
 use sp_std::prelude::*;
+use sp_runtime::traits::Saturating;
 
 // Runtime API declaration
 sp_api::decl_runtime_apis! {
@@ -179,7 +180,7 @@ pub mod pallet {
 
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::slash_validator())]
-        pub fn slash_validator(origin: OriginFor<T>, validator: T::AccountId) -> DispatchResult {
+        pub fn slash_validator_call(origin: OriginFor<T>, validator: T::AccountId) -> DispatchResult {
             let _who = ensure_signed(origin)?;
             ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
             
@@ -266,6 +267,72 @@ pub mod pallet {
 
             Self::deposit_event(Event::ScoreSubmitted { validator, score: new_score });
             Ok(())
+        }
+    }
+
+    // Implementation of helper functions for DCF integration
+    impl<T: Config> Pallet<T> {
+        /// Slash a validator's stake by a specific amount
+        pub fn slash_validator(validator: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
+            ensure!(Validators::<T>::contains_key(validator), Error::<T>::ValidatorNotRegistered);
+            
+            let current_stake = Stake::<T>::get(validator);
+            let new_stake = current_stake.saturating_sub(amount);
+            
+            // Update stake
+            Stake::<T>::insert(validator, new_stake);
+            
+            // Increment slashing count
+            let count = SlashingCount::<T>::get(validator).unwrap_or(0) + 1;
+            SlashingCount::<T>::insert(validator, count);
+            
+            Self::deposit_event(Event::ValidatorSlashed { 
+                validator: validator.clone(), 
+                slashing_count: count 
+            });
+            
+            // Remove validator if max slashing count reached
+            if count >= T::MaxSlashingCount::get() {
+                Validators::<T>::remove(validator);
+                ValidatorScores::<T>::remove(validator);
+                SlashingCount::<T>::remove(validator);
+                Self::deposit_event(Event::ValidatorRemoved { 
+                    validator: validator.clone(),
+                    reason: b"Max slashing count reached".to_vec(),
+                });
+            }
+            
+            Ok(())
+        }
+
+        /// Reward a validator by increasing their stake
+        pub fn reward_validator(validator: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
+            ensure!(Validators::<T>::contains_key(validator), Error::<T>::ValidatorNotRegistered);
+            
+            let current_stake = Stake::<T>::get(validator);
+            let new_stake = current_stake.saturating_add(amount);
+            
+            Stake::<T>::insert(validator, new_stake);
+            
+            Self::deposit_event(Event::StakeBonded { 
+                validator: validator.clone(), 
+                amount 
+            });
+            
+            Ok(())
+        }
+
+        /// Get all active validators
+        pub fn get_active_validators() -> Vec<T::AccountId> {
+            Validators::<T>::iter()
+                .filter_map(|(validator, is_active)| {
+                    if is_active {
+                        Some(validator)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
         }
     }
 }

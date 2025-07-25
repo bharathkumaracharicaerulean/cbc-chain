@@ -270,6 +270,30 @@ impl_runtime_apis! {
 		fn get_recent_epochs(n: u32) -> Vec<pallet_cbc_dcf::RuntimeEpochHistory<AccountId>> {
 			pallet_cbc_dcf::Pallet::<Runtime>::get_recent_epochs_api(n)
 		}
+
+		fn get_governance_mode() -> bool {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_governance_mode()
+		}
+
+		fn get_validator_consensus_contribution(validator: AccountId) -> Option<(u64, u64, u64)> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_consensus_contribution(&validator)
+		}
+
+		fn get_epoch_config() -> pallet_cbc_dcf::EpochConfig {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_epoch_config()
+		}
+
+		fn get_validator_epoch_stats(validator: AccountId, epoch: u32) -> Option<pallet_cbc_dcf::EpochStats> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_epoch_stats(&validator, epoch)
+		}
+
+		fn get_total_validators_count() -> u32 {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_total_validators_count()
+		}
+
+		fn get_validator_set_info() -> (u32, u32, u32) {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_set_info()
+		}
 	}
 
 	// Runtime Benchmarking API

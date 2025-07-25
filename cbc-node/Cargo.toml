@@ -50,6 +50,10 @@ frame-system.workspace = true                   # Use workspace version
 
 # === Async and Futures ===
 futures = { features = ["thread-pool"], workspace = true } # Asynchronous programming utilities
+tokio = { version = "1.0", features = ["full"] } # Async runtime
+
+# === Logging ===
+log = "0.4" # Logging framework
 
 # === JSON-RPC ===
 jsonrpsee = { features = ["server"], workspace = true }    # JSON-RPC server implementation
