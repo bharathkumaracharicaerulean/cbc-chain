@@ -44,6 +44,21 @@
 #[cfg(test)]
 pub mod tests;
 
+// Integration tests module
+#[cfg(test)]
+pub mod integration_tests;
+
+// Benchmarking module
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmarking;
+
+// Performance optimization module
+pub mod performance;
+
+// Performance tests module
+#[cfg(test)]
+mod performance_tests;
+
 // Mock module for testing
 #[cfg(test)]
 pub mod mock;
@@ -65,6 +80,7 @@ use sp_runtime::{
         storage_lock::{StorageLock, BlockAndTime},
         Duration,
     },
+
 };
 use sp_std::prelude::*;
 use sp_std::fmt; 
@@ -195,6 +211,34 @@ pub mod pallet {
         pub active_validators: BoundedVec<AccountId, ConstU32<24>>,
         pub score_snapshot: BoundedVec<(AccountId, u64), ConstU32<24>>,
         pub inference_summary: BoundedVec<(AccountId, Option<u64>), ConstU32<24>>,
+    }
+
+    /// Comprehensive validator metadata information
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct ValidatorMetadataInfo {
+        pub name: BoundedVec<u8, ConstU32<32>>,
+        pub website: Option<BoundedVec<u8, ConstU32<64>>>,
+        pub contact: Option<BoundedVec<u8, ConstU32<64>>>,
+        pub description: Option<BoundedVec<u8, ConstU32<128>>>,
+        pub location: Option<BoundedVec<u8, ConstU32<32>>>,
+        pub commission_rate: Option<u32>, // Percentage (0-10000 for 0.00% to 100.00%)
+        pub min_stake_required: Option<u128>,
+        pub created_at: u64, // Timestamp in milliseconds
+        pub updated_at: u64, // Timestamp in milliseconds
+    }
+
+    /// Performance record for tracking validator performance over time
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct PerformanceRecord {
+        pub epoch: u32,
+        pub blocks_authored: u32,
+        pub blocks_missed: u32,
+        pub uptime_percentage: u32, // 0-10000 for 0.00% to 100.00%
+        pub inference_score: u64,
+        pub stake_score: u64,
+        pub final_score: u64,
+        pub participation_rate: u32, // 0-10000 for 0.00% to 100.00%
+        pub timestamp: u64, // Timestamp in milliseconds
     }
 
     impl<T: Config> From<EpochHistory<T>> for RuntimeEpochHistory<<T as frame_system::Config>::AccountId> {
@@ -388,6 +432,72 @@ pub mod pallet {
         ValueQuery,
     >;
 
+    /// Comprehensive validator metadata including contact info, website, etc.
+    #[pallet::storage]
+    #[pallet::getter(fn validator_metadata)]
+    pub type ValidatorMetadata<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        ValidatorMetadataInfo,
+        OptionQuery,
+    >;
+
+    /// Validator performance metrics over time
+    #[pallet::storage]
+    #[pallet::getter(fn validator_performance_history)]
+    pub type ValidatorPerformanceHistory<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<PerformanceRecord, ConstU32<100>>, // Last 100 performance records
+        ValueQuery,
+    >;
+
+    /// Validator last seen block number (for activity tracking)
+    #[pallet::storage]
+    #[pallet::getter(fn validator_last_seen)]
+    pub type ValidatorLastSeen<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        u32, // Block number
+        ValueQuery,
+    >;
+
+    /// Validator total blocks authored
+    #[pallet::storage]
+    #[pallet::getter(fn validator_blocks_authored)]
+    pub type ValidatorBlocksAuthored<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        u32,
+        ValueQuery,
+    >;
+
+    /// Validator total blocks missed
+    #[pallet::storage]
+    #[pallet::getter(fn validator_blocks_missed)]
+    pub type ValidatorBlocksMissed<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        u32,
+        ValueQuery,
+    >;
+
+    /// Validator join timestamp
+    #[pallet::storage]
+    #[pallet::getter(fn validator_join_time)]
+    pub type ValidatorJoinTime<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        u64, // Timestamp in milliseconds
+        OptionQuery,
+    >;
+
     // --- Events --- //
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -451,6 +561,20 @@ pub mod pallet {
         ValidatorJoined { validator: T::AccountId },
         ValidatorLeft { validator: T::AccountId },
         ValidatorsDebug(Vec<T::AccountId>),
+        ValidatorPoiScoreUpdated {
+            validator: T::AccountId,
+            poi_score: u64,
+        },
+        ValidatorMetadataUpdated {
+            validator: T::AccountId,
+            name: BoundedVec<u8, ConstU32<32>>,
+        },
+        ValidatorActivityUpdated {
+            validator: T::AccountId,
+            blocks_authored: u32,
+            blocks_missed: u32,
+            uptime_percentage: u32,
+        },
     }
 
     // --- Errors --- //
@@ -465,6 +589,7 @@ pub mod pallet {
         AlreadyVoted,
         ProposalNotApproved,
         ProposalAlreadyExecuted,
+        InvalidScore,
     }
 
     // --- Dispatchable Calls --- //
@@ -514,6 +639,47 @@ pub mod pallet {
                 }).map_err(|e| sp_runtime::DispatchError::from(e))?;
                 Self::update_final_score(&validator)?;
             }
+            Ok(())
+        }
+
+        /// Apply PoI scores computed by off-chain worker (signed transaction).
+        #[pallet::call_index(11)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn apply_offchain_poi_scores(
+            origin: OriginFor<T>,
+            block_number: u32,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+            
+            let validators = Self::validator_set();
+            let mut updated_count = 0u32;
+            
+            for validator in validators.iter() {
+                // Try to retrieve computed PoI score from off-chain storage
+                if let Ok(Some(poi_score)) = Self::get_offchain_poi_score(validator, block_number) {
+                    // Validate the score is within acceptable range
+                    if poi_score <= T::MaxValidatorScore::get() {
+                        // Update the validator's PoI score
+                        if let Ok(()) = ValidatorStates::<T>::try_mutate(&validator, |maybe_state| {
+                            let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
+                            state.current.inference_score = poi_score;
+                            Ok::<(), Error<T>>(())
+                        }).map_err(|e| sp_runtime::DispatchError::from(e)) {
+                            // Recalculate final score
+                            let _ = Self::update_final_score(&validator);
+                            updated_count += 1;
+                            
+                            // Emit event
+                            Self::deposit_event(Event::ValidatorPoiScoreUpdated {
+                                validator: validator.clone(),
+                                poi_score,
+                            });
+                        }
+                    }
+                }
+            }
+            
+            log::info!("DCF: Applied {} PoI score updates from off-chain computation", updated_count);
             Ok(())
         }
 
@@ -825,6 +991,142 @@ pub mod pallet {
             ValidatorNames::<T>::insert(&who, bounded_name);
             Ok(())
         }
+
+        /// Set comprehensive validator metadata
+        #[pallet::call_index(16)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn set_validator_metadata(
+            origin: OriginFor<T>,
+            name: Vec<u8>,
+            website: Option<Vec<u8>>,
+            contact: Option<Vec<u8>>,
+            description: Option<Vec<u8>>,
+            location: Option<Vec<u8>>,
+            commission_rate: Option<u32>,
+            min_stake_required: Option<<T as pallet::Config>::Balance>,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            
+            // Ensure the validator exists
+            ensure!(
+                ValidatorStates::<T>::contains_key(&who),
+                Error::<T>::ValidatorNotFound
+            );
+            
+            // Validate and convert inputs
+            let bounded_name = BoundedVec::try_from(name)
+                .map_err(|_| Error::<T>::InvalidEpochConfig)?;
+            
+            let bounded_website = website.map(|w| BoundedVec::try_from(w))
+                .transpose()
+                .map_err(|_| Error::<T>::InvalidEpochConfig)?;
+            
+            let bounded_contact = contact.map(|c| BoundedVec::try_from(c))
+                .transpose()
+                .map_err(|_| Error::<T>::InvalidEpochConfig)?;
+            
+            let bounded_description = description.map(|d| BoundedVec::try_from(d))
+                .transpose()
+                .map_err(|_| Error::<T>::InvalidEpochConfig)?;
+            
+            let bounded_location = location.map(|l| BoundedVec::try_from(l))
+                .transpose()
+                .map_err(|_| Error::<T>::InvalidEpochConfig)?;
+            
+            // Validate commission rate (0-10000 for 0.00% to 100.00%)
+            if let Some(rate) = commission_rate {
+                ensure!(rate <= 10000, Error::<T>::InvalidEpochConfig);
+            }
+            
+            let now = Self::get_current_timestamp();
+            let metadata = ValidatorMetadataInfo {
+                name: bounded_name.clone(),
+                website: bounded_website,
+                contact: bounded_contact,
+                description: bounded_description,
+                location: bounded_location,
+                commission_rate,
+                min_stake_required: min_stake_required.map(|s| s.saturated_into()),
+                created_at: ValidatorMetadata::<T>::get(&who)
+                    .map(|m| m.created_at)
+                    .unwrap_or(now),
+                updated_at: now,
+            };
+            
+            ValidatorMetadata::<T>::insert(&who, metadata);
+            ValidatorNames::<T>::insert(&who, bounded_name.clone());
+            
+            // Set join time if not already set
+            if !ValidatorJoinTime::<T>::contains_key(&who) {
+                ValidatorJoinTime::<T>::insert(&who, now);
+            }
+            
+            // Emit event
+            Self::deposit_event(Event::ValidatorMetadataUpdated {
+                validator: who,
+                name: bounded_name,
+            });
+            
+            Ok(())
+        }
+
+        /// Update validator activity metrics (called internally)
+        #[pallet::call_index(17)]
+        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        pub fn update_validator_activity(
+            origin: OriginFor<T>,
+            validator: T::AccountId,
+            blocks_authored: u32,
+            blocks_missed: u32,
+        ) -> DispatchResult {
+            ensure_root(origin)?; // Only callable by root or internal logic
+            
+            let current_block = frame_system::Pallet::<T>::block_number().saturated_into::<u32>();
+            
+            // Update last seen
+            ValidatorLastSeen::<T>::insert(&validator, current_block);
+            
+            // Update total counters
+            ValidatorBlocksAuthored::<T>::mutate(&validator, |total| *total += blocks_authored);
+            ValidatorBlocksMissed::<T>::mutate(&validator, |total| *total += blocks_missed);
+            
+            // Update performance history
+            let current_epoch = Self::current_epoch();
+            let now = Self::get_current_timestamp();
+            
+            if let Some(state) = ValidatorStates::<T>::get(&validator) {
+                let uptime_percentage = Self::calculate_uptime_percentage(&validator);
+                
+                let performance_record = PerformanceRecord {
+                    epoch: current_epoch,
+                    blocks_authored,
+                    blocks_missed,
+                    uptime_percentage,
+                    inference_score: state.current.inference_score,
+                    stake_score: state.current.stake_score,
+                    final_score: state.current.final_score,
+                    participation_rate: state.participation_rate * 100, // Convert to basis points
+                    timestamp: now,
+                };
+                
+                ValidatorPerformanceHistory::<T>::mutate(&validator, |history| {
+                    if history.len() >= 100 {
+                        history.remove(0); // Remove oldest record
+                    }
+                    let _ = history.try_push(performance_record);
+                });
+                
+                // Emit event
+                Self::deposit_event(Event::ValidatorActivityUpdated {
+                    validator: validator.clone(),
+                    blocks_authored,
+                    blocks_missed,
+                    uptime_percentage,
+                });
+            }
+            
+            Ok(())
+        }
     }
 
     // --- Internal Logic --- //
@@ -856,7 +1158,7 @@ pub mod pallet {
                 let _old_score = state.current.final_score;
                 state.current.final_score = final_score;
                 state.last_active_epoch = Self::current_epoch();
-                if state.history.len() == state.history.capacity() {
+                if state.history.len() == state.history.capacity() && !state.history.is_empty() {
                     state.history.remove(0);
                 }
                 let _ = state.history.try_push(EpochStats {
@@ -1172,6 +1474,8 @@ pub mod pallet {
         }
     }
 
+
+
     // --- Off-chain Worker Implementation --- //
     impl<T: Config> Pallet<T> {
         /// Run off-chain computation for PoI score collection and submission
@@ -1282,19 +1586,14 @@ pub mod pallet {
             sp_io::offchain::timestamp().unix_millis()
         }
 
-        /// Submit unsigned transaction to update PoI score
+        /// Store computed PoI score in off-chain storage for later retrieval
         fn submit_poi_score_update(
             validator: T::AccountId,
             poi_score: u64,
             block_number: BlockNumberFor<T>,
         ) -> Result<(), &'static str> {
-            // Create the call to update validator inference score
-            let _call: Call<T> = Call::update_validator_inference_score { validator: validator.clone() };
-            
-            // In a real implementation, you would submit this as an unsigned transaction
-            // For now, we'll just log the intended update
             log::info!(
-                "Would submit PoI score update: validator={:?}, score={}, block={}",
+                "DCF: Computed PoI score for validator={:?}, score={}, block={}",
                 validator,
                 poi_score,
                 block_number.saturated_into::<u32>()
@@ -1326,10 +1625,58 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Retrieve computed PoI score from off-chain storage
+        fn get_offchain_poi_score(
+            validator: &T::AccountId,
+            block_number: u32,
+        ) -> Result<Option<u64>, &'static str> {
+            let key = format!("dcf::poi_score::{:?}::{}", validator, block_number);
+            let storage_ref = StorageValueRef::persistent(key.as_bytes());
+            
+            match storage_ref.get::<OffchainPoiScore<T>>() {
+                Ok(Some(score_data)) => Ok(Some(score_data.score)),
+                Ok(None) => Ok(None),
+                Err(_) => Err("Failed to retrieve PoI score from off-chain storage"),
+            }
+        }
+
         /// Get current timestamp from the timestamp pallet
         fn get_current_timestamp() -> u64 {
             // Use a simple timestamp for now - in production this would be from timestamp pallet
             sp_io::offchain::timestamp().unix_millis()
+        }
+
+        /// Calculate validator uptime percentage
+        fn calculate_uptime_percentage(validator: &T::AccountId) -> u32 {
+            let current_block = frame_system::Pallet::<T>::block_number().saturated_into::<u32>();
+            let last_seen = Self::validator_last_seen(validator);
+            let join_time_block = ValidatorJoinTime::<T>::get(validator)
+                .map(|timestamp| {
+                    // Convert timestamp to approximate block number
+                    // This is a rough approximation - in production you'd want more precise tracking
+                    let blocks_since_genesis = current_block;
+                    let time_since_genesis = Self::get_current_timestamp().saturating_sub(timestamp);
+                    let estimated_block_time = 6000; // 6 seconds in milliseconds
+                    let estimated_blocks_since_join = time_since_genesis / estimated_block_time;
+                    blocks_since_genesis.saturating_sub(estimated_blocks_since_join as u32)
+                })
+                .unwrap_or(0);
+            
+            if current_block <= join_time_block {
+                return 10000; // 100.00% if just joined
+            }
+            
+            let total_blocks_since_join = current_block.saturating_sub(join_time_block);
+            let blocks_since_last_seen = current_block.saturating_sub(last_seen);
+            
+            if total_blocks_since_join == 0 {
+                return 10000; // 100.00%
+            }
+            
+            let active_blocks = total_blocks_since_join.saturating_sub(blocks_since_last_seen);
+            let uptime_percentage = (active_blocks as u64 * 10000) / total_blocks_since_join as u64;
+            
+            uptime_percentage.min(10000) as u32 // Cap at 100.00%
         }
     }
 
@@ -1856,8 +2203,7 @@ pub mod pallet {
 }
 
 // --- Benchmarking (if enabled) --- //
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarking;
+// (Benchmarking module is declared at the top of the file)
 
 // --- Score/Ejection/Inference Reason Enums --- //
 

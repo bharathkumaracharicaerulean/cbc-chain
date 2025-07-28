@@ -57,4 +57,8 @@ pub enum ConsensusError {
     /// Error during finality check
     #[error("Finality check failed: {0}")]
     FinalityCheck(String),
+
+    /// Error during block production
+    #[error("Block production failed: {0}")]
+    BlockProduction(String),
 }

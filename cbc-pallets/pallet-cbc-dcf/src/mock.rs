@@ -168,6 +168,51 @@ impl WeightInfo for MockWeightInfo {
     fn update_consensus_weights() -> Weight {
         Weight::from_parts(10_000, 0)
     }
+    fn set_governance_mode() -> Weight {
+        Weight::from_parts(10_000, 0)
+    }
+    fn sudo_advance_epoch() -> Weight {
+        Weight::from_parts(50_000, 0)
+    }
+    fn submit_proposal() -> Weight {
+        Weight::from_parts(20_000, 0)
+    }
+    fn vote_proposal() -> Weight {
+        Weight::from_parts(15_000, 0)
+    }
+    fn execute_proposal() -> Weight {
+        Weight::from_parts(30_000, 0)
+    }
+    fn join_validator_set() -> Weight {
+        Weight::from_parts(25_000, 0)
+    }
+    fn leave_validator_set() -> Weight {
+        Weight::from_parts(25_000, 0)
+    }
+    fn set_validator_name() -> Weight {
+        Weight::from_parts(15_000, 0)
+    }
+    fn apply_offchain_poi_scores() -> Weight {
+        Weight::from_parts(40_000, 0)
+    }
+    fn on_initialize_with_validators(v: u32) -> Weight {
+        Weight::from_parts(10_000u64.saturating_mul(v as u64), 0)
+    }
+    fn apply_score_decay_multiple(v: u32) -> Weight {
+        Weight::from_parts(5_000u64.saturating_mul(v as u64), 0)
+    }
+    fn validator_set_operations(v: u32) -> Weight {
+        Weight::from_parts(3_000u64.saturating_mul(v as u64), 0)
+    }
+    fn runtime_api_calls(v: u32) -> Weight {
+        Weight::from_parts(2_000u64.saturating_mul(v as u64), 0)
+    }
+    fn epoch_transition_multiple(v: u32) -> Weight {
+        Weight::from_parts(15_000u64.saturating_mul(v as u64), 0)
+    }
+    fn governance_with_multiple_voters(v: u32) -> Weight {
+        Weight::from_parts(8_000u64.saturating_mul(v as u64), 0)
+    }
 }
 
 impl Config for Test {
