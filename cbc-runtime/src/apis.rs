@@ -1,4 +1,4 @@
-//! Runtime API implementations for Substrate-based blockchain
+//! Runtime API implementations for CBC-CHAIN 
 
 // External Crates
 use alloc::vec::Vec;
