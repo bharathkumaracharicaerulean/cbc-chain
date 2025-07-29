@@ -18,13 +18,20 @@ sp-api = { features = ["std"], workspace = true }
 sp-blockchain = { workspace = true }
 sp-consensus = { workspace = true }
 sp-inherents = { features = ["std"], workspace = true }
+sp-timestamp = { features = ["std"], workspace = true }
+sp-keyring = { features = ["std"], workspace = true }
+sp-application-crypto = { features = ["std"], workspace = true }
 sc-consensus = { workspace = true, default-features = true }
+sc-transaction-pool-api = { workspace = true }
+sc-basic-authorship = { workspace = true }
+sc-client-api = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 cbc-runtime = { features = ["std"], workspace = true }
 tokio = { version = "1.37", features = ["rt", "macros", "time"] }
 log = "0.4"
 thiserror = "1.0"
 async-trait = "0.1"
+futures = "0.3"
 pallet-cbc-dcf = { workspace = true }
 
 

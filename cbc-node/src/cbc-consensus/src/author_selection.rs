@@ -1,6 +1,4 @@
 //! Author selection implementation for the consensus engine
-//!
-//! This module now delegates author selection to the DCF runtime API.
 
 use crate::error::{ConsensusError, Result};
 use sp_api::ProvideRuntimeApi;

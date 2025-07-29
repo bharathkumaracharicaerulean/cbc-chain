@@ -26,7 +26,7 @@ pub mod finality;
 
 // Re-export commonly used types from dcf
 pub use dcf::{
-    DcfBlockImport,
+    RealBlockImport,
     DcfConsensus,
 };
 

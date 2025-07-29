@@ -10,6 +10,7 @@ use sp_runtime::traits::BlakeTwo256;
 use sp_core::sr25519::Public;
 use std::default::Default;
 
+
 /// Block type alias for the consensus engine
 pub type BlockT = Block<Header<u32, BlakeTwo256>, UncheckedExtrinsic<Public, (), (), ()>>;
 
@@ -63,12 +64,16 @@ pub struct ConsensusParams {
     pub author_selection_mode: AuthorSelectionMode,
     /// Number of blocks required for finality
     pub finality_threshold: u32,
-    /// Minimum time between blocks
+    /// Minimum time between blocks (in seconds)
     pub block_time: u64,
     /// Maximum block size
     pub max_block_size: u32,
     /// Maximum transactions per block
     pub max_transactions_per_block: u32,
+    /// Slot duration for consensus timing
+    pub slot_duration: std::time::Duration,
+    /// Minimum block time in milliseconds
+    pub min_block_time: u64,
 }
 
 /// Block import result
@@ -95,6 +100,8 @@ pub struct ValidatorMetrics {
     pub total_blocks: u32,
     /// Total missed blocks
     pub total_missed: u32,
+    /// Failed block production attempts
+    pub failed_blocks: u32,
 }
 
 impl ValidatorMetrics {
