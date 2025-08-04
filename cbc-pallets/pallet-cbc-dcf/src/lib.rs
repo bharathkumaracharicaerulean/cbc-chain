@@ -252,76 +252,7 @@ pub mod pallet {
         }
     }
 
-    // --- Pallet Configuration Trait --- //
-    /// Configuration trait for the DCF pallet.
-    /// 
-    /// All hardcoded values have been replaced with configurable constants.
-    /// Example runtime configuration:
-    /// ```
-    /// impl pallet_cbc_dcf::Config for Runtime {
-    ///     // Validator set configuration
-    ///     type MaxValidators = ConstU32<100>;
-    ///     type MinActiveValidators = ConstU32<3>;
-    ///     type MaxEpochHistory = ConstU32<24>;
-    ///     
-    ///     // Scoring weights and thresholds (sum to PercentagePrecision)
-    ///     type DefaultPosWeight = ConstU64<50>;
-    ///     type DefaultPoiWeight = ConstU64<50>;
-    ///     type MinValidatorScore = ConstU32<10>;
-    ///     type MaxValidatorScore = ConstU64<1000>;
-    ///     
-    ///     // Score decay and activity parameters
-    ///     type ValidatorScoreDecay = ConstU32<5>; // 5% decay per period
-    ///     type MaxInactiveEpochs = ConstU32<5>;
-    ///     type ScoreDecayInterval = ConstU32<10>; // every 10 blocks
-    ///     type ParticipationUpdateInterval = ConstU32<100>; // every 100 blocks
-    ///     type UnderperformanceCheckInterval = ConstU32<50>; // every 50 blocks
-    ///     type HealthMetricsInterval = ConstU32<1000>; // every 1000 blocks
-    ///     type OffchainWorkerInterval = ConstU32<5>; // every 5 blocks
-    ///     
-    ///     // Block authorship rewards and penalties
-    ///     type BlockAuthorshipBoost = ConstU64<10>;
-    ///     type MissedBlockPenalty = ConstU64<5>;
-    ///     
-    ///     // Inference scoring parameters
-    ///     type InferenceBoostLow = ConstU64<5>;
-    ///     type InferenceBoostMedium = ConstU64<10>;
-    ///     type InferenceBoostHigh = ConstU64<20>;
-    ///     type InferencePenaltyLow = ConstU64<2>;
-    ///     type InferencePenaltyMedium = ConstU64<5>;
-    ///     type InferencePenaltyHigh = ConstU64<10>;
-    ///     type InferenceConfidenceThresholdLow = ConstU32<70>;
-    ///     type InferenceConfidenceThresholdHigh = ConstU32<90>;
-    ///     
-    ///     // Governance and slashing parameters
-    ///     type MaxSlashPenalty = ConstU64<50>;
-    ///     type MaxRewardBoost = ConstU64<20>;
-    ///     type SlashPenaltyDivisor = ConstU64<1000>;
-    ///     type RewardBoostDivisor = ConstU64<1000>;
-    ///     
-    ///     // Validator metadata limits
-    ///     type MaxValidatorNameLength = ConstU32<32>;
-    ///     type MaxValidatorWebsiteLength = ConstU32<64>;
-    ///     type MaxValidatorContactLength = ConstU32<64>;
-    ///     type MaxValidatorDescriptionLength = ConstU32<128>;
-    ///     type MaxValidatorLocationLength = ConstU32<32>;
-    ///     type MaxPerformanceHistoryLength = ConstU32<100>;
-    ///     type MaxValidatorHistoryLength = ConstU32<10>;
-    ///     type MaxCommissionRate = ConstU32<10000>; // 100.00%
-    ///     
-    ///     // Percentage calculation precision
-    ///     type PercentagePrecision = ConstU32<10000>; // 0.01% precision
-    ///     
-    ///     // Off-chain worker configuration
-    ///     type OffchainWorkerTimeout = ConstU64<30000>; // 30 seconds
-    ///     type EstimatedBlockTime = ConstU64<6000>; // 6 seconds
-    ///     
-    ///     // Other required types
-    ///     type MinStake = ConstU128<1000>;
-    ///     type Balance = u128;
-    ///     type WeightInfo = ();
-    /// }
-    /// ```
+    
     #[pallet::config]
     pub trait Config: frame_system::Config + pos::Config + poi::Config + TypeInfo + fmt::Debug {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
