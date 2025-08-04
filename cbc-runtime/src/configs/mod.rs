@@ -187,24 +187,67 @@ impl pallet_cbc_pos::Config for Runtime {
 // === CBC DCF Pallet Configuration ===
 impl pallet_cbc_dcf::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
+    
+    // Validator set configuration
     type MaxValidators = MaxValidators;
+    type MinActiveValidators = MinActiveValidators;
+    type MaxEpochHistory = ConstU32<24>;
+    
+    // Scoring weights and thresholds
     type DefaultPosWeight = PosWeight;
     type DefaultPoiWeight = PoiWeight;
-    type MinActiveValidators = MinActiveValidators;
     type MinValidatorScore = MinValidatorScore;
     type MaxValidatorScore = MaxValidatorScore;
+    
+    // Score decay and activity parameters
+    type ValidatorScoreDecay = ValidatorScoreDecay;
+    type MaxInactiveEpochs = ConstU32<5>;
+    type ScoreDecayInterval = ConstU32<10>; // every 10 blocks
+    type ParticipationUpdateInterval = ConstU32<100>; // every 100 blocks
+    type UnderperformanceCheckInterval = ConstU32<50>; // every 50 blocks
+    type HealthMetricsInterval = ConstU32<1000>; // every 1000 blocks
+    type OffchainWorkerInterval = ConstU32<5>; // every 5 blocks
+    
+    // Block authorship rewards and penalties
     type BlockAuthorshipBoost = ConstU64<10>;
     type MissedBlockPenalty = ConstU64<5>;
+    
+    // Inference scoring parameters
     type InferenceBoostLow = ConstU64<2>;
     type InferenceBoostMedium = ConstU64<5>;
     type InferenceBoostHigh = ConstU64<10>;
     type InferencePenaltyLow = ConstU64<1>;
     type InferencePenaltyMedium = ConstU64<3>;
     type InferencePenaltyHigh = ConstU64<7>;
-    type ValidatorScoreDecay = ValidatorScoreDecay;
+    type InferenceConfidenceThresholdLow = ConstU32<70>;
+    type InferenceConfidenceThresholdHigh = ConstU32<90>;
+    
+    // Governance and slashing parameters
+    type MaxSlashPenalty = ConstU64<50>;
+    type MaxRewardBoost = ConstU64<20>;
+    type SlashPenaltyDivisor = ConstU64<1000>;
+    type RewardBoostDivisor = ConstU64<1000>;
+    
+    // Validator metadata limits
+    type MaxValidatorNameLength = ConstU32<32>;
+    type MaxValidatorWebsiteLength = ConstU32<64>;
+    type MaxValidatorContactLength = ConstU32<64>;
+    type MaxValidatorDescriptionLength = ConstU32<128>;
+    type MaxValidatorLocationLength = ConstU32<32>;
+    type MaxPerformanceHistoryLength = ConstU32<100>;
+    type MaxValidatorHistoryLength = ConstU32<10>;
+    type MaxCommissionRate = ConstU32<10000>; // 100.00%
+    
+    // Percentage calculation precision
+    type PercentagePrecision = ConstU32<10000>; // 0.01% precision
+    
+    // Off-chain worker configuration
+    type OffchainWorkerTimeout = ConstU64<30000>; // 30 seconds
+    type EstimatedBlockTime = ConstU64<6000>; // 6 seconds
+    
+    // Stake and balance configuration
     type MinStake = ConstU128<1000>;
     type Balance = Balance;
     type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
-    type MaxEpochHistory = ConstU32<24>;
 }
 
