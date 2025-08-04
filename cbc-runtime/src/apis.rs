@@ -255,7 +255,7 @@ impl_runtime_apis! {
 			pallet_cbc_dcf::Pallet::<Runtime>::validate_block_author(block_number, author)
 		}
 
-		fn get_validator_profile(validator: AccountId) -> Option<(u64, u32, u32, u32, u32)> {
+		fn get_validator_profile(validator: AccountId) -> Option<(u64, u64, u64, u32, u32, u32, u32)> {
 			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_profile(validator)
 		}
 

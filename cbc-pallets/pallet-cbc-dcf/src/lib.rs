@@ -108,7 +108,7 @@ sp_api::decl_runtime_apis! {
         fn get_active_validators() -> Vec<AccountId>;
         fn get_validator_last_active(validator: AccountId) -> u32;
         fn validate_block_author(block_number: u32, author: AccountId);
-        fn get_validator_profile(account_id: AccountId) -> Option<(u64, u32, u32, u32, u32)>;
+        fn get_validator_profile(account_id: AccountId) -> Option<(u64, u64, u64, u32, u32, u32, u32)>;
         fn get_inference_result(account_id: AccountId) -> Option<u64>;
         fn get_epoch_history(epoch_number: u32) -> Option<RuntimeEpochHistory<AccountId>>;
         fn get_recent_epochs(n: u32) -> Vec<RuntimeEpochHistory<AccountId>>;
@@ -1845,17 +1845,54 @@ pub mod pallet {
             author
         }
 
-        /// Get validator profile information.
-        pub fn get_validator_profile(account_id: T::AccountId) -> Option<(u64, u32, u32, u32, u32)> {
+        /// Get validator profile information with fresh PoS and PoI scores.
+        /// Returns: (combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks)
+        pub fn get_validator_profile(account_id: T::AccountId) -> Option<(u64, u64, u64, u32, u32, u32, u32)> {
             ValidatorStates::<T>::get(&account_id).map(|state| {
+                // Fetch fresh PoS (stake) score from the PoS pallet
+                let stake = pos::Pallet::<T>::stake(&account_id);
+                let pos_score = stake.saturated_into::<u64>();
+                
+                // Fetch fresh PoI score from the PoI pallet
+                let poi_score = if let Some((result, _)) = poi::Pallet::<T>::inference_results(&account_id) {
+                    result as u64
+                } else {
+                    // Fallback to stored inference score if no fresh result available
+                    state.current.inference_score
+                };
+                
+                // Get current weights for score calculation
+                let pos_weight = if !PosWeight::<T>::exists() {
+                    T::DefaultPosWeight::get()
+                } else {
+                    PosWeight::<T>::get()
+                };
+                let poi_weight = if !PoiWeight::<T>::exists() {
+                    T::DefaultPoiWeight::get()
+                } else {
+                    PoiWeight::<T>::get()
+                };
+                
+                // Calculate combined score using configured weights
+                let mut combined_score = (pos_score.saturating_mul(pos_weight) + poi_score.saturating_mul(poi_weight)) / T::PercentagePrecision::get() as u64;
+                
+                // Cap the combined score at maximum allowed
+                if combined_score > T::MaxValidatorScore::get() {
+                    combined_score = T::MaxValidatorScore::get();
+                }
+                
+                // Get additional profile information
                 let uptime = Self::validator_uptime(&account_id);
                 let inference_count = Self::validator_inference_count(&account_id);
+                
                 (
-                    state.current.final_score,
-                    uptime,
-                    inference_count,
-                    state.participation_rate,
-                    state.current.missed_blocks,
+                    combined_score,      // Fresh calculated combined score
+                    pos_score,          // Fresh PoS (stake) score
+                    poi_score,          // Fresh PoI score
+                    uptime,             // Validator uptime
+                    inference_count,    // Number of inferences
+                    state.participation_rate, // Participation rate
+                    state.current.missed_blocks, // Missed blocks count
                 )
             })
         }
@@ -2318,7 +2355,3 @@ pub struct OffchainPoiScore<T: Config> {
     pub block_number: u32,
     pub timestamp: u64,
 }
-
-
-
-

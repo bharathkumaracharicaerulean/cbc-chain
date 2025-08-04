@@ -251,15 +251,15 @@ where
         let mut underperforming_count = 0;
         
         for validator in active_validators {
-            if let Ok(Some((score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
+            if let Ok(Some((combined_score, _pos_score, _poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
                 api.get_validator_profile(best_hash, validator.clone()) {
                 
                 // Check for underperformance criteria
-                let is_underperforming = score < 30 || participation_rate < 50 || missed_blocks > 10;
+                let is_underperforming = combined_score < 30 || participation_rate < 50 || missed_blocks > 10;
                 
                 if is_underperforming {
-                    warn!("DCF EpochManager: Underperforming validator detected: {:?} - Score: {}, Participation: {}%, Missed: {}", 
-                          validator, score, participation_rate, missed_blocks);
+                    warn!("DCF EpochManager: Underperforming validator detected: {:?} - Combined Score: {}, Participation: {}%, Missed: {}", 
+                          validator, combined_score, participation_rate, missed_blocks);
                     underperforming_count += 1;
                     
                     // The runtime pallet will handle automatic ejection if score falls below threshold
@@ -293,16 +293,15 @@ where
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
-        if let Ok(Some((score, uptime, inference_count, participation_rate, missed_blocks))) = 
+        if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks))) = 
             api.get_validator_profile(best_hash, validator.clone()) {
             
-            let stake_score = api.get_validator_stake_score(best_hash, validator.clone())
-                .unwrap_or(0);
+            let stake_score = pos_score; // Use the fresh PoS score from the profile
             
             let validator_info = ValidatorInfo {
                 account_id: sp_core::sr25519::Public::from_raw(*validator.as_ref()),
                 stake: stake_score as u128,
-                performance_score: score as u32,
+                performance_score: combined_score as u32,
                 blocks_produced: uptime, // Using uptime as blocks produced approximation
                 blocks_missed: missed_blocks,
             };

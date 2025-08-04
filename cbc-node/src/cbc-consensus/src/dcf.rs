@@ -220,17 +220,17 @@ where
             let mut total_score = 0u64;
             
             for validator in active_validators.iter() {
-                if let Ok(Some((score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
+                if let Ok(Some((combined_score, _pos_score, _poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
                     api.get_validator_profile(best_hash, validator.clone()) {
                     
-                    total_score += score;
+                    total_score += combined_score;
                     
                     // Check validator health
-                    if score >= 50 && participation_rate >= 80 && missed_blocks <= 5 {
+                    if combined_score >= 50 && participation_rate >= 80 && missed_blocks <= 5 {
                         healthy_validators += 1;
                     } else {
-                        info!("DCF: Validator {:?} needs attention - Score: {}, Participation: {}%, Missed: {}", 
-                              validator, score, participation_rate, missed_blocks);
+                        info!("DCF: Validator {:?} needs attention - Combined Score: {}, Participation: {}%, Missed: {}", 
+                              validator, combined_score, participation_rate, missed_blocks);
                     }
                 }
             }
@@ -260,20 +260,20 @@ where
                 let public_key = Public::from_raw(*account_id.as_ref());
                 
                 // Get detailed validator information
-                if let Ok(Some((score, uptime, inference_count, participation_rate, missed_blocks))) = 
+                if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks))) = 
                     api.get_validator_profile(best_hash, account_id.clone()) {
                     
                     self.metrics.update_validator_score(
                         public_key, 
                         uptime, 
                         inference_count, 
-                        score.try_into().unwrap_or(0)
+                        combined_score.try_into().unwrap_or(0)
                     );
                     
                     // Log metrics periodically
                     if self.current_slot % 100 == 0 {
-                        info!("DCF: Validator {:?} - Score: {}, Participation: {}%, Missed: {}", 
-                              account_id, final_score, participation_rate, missed_blocks);
+                        info!("DCF: Validator {:?} - Combined Score: {}, PoS: {}, PoI: {}, Participation: {}%, Missed: {}", 
+                              account_id, combined_score, pos_score, poi_score, participation_rate, missed_blocks);
                     }
                 }
             }
@@ -344,10 +344,10 @@ where
         }
 
         // Get validator profile for additional metrics
-        if let Ok(Some((score, uptime, inference_count, participation_rate, missed_blocks))) = 
+        if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks))) = 
             api.get_validator_profile(best_hash, author_account_id.clone()) {
-            info!("DCF: Validator profile - Score: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
-                  score, uptime, inference_count, participation_rate, missed_blocks);
+            info!("DCF: Validator profile - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
+                  combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks);
         }
 
         // 1. Create block proposal with transactions from the pool
@@ -495,20 +495,20 @@ where
         let best_hash = self.client.info().best_hash;
         
         // Update validator performance in runtime (if the API supports it)
-        if let Ok(Some((current_score, uptime, inference_count, participation_rate, missed_blocks))) = 
+        if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks))) = 
             api.get_validator_profile(best_hash, author.clone()) {
             
             // Log the successful block production
             info!("PoS+PoI: Block #{} produced successfully by {:?}", block_number, author);
-            info!("PoS+PoI: Validator stats - Score: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
-                  current_score, uptime, inference_count, participation_rate, missed_blocks);
+            info!("PoS+PoI: Validator stats - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
+                  combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks);
             
             // Update local metrics with current runtime state
             self.metrics.update_validator_score(
                 author_public, 
                 uptime, 
                 inference_count, 
-                current_score.try_into().unwrap_or(0)
+                combined_score.try_into().unwrap_or(0)
             );
         }
         
@@ -539,10 +539,10 @@ where
             let mut healthy_validators = 0;
             
             for validator in active_validators.iter().take(5) { // Sample first 5 validators
-                if let Ok(Some((score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
+                if let Ok(Some((combined_score, _pos_score, _poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
                     api.get_validator_profile(best_hash, validator.clone()) {
-                    total_score += score;
-                    if score >= 50 && participation_rate >= 70 && missed_blocks <= 10 {
+                    total_score += combined_score;
+                    if combined_score >= 50 && participation_rate >= 70 && missed_blocks <= 10 {
                         healthy_validators += 1;
                     }
                 }
@@ -584,11 +584,11 @@ where
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
-        if let Ok(Some((score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
+        if let Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
             api.get_validator_profile(best_hash, author.clone()) {
             
-            info!("PoS+PoI: Validator {:?} missed block - Score: {}, Participation: {}%, Total Missed: {}", 
-                  author, score, participation_rate, missed_blocks + 1);
+            info!("PoS+PoI: Validator {:?} missed block - Combined: {}, PoS: {}, PoI: {}, Participation: {}%, Total Missed: {}", 
+                  author, combined_score, pos_score, poi_score, participation_rate, missed_blocks + 1);
         }
         
         Ok(())
@@ -715,16 +715,16 @@ where
                   expected_author, block_number);
             
             // Update validator metrics
-            if let Ok(Some((score, uptime, inference_count, _participation_rate, _missed_blocks))) = 
+            if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, _participation_rate, _missed_blocks))) = 
                 api.get_validator_profile(best_hash, expected_author.clone()) {
                 
                 // Log validator metrics
-                info!("DCF: Validator {:?} metrics - Score: {}, Uptime: {}, Inferences: {}", 
-                      expected_author, score, uptime, inference_count);
+                info!("DCF: Validator {:?} metrics - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}", 
+                      expected_author, combined_score, pos_score, poi_score, uptime, inference_count);
                 
                 // Log successful block production
-                info!("DCF: Block #{} successfully produced by validator {:?} (score: {})", 
-                      block_number, expected_author, score);
+                info!("DCF: Block #{} successfully produced by validator {:?} (combined score: {})", 
+                      block_number, expected_author, combined_score);
             }
         }
     }

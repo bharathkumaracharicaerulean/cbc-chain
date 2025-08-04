@@ -415,8 +415,10 @@ fn test_validator_profile_api() {
         let profile = DcfPallet::get_validator_profile(validator);
         assert!(profile.is_some());
         
-        let (score, uptime, inference_count, _participation_rate, missed_blocks) = profile.unwrap();
-        assert!(score > 0);
+        let (combined_score, pos_score, poi_score, uptime, inference_count, _participation_rate, missed_blocks) = profile.unwrap();
+        assert!(combined_score > 0);
+        assert!(pos_score >= 0); // PoS score can be 0
+        assert!(poi_score >= 0); // PoI score can be 0
         assert_eq!(uptime, DcfPallet::validator_uptime(&validator));
         assert_eq!(inference_count, DcfPallet::validator_inference_count(&validator));
         assert_eq!(missed_blocks, DcfPallet::validator_states(&validator).unwrap().current.missed_blocks);

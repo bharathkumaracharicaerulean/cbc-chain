@@ -146,7 +146,7 @@ trait DcfApi<AccountId> {
     fn get_active_validators() -> Vec<AccountId>;
     fn get_validator_last_active(validator: AccountId) -> u32;
     fn validate_block_author(block_number: u32, author: AccountId);
-    fn get_validator_profile(account_id: AccountId) -> Option<(u64, u32, u32, u32, u32)>;
+    fn get_validator_profile(account_id: AccountId) -> Option<(u64, u64, u64, u32, u32, u32, u32)>;
     fn get_inference_result(account_id: AccountId) -> Option<u64>;
     fn get_epoch_history(epoch_number: u32) -> Option<RuntimeEpochHistory<AccountId>>;
     fn get_recent_epochs(n: u32) -> Vec<RuntimeEpochHistory<AccountId>>;

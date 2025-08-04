@@ -394,8 +394,8 @@ fn test_full_performance_tracking_flow() {
         let profile = DcfPallet::get_validator_profile(validator);
         assert!(profile.is_some());
         
-        let (score, _uptime, _inference_count, _participation_rate, missed_blocks) = profile.unwrap();
-        assert!(score > 0);
+        let (combined_score, _pos_score, _poi_score, _uptime, _inference_count, _participation_rate, missed_blocks) = profile.unwrap();
+        assert!(combined_score > 0);
         assert_eq!(missed_blocks, total_missed);
     });
 }
