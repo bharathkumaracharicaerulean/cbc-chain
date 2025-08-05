@@ -118,6 +118,7 @@ sp_api::decl_runtime_apis! {
         fn get_validator_epoch_stats(validator: AccountId, epoch: u32) -> Option<EpochStats>;
         fn get_total_validators_count() -> u32;
         fn get_validator_set_info() -> (u32, u32, u32);
+        fn get_validators_by_score() -> Vec<(AccountId, u64)>;
     }
 }
 
@@ -287,6 +288,8 @@ pub mod pallet {
         #[pallet::constant]
         type UnderperformanceCheckInterval: Get<u32>; // blocks
         #[pallet::constant]
+        type ValidatorProposalInterval: Get<u32>; // blocks
+        #[pallet::constant]
         type HealthMetricsInterval: Get<u32>; // blocks
         #[pallet::constant]
         type OffchainWorkerInterval: Get<u32>; // blocks
@@ -434,7 +437,7 @@ pub mod pallet {
     >;
 
     /// Join/leave intent for validators.
-    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
     pub enum ValidatorAction {
         Join,
         Leave,
@@ -640,6 +643,12 @@ pub mod pallet {
             blocks_authored: u32,
             blocks_missed: u32,
             uptime_percentage: u32,
+        },
+        AutomaticValidatorProposal {
+            validator: T::AccountId,
+            action: ValidatorAction,
+            score: u64,
+            reason: BoundedVec<u8, ConstU32<64>>,
         },
     }
 
@@ -1221,9 +1230,25 @@ pub mod pallet {
                 if final_score > T::MaxValidatorScore::get() {
                     final_score = T::MaxValidatorScore::get();
                 }
-                let _old_score = state.current.final_score;
+                let old_score = state.current.final_score;
                 state.current.final_score = final_score;
                 state.last_active_epoch = Self::current_epoch();
+                
+                // If score changed significantly, trigger validator reordering
+                let score_change = if final_score > old_score {
+                    final_score - old_score
+                } else {
+                    old_score - final_score
+                };
+                
+                // Trigger resort if score changed by more than 10% or 1000 points
+                let significant_change = score_change > (old_score / 10).max(1000);
+                if significant_change && Self::active_validators().contains(validator) {
+                    // Schedule a resort by updating a flag or doing it immediately
+                    let mut active_validators = Self::active_validators();
+                    Self::sort_validators_by_score(&mut active_validators);
+                    ActiveValidators::<T>::put(active_validators);
+                }
                 if state.history.len() == state.history.capacity() && !state.history.is_empty() {
                     state.history.remove(0);
                 }
@@ -1415,7 +1440,10 @@ pub mod pallet {
             // Apply pending join/leave requests
             Self::apply_pending_validator_actions();
 
-            let active_validators = ActiveValidators::<T>::get();
+            // Ensure validators are sorted by final score for the new epoch
+            let mut active_validators = ActiveValidators::<T>::get();
+            Self::sort_validators_by_score(&mut active_validators);
+            ActiveValidators::<T>::put(active_validators.clone());
             Self::deposit_event(Event::EpochStarted {
                 epoch: next_epoch,
                 validators: active_validators.clone().into_inner(),
@@ -1496,6 +1524,11 @@ pub mod pallet {
                 let participation_weight = Self::update_validator_participation_rates();
                 weight = weight.saturating_add(participation_weight);
                 
+                // Resort validators by updated scores to ensure proper ordering for consensus
+                let mut active_validators = Self::active_validators();
+                Self::sort_validators_by_score(&mut active_validators);
+                ActiveValidators::<T>::put(active_validators);
+                
                 // Log validator statistics
                 let total_validators = Self::validator_set().len();
                 let active_validators = Self::active_validators().len();
@@ -1503,9 +1536,14 @@ pub mod pallet {
                           block_number, total_validators, active_validators);
             }
 
-            // 5. Check for low-performing validators
+            // 5. Check for low-performing validators and generate proposals
             if block_number % T::UnderperformanceCheckInterval::get() == 0 {
                 Self::check_and_handle_underperforming_validators();
+            }
+            
+            // 6. Generate automatic validator proposals based on scores
+            if block_number % T::ValidatorProposalInterval::get() == 0 {
+                Self::generate_validator_proposals();
             }
 
             // 6. Emit periodic health metrics
@@ -1829,20 +1867,47 @@ pub mod pallet {
             Self::active_validators().contains(author)
         }
 
-        /// Get the expected author for a given block number.
+        /// Get the expected author for a given block number using weighted selection based on final scores.
         pub fn get_expected_author(block_number: u32) -> Option<T::AccountId> {
             let validators = Self::active_validators();
             if validators.is_empty() {
                 log::warn!("DCF: No active validators available for block authorship at block {}", block_number);
                 return None;
             }
-            let idx = (block_number as usize) % validators.len();
-            let author = validators.get(idx).cloned();
-            if let Some(ref author) = author {
-                log::debug!("DCF: Selected author {:?} for block {} (index {} of {} validators)", 
-                           author, block_number, idx, validators.len());
+
+            // Calculate total weighted score
+            let mut total_weight = 0u64;
+            let validator_weights: Vec<(T::AccountId, u64)> = validators.iter()
+                .map(|validator| {
+                    let score = ValidatorStates::<T>::get(validator)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(1); // Minimum weight of 1 to ensure all validators can be selected
+                    total_weight = total_weight.saturating_add(score);
+                    (validator.clone(), score)
+                })
+                .collect();
+
+            if total_weight == 0 {
+                // Fallback to round-robin if all scores are zero
+                let idx = (block_number as usize) % validators.len();
+                return validators.get(idx).cloned();
             }
-            author
+
+            // Use block number as seed for deterministic selection
+            let target = (block_number as u64 * 2654435761u64) % total_weight; // Using a large prime for better distribution
+            let mut cumulative_weight = 0u64;
+
+            for (validator, weight) in validator_weights {
+                cumulative_weight = cumulative_weight.saturating_add(weight);
+                if target < cumulative_weight {
+                    log::debug!("DCF: Selected author {:?} for block {} (score: {}, target: {}/{})", 
+                               validator, block_number, weight, target, total_weight);
+                    return Some(validator);
+                }
+            }
+
+            // Fallback to first validator if something goes wrong
+            validators.get(0).cloned()
         }
 
         /// Get validator profile information with fresh PoS and PoI scores.
@@ -2067,6 +2132,20 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Sort validators by their final weighted score (highest first).
+        fn sort_validators_by_score(validators: &mut BoundedVec<T::AccountId, <T as Config>::MaxValidators>) {
+            validators.sort_by(|a, b| {
+                let score_a = ValidatorStates::<T>::get(a)
+                    .map(|state| state.current.final_score)
+                    .unwrap_or(0);
+                let score_b = ValidatorStates::<T>::get(b)
+                    .map(|state| state.current.final_score)
+                    .unwrap_or(0);
+                // Sort in descending order (highest score first)
+                score_b.cmp(&score_a)
+            });
+        }
+
         /// Apply pending join/leave actions at epoch transition.
         fn apply_pending_validator_actions() {
             let mut active = ActiveValidators::<T>::get();
@@ -2076,25 +2155,77 @@ pub mod pallet {
             let actions: Vec<(T::AccountId, ValidatorAction)> =
                 PendingValidatorActions::<T>::iter().collect();
 
+            // Separate join and leave actions
+            let mut join_requests: Vec<T::AccountId> = Vec::new();
+            let mut leave_requests: Vec<T::AccountId> = Vec::new();
+
             for (who, action) in actions {
                 match action {
                     ValidatorAction::Join => {
-                        if !active.contains(&who) && active.len() < active.capacity() {
-                            active.try_push(who.clone()).ok();
-                            changed = true;
+                        if !active.contains(&who) {
+                            join_requests.push(who.clone());
                         }
                     }
                     ValidatorAction::Leave => {
-                        if let Some(pos) = active.iter().position(|v| v == &who) {
-                            active.remove(pos);
-                            changed = true;
+                        if active.contains(&who) {
+                            leave_requests.push(who.clone());
                         }
                     }
                 }
                 PendingValidatorActions::<T>::remove(&who);
             }
 
+            // Process leave requests first
+            for who in leave_requests {
+                if let Some(pos) = active.iter().position(|v| v == &who) {
+                    active.remove(pos);
+                    changed = true;
+                    log::info!("DCF: Validator {:?} left the active set", who);
+                }
+            }
+
+            // Process join requests based on scores and available capacity
+            if !join_requests.is_empty() {
+                // Sort join requests by their scores (highest first)
+                join_requests.sort_by(|a, b| {
+                    let score_a = ValidatorStates::<T>::get(a)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(0);
+                    let score_b = ValidatorStates::<T>::get(b)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(0);
+                    score_b.cmp(&score_a) // Descending order
+                });
+
+                let available_slots = active.capacity() - active.len();
+                let min_score_threshold = <T as pallet::Config>::MinValidatorScore::get() as u64;
+
+                for who in join_requests.iter().take(available_slots) {
+                    let score = ValidatorStates::<T>::get(who)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(0);
+                    
+                    // Only add validators that meet the minimum score threshold
+                    if score >= min_score_threshold {
+                        if active.try_push(who.clone()).is_ok() {
+                            changed = true;
+                            log::info!("DCF: Validator {:?} joined the active set (score: {})", who, score);
+                        }
+                    } else {
+                        log::warn!("DCF: Rejected join request for validator {:?} due to low score: {}", who, score);
+                    }
+                }
+
+                // Log any rejected join requests due to capacity
+                if join_requests.len() > available_slots {
+                    let rejected_count = join_requests.len() - available_slots;
+                    log::info!("DCF: Rejected {} join requests due to capacity constraints", rejected_count);
+                }
+            }
+
             if changed {
+                // Sort active validators by their final weighted score (highest first)
+                Self::sort_validators_by_score(&mut active);
                 ActiveValidators::<T>::put(active);
             }
         }
@@ -2115,6 +2246,23 @@ pub mod pallet {
         /// Get governance mode status (for runtime API).
         pub fn get_governance_mode() -> bool {
             Self::governance_mode_enabled()
+        }
+
+        /// Get validators sorted by their final weighted score (highest first).
+        pub fn get_validators_by_score() -> Vec<(T::AccountId, u64)> {
+            let mut validators_with_scores: Vec<(T::AccountId, u64)> = Self::active_validators()
+                .iter()
+                .map(|validator| {
+                    let score = ValidatorStates::<T>::get(validator)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(0);
+                    (validator.clone(), score)
+                })
+                .collect();
+            
+            // Sort by score (highest first)
+            validators_with_scores.sort_by(|a, b| b.1.cmp(&a.1));
+            validators_with_scores
         }
 
         /// Get proposal details by ID (for runtime API).
@@ -2192,6 +2340,273 @@ pub mod pallet {
                                   validator, inactive_epochs);
                         let _ = Self::eject_validator(&validator, EjectionReason::ScoreBelowThreshold);
                     }
+                }
+            }
+        }
+
+        /// Generate automatic proposals for validator set optimization based on scores
+        fn generate_validator_proposals() {
+            let active_validators = ActiveValidators::<T>::get();
+            let all_validators = ValidatorSet::<T>::get();
+            let max_validators = <T as pallet::Config>::MaxValidators::get() as usize;
+            let _min_active_validators = <T as pallet::Config>::MinActiveValidators::get() as usize;
+            
+            // Don't generate proposals if governance mode is disabled
+            if !Self::governance_mode_enabled() {
+                return;
+            }
+            
+            // Get all validators with their scores, sorted by score (highest first)
+            let mut all_validators_with_scores: Vec<(T::AccountId, u64)> = all_validators
+                .iter()
+                .map(|validator| {
+                    let score = ValidatorStates::<T>::get(validator)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(0);
+                    (validator.clone(), score)
+                })
+                .collect();
+            
+            // Sort by score (highest first)
+            all_validators_with_scores.sort_by(|a, b| b.1.cmp(&a.1));
+            
+            // Case 1: We have space for more validators
+            if active_validators.len() < max_validators {
+                Self::propose_add_high_scoring_validators(&active_validators, &all_validators_with_scores, max_validators);
+            }
+            // Case 2: We're at capacity, consider replacing low-scoring active validators
+            else if active_validators.len() == max_validators {
+                Self::propose_replace_low_scoring_validators(&active_validators, &all_validators_with_scores);
+            }
+            // Case 3: We have too many validators (shouldn't happen, but handle it)
+            else if active_validators.len() > max_validators {
+                Self::propose_remove_excess_validators(&active_validators, max_validators);
+            }
+        }
+
+        /// Propose adding high-scoring validators when there's space
+        fn propose_add_high_scoring_validators(
+            active_validators: &BoundedVec<T::AccountId, <T as pallet::Config>::MaxValidators>,
+            all_validators_with_scores: &[(T::AccountId, u64)],
+            max_validators: usize,
+        ) {
+            let available_slots = max_validators - active_validators.len();
+            let min_score_threshold = <T as pallet::Config>::MinValidatorScore::get() as u64;
+            
+            // Find inactive validators with high scores
+            let mut candidates = Vec::new();
+            for (validator, score) in all_validators_with_scores {
+                if !active_validators.contains(validator) && 
+                   *score >= min_score_threshold &&
+                   !Self::has_pending_join_request(validator) &&
+                   !Self::was_recently_ejected(validator) {
+                    candidates.push((validator.clone(), *score));
+                    if candidates.len() >= available_slots {
+                        break;
+                    }
+                }
+            }
+            
+            // Create proposals for the best candidates
+            for (validator, score) in candidates {
+                if let Err(e) = Self::create_automatic_join_proposal(&validator, score) {
+                    log::warn!("Failed to create join proposal for validator {:?}: {:?}", validator, e);
+                }
+            }
+        }
+
+        /// Propose replacing low-scoring active validators with higher-scoring inactive ones
+        fn propose_replace_low_scoring_validators(
+            active_validators: &BoundedVec<T::AccountId, <T as pallet::Config>::MaxValidators>,
+            all_validators_with_scores: &[(T::AccountId, u64)],
+        ) {
+            // Get active validators with their scores, sorted by score (lowest first)
+            let mut active_with_scores: Vec<(T::AccountId, u64)> = active_validators
+                .iter()
+                .map(|validator| {
+                    let score = ValidatorStates::<T>::get(validator)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(0);
+                    (validator.clone(), score)
+                })
+                .collect();
+            
+            active_with_scores.sort_by(|a, b| a.1.cmp(&b.1)); // Sort by score (lowest first)
+            
+            // Find inactive validators with higher scores than the lowest active ones
+            for (inactive_validator, inactive_score) in all_validators_with_scores {
+                if active_validators.contains(inactive_validator) {
+                    continue; // Skip active validators
+                }
+                
+                // Check if this inactive validator has a significantly higher score than the lowest active validator
+                if let Some((lowest_active_validator, lowest_active_score)) = active_with_scores.first() {
+                    let score_improvement = inactive_score.saturating_sub(*lowest_active_score);
+                    let min_improvement_threshold = (*lowest_active_score / 10).max(1000); // 10% or 1000 points minimum improvement
+                    
+                    if score_improvement >= min_improvement_threshold &&
+                       *inactive_score >= <T as pallet::Config>::MinValidatorScore::get() as u64 &&
+                       !Self::has_pending_join_request(inactive_validator) &&
+                       !Self::was_recently_ejected(inactive_validator) {
+                        
+                        // Propose to eject the lowest scoring active validator
+                        if let Err(e) = Self::create_automatic_eject_proposal(lowest_active_validator, EjectionReason::ScoreBelowThreshold) {
+                            log::warn!("Failed to create eject proposal for validator {:?}: {:?}", lowest_active_validator, e);
+                        }
+                        
+                        // Propose to add the higher scoring inactive validator
+                        if let Err(e) = Self::create_automatic_join_proposal(inactive_validator, *inactive_score) {
+                            log::warn!("Failed to create join proposal for validator {:?}: {:?}", inactive_validator, e);
+                        }
+                        
+                        // Only propose one replacement at a time to avoid too many simultaneous changes
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// Propose removing excess validators (when somehow we have more than MaxValidators)
+        fn propose_remove_excess_validators(
+            active_validators: &BoundedVec<T::AccountId, <T as pallet::Config>::MaxValidators>,
+            max_validators: usize,
+        ) {
+            let excess_count = active_validators.len() - max_validators;
+            
+            // Get active validators sorted by score (lowest first)
+            let mut active_with_scores: Vec<(T::AccountId, u64)> = active_validators
+                .iter()
+                .map(|validator| {
+                    let score = ValidatorStates::<T>::get(validator)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(0);
+                    (validator.clone(), score)
+                })
+                .collect();
+            
+            active_with_scores.sort_by(|a, b| a.1.cmp(&b.1)); // Sort by score (lowest first)
+            
+            // Propose to eject the lowest scoring validators
+            for (validator, _score) in active_with_scores.iter().take(excess_count) {
+                if let Err(e) = Self::create_automatic_eject_proposal(validator, EjectionReason::ExcessValidators) {
+                    log::warn!("Failed to create eject proposal for excess validator {:?}: {:?}", validator, e);
+                }
+            }
+        }
+
+        /// Check if a validator has a pending join request
+        fn has_pending_join_request(validator: &T::AccountId) -> bool {
+            PendingValidatorActions::<T>::get(validator) == Some(ValidatorAction::Join)
+        }
+
+        /// Check if a validator was recently ejected (to avoid immediate re-addition)
+        fn was_recently_ejected(validator: &T::AccountId) -> bool {
+            // Check if validator was ejected in the last few epochs
+            let current_epoch = Self::current_epoch();
+            let grace_period = 3; // Don't re-add validators ejected in the last 3 epochs
+            
+            if let Some(state) = ValidatorStates::<T>::get(validator) {
+                // If the validator has a very low score or was recently active, they might have been ejected
+                let epochs_since_active = current_epoch.saturating_sub(state.last_active_epoch);
+                epochs_since_active <= grace_period && state.current.final_score == 0
+            } else {
+                false
+            }
+        }
+
+        /// Create an automatic proposal to add a validator
+        fn create_automatic_join_proposal(validator: &T::AccountId, score: u64) -> DispatchResult {
+            // Instead of creating a governance proposal, directly add to pending actions
+            // This is more efficient and works with the existing epoch transition logic
+            
+            // Check if there's already a pending join action
+            if PendingValidatorActions::<T>::get(validator) == Some(ValidatorAction::Join) {
+                return Ok(()); // Already has a pending join request
+            }
+            
+            // Add the validator to pending join actions
+            PendingValidatorActions::<T>::insert(validator, ValidatorAction::Join);
+            
+            // Emit events to indicate automatic addition
+            Self::deposit_event(Event::ValidatorJoined { validator: validator.clone() });
+            Self::deposit_event(Event::AutomaticValidatorProposal {
+                validator: validator.clone(),
+                action: ValidatorAction::Join,
+                score,
+                reason: BoundedVec::truncate_from(b"High score automatic addition".to_vec()),
+            });
+            
+            log::info!("DCF: Automatically scheduled validator {:?} for addition (score: {})", validator, score);
+            Ok(())
+        }
+
+        /// Create an automatic proposal to eject a validator
+        fn create_automatic_eject_proposal(validator: &T::AccountId, reason: EjectionReason) -> DispatchResult {
+            // For automatic ejections based on score, we can directly eject
+            // For governance-based ejections, we create proposals
+            
+            match reason {
+                EjectionReason::ScoreBelowThreshold | EjectionReason::ExcessValidators => {
+                    // Get the validator's score before ejection for the event
+                    let score = ValidatorStates::<T>::get(validator)
+                        .map(|state| state.current.final_score)
+                        .unwrap_or(0);
+                    
+                    // Direct ejection for performance-based reasons
+                    Self::eject_validator(validator, reason.clone())?;
+                    
+                    // Emit automatic proposal event
+                    let reason_text = match reason {
+                        EjectionReason::ScoreBelowThreshold => "Low score automatic ejection",
+                        EjectionReason::ExcessValidators => "Excess validators automatic ejection",
+                        _ => "Automatic ejection",
+                    };
+                    
+                    Self::deposit_event(Event::AutomaticValidatorProposal {
+                        validator: validator.clone(),
+                        action: ValidatorAction::Leave,
+                        score,
+                        reason: BoundedVec::truncate_from(reason_text.as_bytes().to_vec()),
+                    });
+                    
+                    log::info!("DCF: Automatically ejected validator {:?} (reason: {:?})", validator, reason);
+                    Ok(())
+                },
+                _ => {
+                    // Create governance proposal for manual/slashing-based ejections
+                    let proposal_id = NextProposalId::<T>::get();
+                    let system_account = T::AccountId::decode(&mut &[0u8; 32][..]).unwrap_or_else(|_| {
+                        // Fallback: use the first validator as proposer
+                        Self::active_validators().get(0).cloned().unwrap_or_else(|| {
+                            // Ultimate fallback: decode from a known pattern
+                            T::AccountId::decode(&mut &[1u8; 32][..]).unwrap()
+                        })
+                    });
+                    
+                    let action = ProposalAction::Eject { 
+                        validator: validator.clone(), 
+                        reason: reason.clone()
+                    };
+                    
+                    let proposal = GovernanceProposal {
+                        proposer: system_account,
+                        action,
+                        status: ProposalStatus::Pending,
+                        votes_for: 0,
+                        votes_against: 0,
+                    };
+                    
+                    Proposals::<T>::insert(proposal_id, &proposal);
+                    NextProposalId::<T>::put(proposal_id + 1);
+                    
+                    Self::deposit_event(Event::ProposalSubmitted {
+                        proposal_id,
+                        proposer: proposal.proposer,
+                        action: proposal.action,
+                    });
+                    
+                    log::info!("DCF: Created governance eject proposal for validator {:?} (reason: {:?})", validator, reason);
+                    Ok(())
                 }
             }
         }
@@ -2326,6 +2741,7 @@ pub enum EjectionReason {
     ScoreBelowThreshold,
     MaxSlashingReached,
     ManualEjection,
+    ExcessValidators,
 }
 
 /// Severity of an inference error.

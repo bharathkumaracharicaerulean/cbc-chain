@@ -294,6 +294,10 @@ impl_runtime_apis! {
 		fn get_validator_set_info() -> (u32, u32, u32) {
 			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_set_info()
 		}
+
+		fn get_validators_by_score() -> Vec<(AccountId, u64)> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validators_by_score()
+		}
 	}
 
 	// Runtime Benchmarking API

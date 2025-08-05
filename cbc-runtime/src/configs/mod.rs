@@ -205,6 +205,7 @@ impl pallet_cbc_dcf::Config for Runtime {
     type ScoreDecayInterval = ConstU32<10>; // every 10 blocks
     type ParticipationUpdateInterval = ConstU32<100>; // every 100 blocks
     type UnderperformanceCheckInterval = ConstU32<50>; // every 50 blocks
+    type ValidatorProposalInterval = ConstU32<200>; // every 200 blocks
     type HealthMetricsInterval = ConstU32<1000>; // every 1000 blocks
     type OffchainWorkerInterval = ConstU32<5>; // every 5 blocks
     
