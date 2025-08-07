@@ -115,7 +115,6 @@ where
             
             if inactive_epochs > 0 {
                 // Score decay is handled by the runtime pallet automatically
-                // We just log the information here
                 info!("DCF EpochManager: Validator {:?} inactive for {} epochs", validator, inactive_epochs);
                 decayed_count += 1;
             }
@@ -145,7 +144,7 @@ where
         for (validator, score) in all_scores {
             // Check minimum score requirement
             if score >= 50 { // Minimum score threshold
-                // Check if validator has sufficient stake (this would be checked via PoS pallet)
+                // Check if validator has sufficient stake (this was  checked via PoS pallet)
                 eligible_validators.push((validator, score));
             }
         }
@@ -163,18 +162,11 @@ where
         
         info!("DCF EpochManager: Validator set update - {} -> {} active validators", 
               old_active_count, new_active_count);
-        
-        // The actual validator set update is handled by the runtime pallet
-        // This is just for monitoring and validation
-        
         Ok(())
     }
 
     /// Process validator join/leave requests
-    fn process_validator_set_changes(&self) -> Result<()> {
-        // Validator join/leave requests are processed automatically by the runtime pallet
-        // during epoch transitions. This function provides additional validation and logging.
-        
+    fn process_validator_set_changes(&self) -> Result<()> {        
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -293,7 +285,7 @@ where
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
-        if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks))) = 
+        if let Ok(Some((combined_score, pos_score, _poi_score, uptime, _inference_count, _participation_rate, missed_blocks))) = 
             api.get_validator_profile(best_hash, validator.clone()) {
             
             let stake_score = pos_score; // Use the fresh PoS score from the profile

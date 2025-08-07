@@ -7,6 +7,7 @@ pub mod dcf;
 
 /// Validator and author selection
 pub mod author_selection;
+/// Validator set management and operations
 pub mod validator_set;
 
 /// Block production and import

@@ -6,7 +6,7 @@ use sp_std::vec::Vec;
 impl<T: Config> Pallet<T> {
     /// Optimized batch score update for multiple validators
     pub fn batch_update_validator_scores(
-        validators: &[T::AccountId],
+        validators: &[<T as frame_system::Config>::AccountId],
         update_pos: bool,
         update_poi: bool,
     ) -> Result<u32, DispatchError> {
@@ -37,7 +37,7 @@ impl<T: Config> Pallet<T> {
     }
     
     /// Internal optimized PoS score update
-    fn update_pos_score_internal(validator: &T::AccountId) -> Result<(), DispatchError> {
+    fn update_pos_score_internal(validator: &<T as frame_system::Config>::AccountId) -> Result<(), DispatchError> {
         let stake = pos::Pallet::<T>::stake(validator);
         let stake_score = stake.saturated_into::<u64>();
         
@@ -51,7 +51,7 @@ impl<T: Config> Pallet<T> {
     }
     
     /// Internal optimized PoI score update
-    fn update_poi_score_internal(validator: &T::AccountId) -> Result<(), DispatchError> {
+    fn update_poi_score_internal(validator: &<T as frame_system::Config>::AccountId) -> Result<(), DispatchError> {
         if let Some((result, _)) = poi::Pallet::<T>::inference_results(validator) {
             let inference_score = result as u64;
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
@@ -65,7 +65,7 @@ impl<T: Config> Pallet<T> {
     }
     
     /// Optimized validator ranking with caching
-    pub fn get_validator_rankings_cached() -> Vec<(T::AccountId, u64)> {
+    pub fn get_validator_rankings_cached() -> Vec<(<T as frame_system::Config>::AccountId, u64)> {
         let validators = Self::active_validators();
         let mut rankings = Vec::new();
         
@@ -81,7 +81,7 @@ impl<T: Config> Pallet<T> {
     }
     
     /// Optimized author selection for block authorship
-    pub fn optimized_select_author(block_number: u32) -> Option<T::AccountId> {
+    pub fn optimized_select_author(block_number: u32) -> Option<<T as frame_system::Config>::AccountId> {
         let active_validators = Self::active_validators();
         if active_validators.is_empty() {
             return None;
@@ -114,7 +114,7 @@ impl<T: Config> Pallet<T> {
     }
     
     /// Memory-efficient validator state query
-    pub fn get_validator_states_batch(validators: &[T::AccountId]) -> Vec<Option<ValidatorState>> {
+    pub fn get_validator_states_batch(validators: &[<T as frame_system::Config>::AccountId]) -> Vec<Option<ValidatorState>> {
         validators.iter()
             .map(|v| Self::validator_states(v))
             .collect()

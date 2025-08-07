@@ -298,6 +298,38 @@ impl_runtime_apis! {
 		fn get_validators_by_score() -> Vec<(AccountId, u64)> {
 			pallet_cbc_dcf::Pallet::<Runtime>::get_validators_by_score()
 		}
+
+		fn get_last_finalized_block() -> u32 {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_last_finalized_block()
+		}
+
+		fn is_block_finalized(block_number: u32) -> bool {
+			pallet_cbc_dcf::Pallet::<Runtime>::is_block_finalized(block_number)
+		}
+
+		fn get_misbehavior_report_count(validator: AccountId) -> u32 {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_misbehavior_report_count(&validator)
+		}
+
+		fn get_misbehavior_reporters(validator: AccountId) -> Vec<AccountId> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_misbehavior_reporters(&validator)
+		}
+
+		fn get_misbehavior_evidence(validator: AccountId, reporter: AccountId) -> Option<Vec<u8>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_misbehavior_evidence(&validator, &reporter)
+		}
+
+		fn is_validator_at_risk(validator: AccountId) -> bool {
+			pallet_cbc_dcf::Pallet::<Runtime>::is_validator_at_risk(&validator)
+		}
+
+		fn get_finality_info() -> (u32, u32) {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_finality_info()
+		}
+
+		fn blocks_since_finalization(current_block: u32) -> u32 {
+			pallet_cbc_dcf::Pallet::<Runtime>::blocks_since_finalization(current_block)
+		}
 	}
 
 	// Runtime Benchmarking API

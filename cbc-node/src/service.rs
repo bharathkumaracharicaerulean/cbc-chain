@@ -151,8 +151,8 @@ impl DcfImportQueueService {
     
     /// Extract the block author from the block header
     fn extract_block_author(&self, header: &<Block as sp_runtime::traits::Block>::Header) -> Option<cbc_runtime::AccountId> {
-        // For now, use a default author for testing
-        // In production, this would extract the author from block digest
+        // For now, using  default author for testing
+        // this would extract the author from block digest
         Some(cbc_runtime::AccountId::from([0u8; 32]))
     }
 }
@@ -306,7 +306,7 @@ where
 
 
     // --- CBC Custom Consensus Integration ---
-    // This integrates your custom PoS/PoI consensus with actual block production
+    // This integrates custom PoS/PoI consensus 
     // The DCF pallet provides validator selection based on PoS and PoI scores
     
     let consensus_params = ConsensusParams {
@@ -319,14 +319,13 @@ where
         min_block_time: 1000,
     };
     
-    // Create a real block import that uses the import queue
     // This will actually add blocks to the chain state
     let dcf_block_import = cbc_consensus::RealBlockImport::new(client.clone());
     let dcf_block_import_arc = Arc::new(dcf_block_import);
     
-    // Set up real PoS+PoI block production with DCF consensus
+    // Set up  PoS+PoI block production with DCF consensus
     if config.role.is_authority() {
-        // Create and start the real DCF consensus engine with real block import
+       
         let mut dcf_consensus = cbc_consensus::DcfConsensus::<Block, FullClient, sp_core::sr25519::Pair, _>::new(
             client.clone(),
             transaction_pool.clone(),
@@ -345,11 +344,6 @@ where
             },
         );
     }
-    
-    // Note: The DCF consensus engine that was trying to produce blocks independently
-    // has been disabled. In a production setup, DCF should integrate with Substrate's
-    // consensus framework (like BABE, etc.) to provide validator selection logic
-    // rather than trying to produce blocks independently.
     
     log::info!("DCF: Consensus monitoring active. Block production handled by Substrate's default mechanisms.");
 

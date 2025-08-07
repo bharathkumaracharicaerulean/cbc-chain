@@ -169,6 +169,7 @@ impl pallet_cbc_poi::Config for Runtime {
     type InferenceReward = InferenceReward;
     type ChallengeReward = ChallengeReward;
     type PosInterface = PosInterfaceImpl;
+    type DcfInterface = pallet_cbc_dcf::Pallet<Runtime>;
 }
 
 // === CBC POS Pallet Configuration ===
@@ -208,6 +209,8 @@ impl pallet_cbc_dcf::Config for Runtime {
     type ValidatorProposalInterval = ConstU32<200>; // every 200 blocks
     type HealthMetricsInterval = ConstU32<1000>; // every 1000 blocks
     type OffchainWorkerInterval = ConstU32<5>; // every 5 blocks
+    type LeaveCooldown = ConstU32<1000>; // 1000 blocks cooldown period
+    type EpochLength = ConstU32<2400>; // 2400 blocks per epoch (approximately 4 hours at 6s blocks)
     
     // Block authorship rewards and penalties
     type BlockAuthorshipBoost = ConstU64<10>;
@@ -228,6 +231,7 @@ impl pallet_cbc_dcf::Config for Runtime {
     type MaxRewardBoost = ConstU64<20>;
     type SlashPenaltyDivisor = ConstU64<1000>;
     type RewardBoostDivisor = ConstU64<1000>;
+    type SlashPercent = ConstU32<10>; // 10% of validator's balance
     
     // Validator metadata limits
     type MaxValidatorNameLength = ConstU32<32>;
@@ -249,6 +253,11 @@ impl pallet_cbc_dcf::Config for Runtime {
     // Stake and balance configuration
     type MinStake = ConstU128<1000>;
     type Balance = Balance;
+    type Currency = Balances;
     type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
+    
+    // Misbehavior reporting configuration
+    type MaxEvidenceLength = ConstU32<1024>; // 1KB for evidence data
+    type MisbehaviorSlashThreshold = ConstU32<3>; // 3 reports trigger automatic slash
 }
 

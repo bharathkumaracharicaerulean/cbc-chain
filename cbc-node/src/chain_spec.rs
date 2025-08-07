@@ -20,7 +20,7 @@ pub fn development_chain_spec() -> Result<ChainSpec, String> {
 pub fn local_chain_spec() -> Result<ChainSpec, String> {
     let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
     
-    // Create a minimal chain spec
+    // Created a minimal chain spec
     let chain_spec = ChainSpec::builder(
         wasm_binary,
         None,

@@ -107,7 +107,7 @@ where
             return Ok(ImportResult::imported(false));
         }
         
-        // CRITICAL FIX: Actually import the block into the client's chain state
+        // CRITICAL FIX (CAUTION): Actually import the block into the client's chain state
         // The key insight: we need to use the client's backend to actually store the block
         
         // For now, let's validate and accept the block
@@ -136,5 +136,69 @@ where
         };
         
         Ok(ImportResult::Imported(aux))
+    }
+}
+
+impl<B, C> DcfImportQueue<B, C>
+where
+    B: BlockTrait,
+    C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
+    C::Api: RuntimeDcfApi<B, AccountId>,
+{
+    /// Handle justifications for finality (stub implementation as requested)
+    pub fn import_justifications(
+        &self,
+        _who: String, // Simplified origin type
+        hash: B::Hash,
+        number: sp_runtime::traits::NumberFor<B>,
+        _justifications: Vec<u8>, // Simplified justifications type
+    ) -> Result<(), Error> {
+        let block_number = number.saturated_into::<u32>();
+        
+        debug!("DCF ImportQueue: Received justifications for block #{} ({:?})", 
+               block_number, hash);
+        
+        // Get the current finalized block from the DCF pallet
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        match api.get_last_finalized_block(best_hash) {
+            Ok(last_finalized) => {
+                // Check if this justification is for a block that should be finalized
+                if block_number >= last_finalized {
+                    info!("DCF ImportQueue: Justification received for block #{} (last finalized: {})", 
+                          block_number, last_finalized);
+                    
+                    // Check if the block is already considered finalized by the DCF pallet
+                    match api.is_block_finalized(best_hash, block_number) {
+                        Ok(is_finalized) => {
+                            if is_finalized {
+                                info!("DCF ImportQueue: Block #{} is already finalized according to DCF pallet", 
+                                      block_number);
+                            } else {
+                                info!("DCF ImportQueue: Block #{} justification received but not yet finalized by DCF pallet", 
+                                      block_number);
+                                
+                                // Here we could potentially update the finalized block
+                                // but for now we just log it for testing purpose
+                            }
+                        }
+                        Err(e) => {
+                            error!("DCF ImportQueue: Failed to check finalization status for block #{}: {:?}", 
+                                   block_number, e);
+                        }
+                    }
+                } else {
+                    debug!("DCF ImportQueue: Justification for block #{} is older than last finalized block {}", 
+                           block_number, last_finalized);
+                }
+            }
+            Err(e) => {
+                error!("DCF ImportQueue: Failed to get last finalized block: {:?}", e);
+            }
+        }
+        
+        // Return Ok() as requested - no actual justification processing
+        Ok(())
     }
 }

@@ -9,9 +9,9 @@ use crate::{
     proposer_factory::ProposerFactory,
 };
 use std::{sync::Arc, time::Duration};
-use log::{error, info, warn};
+use log::{debug, error, info};
 use sp_runtime::traits::{Block as BlockTrait, SaturatedConversion, Header as HeaderT};
-use sc_consensus::{BlockImport, BlockImportParams, ImportResult, BlockCheckParams};
+use sc_consensus::{BlockImport, BlockImportParams, ImportResult};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_core::Pair;
@@ -19,10 +19,9 @@ use tokio::time::sleep;
 use sp_core::sr25519::Public;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use cbc_runtime::AccountId;
-
 use sc_transaction_pool_api::TransactionPool;
 use sp_runtime::DigestItem;
-use sc_client_api::BlockBackend;
+// use sc_client_api::BlockBackend;
 
 
 /// DCF consensus engine implementation
@@ -35,14 +34,13 @@ where
     TP: TransactionPool<Block = B> + 'static,
 {
     client: Arc<C>,
-    transaction_pool: Arc<TP>,
     proposer_factory: ProposerFactory<B, C, TP>,
     block_import: Arc<dyn BlockImport<B, Error = sp_consensus::Error> + Send + Sync>,
     params: ConsensusParams,
     metrics: ValidatorMetrics,
     last_block_time: Duration,
     current_slot: u64,
-    _phantom: std::marker::PhantomData<(B, P)>,
+    _phantom: std::marker::PhantomData<(B, P, TP)>,
 }
 
 impl<B, C, P, TP> DcfConsensus<B, C, P, TP>
@@ -72,7 +70,6 @@ where
             
         Self {
             client,
-            transaction_pool,
             proposer_factory,
             block_import,
             params,
@@ -85,15 +82,13 @@ where
 
     /// Start the DCF consensus engine
     pub async fn run(&mut self) {
-        info!("DCF: Starting consensus engine with parameters: {:?}", self.params);
-        info!("DCF: Block production will start immediately - last_block_time initialized to 0");
         
         loop {
             // Check if we should produce a block
             if self.should_produce_block() {
                 // Get current runtime state
                 let best_hash = self.client.info().best_hash;
-                let best_number = self.client.info().best_number;
+                let _best_number = self.client.info().best_number;
                 
                 // Get active validators from runtime
                 let active_validators = {
@@ -106,28 +101,25 @@ where
                         if validators.is_empty() {
                             error!("DCF: No active validators available for block production");
                         } else {
-                            info!("DCF: Found {} active validators for block production", validators.len());
                             
                             // Select next author using runtime logic
                             match self.select_next_author_from_runtime(&validators) {
                                 Ok(author) => {
-                                    info!("DCF: Selected author {:?} for block #{}", author, best_number + 1u32.into());
-                                    
                                     match self.produce_block_with_validation(&author).await {
                                         Ok(()) => {
-                                            info!("PoS+PoI: Block production successful for author {:?}", author);
+                                            debug!("Block production successful for author {:?}", author);
                                         }
                                         Err(e) => {
-                                            error!("PoS+PoI: Block production failed for author {:?}: {:?}", author, e);
+                                            debug!("Block production failed for author {:?}: {:?}", author, e);
                                             // Update consensus state to handle the failure
                                             let author_account: AccountId = author.into();
                                             if let Err(state_err) = self.handle_block_production_failure(&author_account).await {
-                                                error!("PoS+PoI: Failed to handle block production failure: {:?}", state_err);
+                                                debug!("Failed to handle block production failure: {:?}", state_err);
                                             }
                                         }
                                     }
                                 }
-                                Err(e) => error!("DCF: Failed to select next author: {:?}", e),
+                                Err(e) => debug!("Failed to select next author: {:?}", e),
                             }
                         }
                     }
@@ -150,7 +142,7 @@ where
                 self.update_validator_metrics().await;
             }
             
-            sleep(Duration::from_millis(100)).await;
+            sleep(Duration::from_millis(1000)).await;
         }
     }
 
@@ -165,14 +157,8 @@ where
         
         let should_produce = time_since_last >= block_interval;
         
-        // Add debug logging to see what's happening
-        if self.current_slot % 50 == 0 { // Log every 50 slots to avoid spam
-            info!("DCF: Block production check - Time since last: {}s, Block interval: {}s, Should produce: {}", 
-                  time_since_last.as_secs(), block_interval.as_secs(), should_produce);
-        }
-        
         if should_produce {
-            info!("DCF: Time to produce block - {}s since last block", time_since_last.as_secs());
+            debug!("Time to produce block - interval: {:?}, time since last: {:?}", block_interval, time_since_last);
         }
         
         should_produce
@@ -180,11 +166,10 @@ where
     
     /// Handle epoch transitions
     async fn handle_epoch_transition(&mut self, current_epoch: u32) {
-        info!("DCF: Processing epoch transition for epoch {}", current_epoch);
         
         let current_block = self.client.info().best_number.saturated_into::<u32>();
         
-        // Check if epoch transition should occur based on runtime state
+        // Check if epoch transition occurs based on runtime state
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -194,11 +179,9 @@ where
             let should_transition = current_block >= epoch_start_block + blocks_per_epoch;
             
             if should_transition {
-                info!("DCF: Epoch transition detected at block {} (epoch {} -> {})", 
-                      current_block, current_epoch, current_epoch + 1);
                 
-                // The actual epoch transition is handled by the runtime pallet
-                // We just log and perform maintenance here
+                //  actual epoch transition is handled by the runtime pallet 
+                //  So we just log and perform maintenance here
                 self.perform_epoch_maintenance(current_epoch).await;
             } else {
                 // No transition needed, but still perform periodic maintenance
@@ -210,13 +193,13 @@ where
     }
     
     /// Perform periodic maintenance during an epoch
-    async fn perform_epoch_maintenance(&mut self, current_epoch: u32) {
+    async fn perform_epoch_maintenance(&mut self, _current_epoch: u32) {
         // Update validator metrics and check for issues
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
         if let Ok(active_validators) = api.get_active_validators(best_hash) {
-            let mut healthy_validators = 0;
+            let mut _healthy_validators = 0;
             let mut total_score = 0u64;
             
             for validator in active_validators.iter() {
@@ -227,25 +210,18 @@ where
                     
                     // Check validator health
                     if combined_score >= 50 && participation_rate >= 80 && missed_blocks <= 5 {
-                        healthy_validators += 1;
-                    } else {
-                        info!("DCF: Validator {:?} needs attention - Combined Score: {}, Participation: {}%, Missed: {}", 
-                              validator, combined_score, participation_rate, missed_blocks);
+                        _healthy_validators += 1;
                     }
                 }
             }
             
-            let average_score = if !active_validators.is_empty() {
+            let _average_score = if !active_validators.is_empty() {
                 total_score / active_validators.len() as u64
             } else {
                 0
             };
             
-            // Log epoch health metrics
-            if self.current_slot % 50 == 0 { // Every 50 slots
-                info!("DCF: Epoch {} health - {}/{} healthy validators, avg score: {}", 
-                      current_epoch, healthy_validators, active_validators.len(), average_score);
-            }
+
         }
     }
     
@@ -256,7 +232,7 @@ where
         
         // Get all validator scores and update metrics
         if let Ok(scores) = api.get_validator_scores(best_hash) {
-            for (account_id, final_score) in scores {
+            for (account_id, _final_score) in scores {
                 let public_key = Public::from_raw(*account_id.as_ref());
                 
                 // Get detailed validator information
@@ -272,7 +248,7 @@ where
                     
                     // Log metrics periodically
                     if self.current_slot % 100 == 0 {
-                        info!("DCF: Validator {:?} - Combined Score: {}, PoS: {}, PoI: {}, Participation: {}%, Missed: {}", 
+                        debug!("Validator {:?} - Combined Score: {}, PoS: {}, PoI: {}, Participation: {}%, Missed: {}", 
                               account_id, combined_score, pos_score, poi_score, participation_rate, missed_blocks);
                     }
                 }
@@ -298,7 +274,7 @@ where
                 }
             }
             Ok(None) => {
-                info!("DCF: No expected author from runtime, using fallback selection");
+                debug!("No expected author from runtime, using fallback selection");
                 self.fallback_author_selection(active_validators)
             }
             Err(e) => {
@@ -317,7 +293,7 @@ where
         let index = (self.current_slot as usize) % active_validators.len();
         let selected_validator = &active_validators[index];
         
-        info!("DCF: Using fallback selection - validator {} of {}", index + 1, active_validators.len());
+        debug!("Using fallback selection - validator {} of {}", index + 1, active_validators.len());
         Ok(Public::from_raw(*selected_validator.as_ref()))
     }
 
@@ -329,7 +305,12 @@ where
         let author_account_id: AccountId = author.clone().into();
         let block_number = (best_number + 1u32.into()).saturated_into::<u32>();
 
-        info!("DCF: Producing block #{} with author {:?}", block_number, author_account_id);
+        // Only log every 10th block to reduce noise
+        if block_number % 10 == 1 {
+            info!("Producing block #{} with author {:?}", block_number, author_account_id);
+        } else {
+            debug!("Producing block #{} with author {:?}", block_number, author_account_id);
+        }
 
         // Validate block authorship through runtime
         api.validate_block_author(best_hash, block_number, author_account_id.clone())
@@ -339,14 +320,14 @@ where
         if let Ok(scores) = api.get_validator_scores(best_hash) {
             if let Some((_, final_score)) = scores.iter().find(|(a, _)| a == &author_account_id) {
                 self.metrics.update_validator_score(author.clone(), 0, 0, (*final_score).try_into().unwrap_or(0));
-                info!("DCF: Author {:?} has final score: {}", author_account_id, final_score);
+                debug!("DCF: Author {:?} has final score: {}", author_account_id, final_score);
             }
         }
 
         // Get validator profile for additional metrics
         if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks))) = 
             api.get_validator_profile(best_hash, author_account_id.clone()) {
-            info!("DCF: Validator profile - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
+            debug!("DCF: Validator profile - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
                   combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks);
         }
 
@@ -362,13 +343,13 @@ where
         // 4. Update consensus state after successful block production
         self.update_consensus_state(block_number, &author_account_id).await?;
         
-        info!("PoS+PoI: Block #{} successfully produced by {:?}", block_number, author_account_id);
+        info!("Block #{} produced by {:?}", block_number, author_account_id);
         Ok(())
     }
 
     /// Create block proposal with transactions from the pool
     async fn create_block_proposal(&mut self, author: &Public, block_number: u32) -> Result<B> {
-        info!("PoS+PoI: Creating block proposal #{} for author {:?}", block_number, author);
+        debug!("Creating block proposal #{} for author {:?}", block_number, author);
         
         let parent_hash = self.client.info().best_hash;
         
@@ -386,8 +367,7 @@ where
             )));
         }
         
-        info!("PoS+PoI: Created block #{} with {} transactions using ProposerFactory", 
-              block_number, block.extrinsics().len());
+        debug!("Created block #{} with {} transactions", block_number, block.extrinsics().len());
         
         Ok(block)
     }
@@ -397,14 +377,14 @@ where
     /// Sign block proposal with author's key
     async fn sign_block_proposal(&self, block: B, author: &Public) -> Result<B> {
         let block_number = *block.header().number();
-        info!("PoS+PoI: Signing block #{} with author {:?}", block_number, author);
+        debug!("Signing block #{} with author {:?}", block_number, author);
         
         // For now, use a simplified signing approach
-        // In production, this would integrate with the keystore properly
+        //  this would integrate with the keystore properly
+        // Caution need an attention here 
         let block_hash = block.header().hash();
         
-        // Create a basic signature using the author's public key and block hash
-        // This is a placeholder - in production you'd use proper keystore signing
+        // Create a basic signature using the author's public key and block hash (palceholder caution)
         let signature_data = {
             let mut data = Vec::new();
             data.extend_from_slice(author.as_ref());
@@ -415,7 +395,7 @@ where
         
         // Add the signature to the block's digest as a seal
         let seal_digest = DigestItem::Seal(
-            *b"cbc ", // Use CBC consensus engine ID (4 bytes)
+            *b"cbc ", // Using CBC consensus engine ID (4 bytes)
             signature_data.to_vec(),
         );
         
@@ -430,20 +410,16 @@ where
         // Create new block with signed header
         let signed_block = B::new(header, block.extrinsics().to_vec());
         
-        info!("PoS+PoI: Block #{} signed and sealed by author {:?}", block_number, author);
+        debug!("Block #{} signed and sealed", block_number);
         Ok(signed_block)
     }
     
-    /// Import consensus block through pipeline - REAL IMPLEMENTATION
+    /// Import consensus block through pipeline
     async fn import_consensus_block(&self, block: B) -> Result<()> {
         let block_hash = block.header().hash();
         let block_number = *block.header().number();
         
-        info!("PoS+PoI: Importing consensus block #{} ({:?})", block_number, block_hash);
-        
-        // Check if block already exists (simplified check)
-        // Note: In a real implementation, we'd check the client's block storage
-        info!("PoS+PoI: Attempting to import block #{} ({:?})", block_number, block_hash);
+        debug!("Importing consensus block #{} ({:?})", block_number, block_hash);
         
         // Create proper block import parameters
         let mut import_params = BlockImportParams::new(
@@ -454,22 +430,22 @@ where
         import_params.finalized = false;
         import_params.fork_choice = Some(sc_consensus::ForkChoiceStrategy::LongestChain);
         
-        // Import through our block import (which should be the real import queue)
+        // Import through our block import 
         match self.block_import.import_block(import_params).await {
             Ok(ImportResult::Imported(_)) => {
-                info!("PoS+PoI: Block #{} ({:?}) successfully imported to chain", block_number, block_hash);
+                debug!("Block #{} successfully imported", block_number);
                 Ok(())
             }
             Ok(ImportResult::AlreadyInChain) => {
-                info!("PoS+PoI: Block #{} ({:?}) already in chain", block_number, block_hash);
+                debug!("Block #{} already in chain", block_number);
                 Ok(())
             }
             Ok(other) => {
-                warn!("PoS+PoI: Block #{} import result: {:?}", block_number, other);
+                debug!("Block #{} import result: {:?}", block_number, other);
                 Ok(())
             }
             Err(e) => {
-                error!("PoS+PoI: Failed to import block #{}: {:?}", block_number, e);
+                error!("Failed to import block #{}: {:?}", block_number, e);
                 Err(ConsensusError::BlockImport(format!("Import failed: {:?}", e)))
             }
         }
@@ -494,13 +470,13 @@ where
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
-        // Update validator performance in runtime (if the API supports it)
+        // Update validator performance in runtime 
         if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks))) = 
             api.get_validator_profile(best_hash, author.clone()) {
             
             // Log the successful block production
-            info!("PoS+PoI: Block #{} produced successfully by {:?}", block_number, author);
-            info!("PoS+PoI: Validator stats - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
+            debug!("Block #{} produced successfully by {:?}", block_number, author);
+            debug!("Validator stats - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
                   combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks);
             
             // Update local metrics with current runtime state
@@ -513,7 +489,7 @@ where
         }
         
         // Log consensus state update
-        info!("PoS+PoI: Updated consensus state - Block: {}, Slot: {}, Total Blocks: {}, Author: {:?}", 
+        debug!("Updated consensus state - Block: {}, Slot: {}, Total Blocks: {}, Author: {:?}", 
               block_number, self.current_slot, self.metrics.total_blocks, author);
         
         // Periodic state health check
@@ -580,7 +556,7 @@ where
         info!("PoS+PoI: Block production failed - Slot: {}, Failed blocks: {}, Author: {:?}", 
               self.current_slot, self.metrics.failed_blocks, author);
         
-        // Try to update validator metrics in runtime to reflect the missed block
+        //  update validator metrics in runtime to reflect the missed block
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -612,7 +588,7 @@ where
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
 {
-    /// Create a new real block import instance
+    /// Create a new RealBlockImport instance
     pub fn new(client: Arc<C>) -> Self {
         Self {
             client,
@@ -625,7 +601,7 @@ where
 impl<B, C> BlockImport<B> for RealBlockImport<B, C>
 where
     B: BlockTrait,
-    C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
+    C: ProvideRuntimeApi<B> + HeaderBackend<B> +BlockImport<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId>,
 {
     type Error = sp_consensus::Error;
@@ -636,7 +612,7 @@ where
     ) -> std::result::Result<ImportResult, Self::Error> {
         let block_number = block.number.saturated_into::<u32>();
         
-        info!("DCF: Checking block #{}", block_number);
+        debug!("Checking block #{}", block_number);
         
         // Basic validation - check if we have active validators
         let api = self.client.runtime_api();
@@ -650,7 +626,7 @@ where
             return Ok(ImportResult::imported(false));
         }
         
-        info!("DCF: Block #{} check passed", block_number);
+        debug!("Block #{} check passed", block_number);
         Ok(ImportResult::imported(true))
     }
 
@@ -661,7 +637,7 @@ where
         let block_number = (*block.header.number()).saturated_into::<u32>();
         let block_hash = block.header.hash();
         
-        info!("DCF: Importing block #{} ({:?})", block_number, block_hash);
+        debug!("Importing block #{} ({:?})", block_number, block_hash);
         
         // Validate that we have active validators
         let api = self.client.runtime_api();
@@ -675,25 +651,20 @@ where
             return Ok(ImportResult::imported(false));
         }
         
+        // Actually import the block using the client's import functionality
+        let import_result = self.client.import_block(block).await
+            .map_err(|e| sp_consensus::Error::ClientImport(format!("Client import failed: {:?}", e)))?;
+        
         // Log periodic statistics
         if block_number % 10u32 == 0 {
             let current_epoch = api.get_current_epoch(best_hash).unwrap_or(0);
-            info!("DCF: Block #{} processed - {} active validators, epoch {}", 
+            info!("Block #{} processed - {} active validators, epoch {}", 
                   block_number, active_validators.len(), current_epoch);
         }
         
-        info!("DCF: Block #{} ({:?}) validated and accepted", block_number, block_hash);
+        debug!("Block #{} ({:?}) successfully imported to chain", block_number, block_hash);
         
-        // Return imported with default aux data
-        let aux = sc_consensus::ImportedAux {
-            header_only: false,
-            clear_justification_requests: false,
-            needs_justification: false,
-            bad_justification: false,
-            is_new_best: true,
-        };
-        
-        Ok(ImportResult::Imported(aux))
+        Ok(import_result)
     }
 }
 
@@ -711,7 +682,7 @@ where
         // Get the expected author for this block
         if let Ok(Some(expected_author)) = api.get_expected_author(best_hash, block_number) {
             // Record successful block authorship
-            info!("DCF: Recording block authorship for validator {:?} at block #{}", 
+            debug!("Recording block authorship for validator {:?} at block #{}", 
                   expected_author, block_number);
             
             // Update validator metrics
@@ -719,11 +690,11 @@ where
                 api.get_validator_profile(best_hash, expected_author.clone()) {
                 
                 // Log validator metrics
-                info!("DCF: Validator {:?} metrics - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}", 
+                debug!("Validator {:?} metrics - Combined: {}, PoS: {}, PoI: {}, Uptime: {}, Inferences: {}", 
                       expected_author, combined_score, pos_score, poi_score, uptime, inference_count);
                 
                 // Log successful block production
-                info!("DCF: Block #{} successfully produced by validator {:?} (combined score: {})", 
+                debug!("Block #{} successfully produced by validator {:?} (combined score: {})", 
                       block_number, expected_author, combined_score);
             }
         }
@@ -741,7 +712,7 @@ pub async fn start_dcf_consensus<B, C, TP>(
     C::Api: RuntimeDcfApi<B, AccountId>,
     TP: TransactionPool<Block = B> + 'static,
 {
-    // Create a mock block import for testing
+    // Create a mock block import for testing (CAUTION required)
     let mock_block_import = Arc::new(crate::import_queue::DcfImportQueue::new(client.clone()));
     let mut consensus: DcfConsensus<B, C, sp_core::sr25519::Pair, TP> = DcfConsensus::new(client, transaction_pool, mock_block_import, params);
     consensus.run().await;

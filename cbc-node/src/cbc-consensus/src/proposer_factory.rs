@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 use sc_transaction_pool_api::{TransactionPool, InPoolTransaction};
 use sp_inherents::{InherentDataProvider, InherentData};
 use sp_timestamp::InherentDataProvider as TimestampInherentDataProvider;
-use log::{info, warn};
+use log::{debug, warn};
 
 /// Factory for creating real blocks with transactions using DCF runtime API for author selection
 pub struct ProposerFactory<B: BlockTrait, C, TP>
@@ -73,7 +73,7 @@ where
             Err(e) => return Err(ConsensusError::AuthorSelection(format!("Runtime API error: {:?}", e))),
         };
 
-        info!("ProposerFactory: Creating block #{} with author {:?}", block_number, author);
+        debug!("Creating block #{} with author {:?}", block_number, author);
 
         // Get transactions from the pool
         let ready_transactions = self.collect_transactions_from_pool().await?;
@@ -100,7 +100,7 @@ where
         // Create the complete block with transactions
         let block = B::new(header, ready_transactions);
         
-        info!("ProposerFactory: Created block #{} with {} transactions", 
+        debug!("Created block #{} with {} transactions", 
               block_number, block.extrinsics().len());
 
         self.last_block_time = Some(Instant::now());
@@ -114,7 +114,7 @@ where
             .map(|tx| (**tx.data()).clone())
             .collect::<Vec<_>>();
         
-        info!("ProposerFactory: Collected {} transactions from pool", ready_transactions.len());
+        debug!("Collected {} transactions from pool", ready_transactions.len());
         Ok(ready_transactions)
     }
     

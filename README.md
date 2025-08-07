@@ -98,7 +98,6 @@ CBC Chain introduces a revolutionary consensus mechanism that goes beyond tradit
   - Integrate with keystore management
 
 - [ ] **Finality Integration**
-  - Add GRANDPA finality gadget
   - Implement finality voting
   - Add fork choice rules
   - Handle chain reorganizations
@@ -297,7 +296,7 @@ cargo test --features runtime-benchmarks --package pallet-cbc-dcf
 
 ### Target Specifications
 - **Block Time**: 6 seconds
-- **Finality Time**: Custom DCF finality (not GRANDPA)
+- **Finality Time**: Custom DCF finality
 - **Transaction Throughput**: 1000+ TPS
 - **Validator Set Size**: 21-100 validators
 - **Inference Tasks**: 100+ concurrent tasks

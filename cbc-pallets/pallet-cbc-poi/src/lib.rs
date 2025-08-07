@@ -23,7 +23,7 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-// --- Benchmarking (if enabled) --- //
+// --- Benchmarking --- //
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
@@ -77,12 +77,19 @@ pub mod pallet {
         type ChallengeReward: Get<u128>;
         /// Interface to PoS pallet for boosting/slashing scores
         type PosInterface: PosInterface<Self::AccountId>;
+        /// Interface to DCF pallet for inference tracking
+        type DcfInterface: DcfInterface<Self::AccountId>;
     }
 
     /// Trait for PoS score manipulation (to be implemented by PoS pallet or runtime)
     pub trait PosInterface<AccountId> {
         fn boost_score(validator: &AccountId, weight: u32) -> DispatchResult;
         fn slash_score(validator: &AccountId, weight: u32) -> DispatchResult;
+    }
+
+    /// Trait for DCF inference tracking (to be implemented by DCF pallet or runtime)
+    pub trait DcfInterface<AccountId> {
+        fn record_inference_activity(validator: &AccountId) -> DispatchResult;
     }
 
     /// Genesis configuration for PoI pallet.
@@ -161,6 +168,18 @@ pub mod pallet {
         ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
         /// A validator was slashed. [validator, reason]
         ValidatorSlashed { validator: T::AccountId, reason: Vec<u8> },
+        /// PoI score was updated for a validator
+        PoiScoreUpdated {
+            validator: T::AccountId,
+            old_score: u32,
+            new_score: u32,
+            epoch: u32,
+        },
+        /// Epoch advanced in PoI system
+        PoiEpochAdvanced {
+            old_epoch: u32,
+            new_epoch: u32,
+        },
     }
 
     /// Errors returned by the PoI pallet.
@@ -213,7 +232,16 @@ pub mod pallet {
             let current_epoch = CurrentEpoch::<T>::get();
 
             // Store the inference result with current epoch.
+            let old_result = InferenceResults::<T>::get(&who).map(|(r, _)| r).unwrap_or(0);
             InferenceResults::<T>::insert(&who, (result, current_epoch));
+            
+            // Emit PoI score update event
+            Self::deposit_event(Event::PoiScoreUpdated {
+                validator: who.clone(),
+                old_score: old_result,
+                new_score: result,
+                epoch: current_epoch,
+            });
 
             // Emit an event.
             Self::deposit_event(Event::InferenceSubmitted { who: who.clone(), result, confidence });
@@ -234,6 +262,13 @@ pub mod pallet {
                 Self::deposit_event(Event::InferenceAccepted { validator: who.clone(), confidence });
                 // --- Telemetry: Inference accepted ---
                 ::log::info!("[cerulea::poi][prometheus] inference_accepted{{validator={:?}}} {{confidence={}}}", who, confidence);
+            }
+
+            // --- DCF inference tracking ---
+            if let Err(e) = T::DcfInterface::record_inference_activity(&who) {
+                ::log::warn!("[cerulea::poi][prometheus] dcf_inference_tracking_failed{{validator={:?}}} {:?}", who, e);
+            } else {
+                ::log::info!("[cerulea::poi][prometheus] dcf_inference_tracked{{validator={:?}}}", who);
             }
             Ok(())
         }

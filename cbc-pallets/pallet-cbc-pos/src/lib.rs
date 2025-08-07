@@ -127,6 +127,31 @@ pub mod pallet {
         ValidatorRemoved { validator: T::AccountId, reason: Vec<u8> },
         StakeBonded { validator: T::AccountId, amount: BalanceOf<T> },
         StakeUnbonded { validator: T::AccountId, amount: BalanceOf<T> },
+        ScoreBoosted { 
+            validator: T::AccountId, 
+            old_score: u32, 
+            new_score: u32, 
+            boost_amount: u32 
+        },
+        ScoreSlashed { 
+            validator: T::AccountId, 
+            old_score: u32, 
+            new_score: u32, 
+            slash_amount: u32 
+        },
+        ValidatorStakeSlashed { 
+            validator: T::AccountId, 
+            old_stake: BalanceOf<T>, 
+            new_stake: BalanceOf<T>, 
+            slashed_amount: BalanceOf<T> 
+        },
+        ValidatorActivated { validator: T::AccountId },
+        ValidatorDeactivated { validator: T::AccountId },
+        StakeUpdated { 
+            validator: T::AccountId, 
+            old_stake: BalanceOf<T>, 
+            new_stake: BalanceOf<T> 
+        },
     }
 
     #[pallet::error]
@@ -216,8 +241,13 @@ pub mod pallet {
             let current_stake = Stake::<T>::get(&who);
             let new_stake = current_stake.checked_add(&amount).ok_or(Error::<T>::InvalidStakeAmount)?;
             
-            Stake::<T>::insert(&who, new_stake);
-            Self::deposit_event(Event::StakeBonded { validator: who, amount });
+            Stake::<T>::insert(&who, &new_stake);
+            Self::deposit_event(Event::StakeBonded { validator: who.clone(), amount });
+            Self::deposit_event(Event::StakeUpdated { 
+                validator: who, 
+                old_stake: current_stake, 
+                new_stake 
+            });
             
             Ok(())
         }
@@ -235,8 +265,13 @@ pub mod pallet {
             let new_stake = current_stake.checked_sub(&amount).ok_or(Error::<T>::InvalidStakeAmount)?;
             ensure!(new_stake >= T::MinStake::get(), Error::<T>::InsufficientStake);
             
-            Stake::<T>::insert(&who, new_stake);
-            Self::deposit_event(Event::StakeUnbonded { validator: who, amount });
+            Stake::<T>::insert(&who, &new_stake);
+            Self::deposit_event(Event::StakeUnbonded { validator: who.clone(), amount });
+            Self::deposit_event(Event::StakeUpdated { 
+                validator: who, 
+                old_stake: current_stake, 
+                new_stake 
+            });
             
             Ok(())
         }
@@ -251,7 +286,13 @@ pub mod pallet {
             let new_score = current_score.saturating_add(weight);
             ValidatorScores::<T>::insert(&validator, new_score);
 
-            Self::deposit_event(Event::ScoreSubmitted { validator, score: new_score });
+            Self::deposit_event(Event::ScoreSubmitted { validator: validator.clone(), score: new_score });
+            Self::deposit_event(Event::ScoreBoosted { 
+                validator, 
+                old_score: current_score, 
+                new_score, 
+                boost_amount: weight 
+            });
             Ok(())
         }
 
@@ -265,7 +306,13 @@ pub mod pallet {
             let new_score = current_score.saturating_sub(weight);
             ValidatorScores::<T>::insert(&validator, new_score);
 
-            Self::deposit_event(Event::ScoreSubmitted { validator, score: new_score });
+            Self::deposit_event(Event::ScoreSubmitted { validator: validator.clone(), score: new_score });
+            Self::deposit_event(Event::ScoreSlashed { 
+                validator, 
+                old_score: current_score, 
+                new_score, 
+                slash_amount: weight 
+            });
             Ok(())
         }
     }
@@ -280,7 +327,15 @@ pub mod pallet {
             let new_stake = current_stake.saturating_sub(amount);
             
             // Update stake
-            Stake::<T>::insert(validator, new_stake);
+            Stake::<T>::insert(validator, &new_stake);
+            
+            // Emit stake slashing event
+            Self::deposit_event(Event::ValidatorStakeSlashed { 
+                validator: validator.clone(), 
+                old_stake: current_stake, 
+                new_stake, 
+                slashed_amount: amount 
+            });
             
             // Increment slashing count
             let count = SlashingCount::<T>::get(validator).unwrap_or(0) + 1;
@@ -312,11 +367,17 @@ pub mod pallet {
             let current_stake = Stake::<T>::get(validator);
             let new_stake = current_stake.saturating_add(amount);
             
-            Stake::<T>::insert(validator, new_stake);
+            Stake::<T>::insert(validator, &new_stake);
             
             Self::deposit_event(Event::StakeBonded { 
                 validator: validator.clone(), 
                 amount 
+            });
+            
+            Self::deposit_event(Event::StakeUpdated { 
+                validator: validator.clone(), 
+                old_stake: current_stake, 
+                new_stake 
             });
             
             Ok(())
@@ -333,6 +394,36 @@ pub mod pallet {
                     }
                 })
                 .collect()
+        }
+
+        /// Activate a validator
+        pub fn activate_validator(validator: &T::AccountId) -> DispatchResult {
+            ensure!(Validators::<T>::contains_key(validator), Error::<T>::ValidatorNotRegistered);
+            
+            let is_active = Validators::<T>::get(validator).unwrap_or(false);
+            if !is_active {
+                Validators::<T>::insert(validator, true);
+                Self::deposit_event(Event::ValidatorActivated { 
+                    validator: validator.clone() 
+                });
+            }
+            
+            Ok(())
+        }
+
+        /// Deactivate a validator
+        pub fn deactivate_validator(validator: &T::AccountId) -> DispatchResult {
+            ensure!(Validators::<T>::contains_key(validator), Error::<T>::ValidatorNotRegistered);
+            
+            let is_active = Validators::<T>::get(validator).unwrap_or(false);
+            if is_active {
+                Validators::<T>::insert(validator, false);
+                Self::deposit_event(Event::ValidatorDeactivated { 
+                    validator: validator.clone() 
+                });
+            }
+            
+            Ok(())
         }
     }
 }
