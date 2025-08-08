@@ -34,7 +34,7 @@ sp_api::decl_runtime_apis! {
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::{pallet_prelude::*, storage::types::{StorageMap, StorageValue}};
+    use frame_support::{pallet_prelude::*, storage::types::{StorageMap, StorageValue}, BoundedVec};
     use frame_system::pallet_prelude::*;
     use scale_info::prelude::vec::Vec;
     use sp_runtime::traits::{AtLeast32BitUnsigned, SaturatedConversion};
@@ -75,6 +75,9 @@ pub mod pallet {
         type MinStake: Get<BalanceOf<Self>>;
         /// The balance type
         type Balance: Parameter + Member + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen;
+
+        #[pallet::constant]
+        type MaxSlashingHistory: Get<u32>;
     }
 
     type BalanceOf<T> = <T as Config>::Balance;
@@ -137,6 +140,25 @@ pub mod pallet {
     #[pallet::getter(fn slashing_history)]
     pub type SlashingHistory<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, Vec<SlashingEvent<BalanceOf<T>>>, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn validator_uptime)]
+    pub type ValidatorUptimeHistory<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        Blake2_128Concat,
+        EpochId,
+        ValidatorUptime<T>,
+        ValueQuery
+    >;
+
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct ValidatorUptime<T: Config> {
+        blocks_authored: u32,
+        blocks_missed: u32,
+        last_updated: BlockNumberFor<T>,
+    }
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -153,6 +175,12 @@ pub mod pallet {
             reason: Vec<u8>,
             penalty_amount: BalanceOf<T>,
             timestamp: u32,
+        },
+        ValidatorUptimeUpdated {
+            validator: T::AccountId,
+            epoch: EpochId,
+            blocks_authored: u32,
+            blocks_missed: u32,
         },
     }
 
@@ -314,6 +342,38 @@ pub mod pallet {
 
             Self::deposit_event(Event::ScoreSubmitted { validator, score: new_score });
             Ok(())
+        }
+
+        pub fn record_block_authored(validator: &T::AccountId) -> DispatchResult {
+            let current_epoch = Self::current_epoch();
+            ValidatorUptimeHistory::<T>::try_mutate(validator, current_epoch, |uptime| {
+                uptime.blocks_authored = uptime.blocks_authored.saturating_add(1);
+                uptime.last_updated = frame_system::Pallet::<T>::block_number();
+                Ok(())
+            })
+        }
+
+        pub fn record_block_missed(validator: &T::AccountId) -> DispatchResult {
+            let current_epoch = Self::current_epoch();
+            ValidatorUptimeHistory::<T>::try_mutate(validator, current_epoch, |uptime| {
+                uptime.blocks_missed = uptime.blocks_missed.saturating_add(1);
+                uptime.last_updated = frame_system::Pallet::<T>::block_number();
+                Ok(())
+            })
+        }
+
+        fn on_epoch_ending(epoch: EpochId) {
+            // Emit events for all validators' uptime
+            for validator in Self::active_validators() {
+                if let Some(uptime) = Self::validator_uptime(&validator, epoch) {
+                    Self::deposit_event(Event::ValidatorUptimeUpdated {
+                        validator: validator.clone(),
+                        epoch,
+                        blocks_authored: uptime.blocks_authored,
+                        blocks_missed: uptime.blocks_missed,
+                    });
+                }
+            }
         }
     }
 }
