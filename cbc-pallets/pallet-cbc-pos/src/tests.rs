@@ -273,4 +273,22 @@ mod tests {
             assert_ok!(PalletCbcPos::submit_score(RuntimeOrigin::signed(2), 1, 75));
         });
     }
-} 
+
+    #[test]
+    fn trust_score_calculation_works() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            
+            // Setup mock data
+            assert_ok!(PosModule::record_block_authored(&validator));
+            assert_ok!(PosModule::update_validator_status(&validator, ValidatorStatus::Active));
+            
+            // Calculate trust score
+            assert_ok!(PosModule::calculate_trust_score(&validator));
+            
+            let trust = PosModule::validator_trust(&validator);
+            assert!(trust.final_score > 0);
+            assert_eq!(PosModule::validator_status(&validator), ValidatorStatus::Active);
+        });
+    }
+}

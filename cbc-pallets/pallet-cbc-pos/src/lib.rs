@@ -153,11 +153,46 @@ pub mod pallet {
     >;
 
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
-    pub struct ValidatorUptime<T: Config> {
-        blocks_authored: u32,
-        blocks_missed: u32,
+    pub enum ValidatorStatus {
+        Active,
+        Inactive,
+        Slashed,
+        Ejected,
+    }
+
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct ValidatorTrust {
+        /// Base trust score (0-100)
+        base_score: u32,
+        /// Uptime factor (0-100)
+        uptime_score: u32,
+        /// Inference success rate (0-100)
+        inference_score: u32,
+        /// Final weighted score
+        final_score: u32,
+        /// Last updated block number
         last_updated: BlockNumberFor<T>,
     }
+
+    #[pallet::storage]
+    #[pallet::getter(fn validator_status)]
+    pub type ValidatorStatuses<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        ValidatorStatus,
+        ValueQuery
+    >;
+
+    #[pallet::storage]
+    #[pallet::getter(fn validator_trust)]
+    pub type ValidatorTrustScores<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        ValidatorTrust<T>,
+        ValueQuery
+    >;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -181,6 +216,10 @@ pub mod pallet {
             epoch: EpochId,
             blocks_authored: u32,
             blocks_missed: u32,
+        },
+        ValidatorStatusChanged {
+            validator: T::AccountId,
+            status: ValidatorStatus,
         },
     }
 
@@ -373,6 +412,60 @@ pub mod pallet {
                         blocks_missed: uptime.blocks_missed,
                     });
                 }
+            }
+        }
+
+        impl<T: Config> Pallet<T> {
+            pub fn calculate_trust_score(validator: &T::AccountId) -> DispatchResult {
+                let uptime = Self::validator_uptime(validator, Self::current_epoch());
+                let status = Self::validator_status(validator);
+                
+                // Base score starts at 100, reduces for negative events
+                let mut base_score = 100u32;
+                
+                // Reduce score for slashing history
+                if let Some(slashes) = Self::slashing_history(validator) {
+                    base_score = base_score.saturating_sub(slashes.len() as u32 * 10);
+                }
+                
+                // Calculate uptime score
+                let uptime_score = if let Some(up) = uptime {
+                    let total = up.blocks_authored + up.blocks_missed;
+                    if total > 0 {
+                        (up.blocks_authored * 100 / total) as u32
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                
+                // Get inference score from PoI pallet
+                let inference_score = T::PoiProvider::get_score(validator)
+                    .saturated_into::<u32>()
+                    .min(100);
+                    
+                // Calculate final weighted score
+                let final_score = (base_score * 30 + uptime_score * 40 + inference_score * 30) / 100;
+                
+                ValidatorTrustScores::<T>::insert(validator, ValidatorTrust {
+                    base_score,
+                    uptime_score,
+                    inference_score,
+                    final_score,
+                    last_updated: frame_system::Pallet::<T>::block_number(),
+                });
+                
+                Ok(())
+            }
+            
+            pub fn update_validator_status(validator: &T::AccountId, new_status: ValidatorStatus) {
+                ValidatorStatuses::<T>::insert(validator, new_status.clone());
+                
+                Self::deposit_event(Event::ValidatorStatusChanged {
+                    validator: validator.clone(),
+                    status: new_status,
+                });
             }
         }
     }
