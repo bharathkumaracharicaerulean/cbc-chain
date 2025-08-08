@@ -376,4 +376,16 @@ pub mod pallet {
             }
         }
     }
+
+    impl<T: Config> ScoreProvider<T::AccountId, BalanceOf<T>> for Pallet<T> {
+        fn get_score(validator: &T::AccountId) -> BalanceOf<T> {
+            Self::validator_stake(validator)
+        }
+    }
+
+    impl<T: Config> ScoreProvider<T::AccountId, BalanceOf<T>> for Pallet<T> {
+        fn get_score(validator: &T::AccountId) -> BalanceOf<T> {
+            Self::validator_inference_score(validator)
+        }
+    }
 }

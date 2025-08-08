@@ -214,3 +214,25 @@ fn test_epoch_transition_and_block_author_tracking() {
         assert_eq!(Dcf::current_epoch(), 1);
     });
 }
+
+#[test]
+fn score_integration_works() {
+    new_test_ext().execute_with(|| {
+        let validator = 1u64;
+        
+        // Setup mock scores
+        MockPos::set_score(validator, 1000);
+        MockPoi::set_score(validator, 500);
+        
+        // Update weights
+        assert_ok!(DcfModule::set_weights(Origin::root(), 60, 40));
+        
+        // Update and check scores
+        assert_ok!(DcfModule::update_validator_scores(&validator));
+        
+        let breakdown = DcfModule::get_score_breakdown(&validator).unwrap();
+        assert_eq!(breakdown.pos_score, 1000);
+        assert_eq!(breakdown.poi_score, 500);
+        assert_eq!(breakdown.final_score, 800); // (1000 * 60 + 500 * 40) / 100
+    });
+}
