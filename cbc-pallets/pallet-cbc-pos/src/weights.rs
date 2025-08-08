@@ -5,13 +5,10 @@ pub trait WeightInfo {
     fn register_validator() -> Weight;
     fn submit_score() -> Weight;
     fn slash_validator() -> Weight;
-<<<<<<< HEAD
-=======
     fn bond_stake() -> Weight;
     fn unbond_stake() -> Weight;
     fn boost_score() -> Weight;
     fn slash_score() -> Weight;
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 }
 
 /// Weights for pallet_cbc_pos using the Substrate node and recommended hardware.
@@ -32,8 +29,6 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
         Weight::from_parts(20_000, 0)
             .saturating_add(Weight::from_parts(0, 1_500)) // db write
     }
-<<<<<<< HEAD
-=======
 
     fn bond_stake() -> Weight {
         Weight::from_parts(25_000, 0)
@@ -54,7 +49,6 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
         Weight::from_parts(12_000, 0)
             .saturating_add(Weight::from_parts(0, 800)) // db write
     }
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 }
 
 /// Default implementation for testing and development.
@@ -70,8 +64,6 @@ impl WeightInfo for () {
     fn slash_validator() -> Weight {
         Weight::from_parts(20_000, 0)
     }
-<<<<<<< HEAD
-=======
 
     fn bond_stake() -> Weight {
         Weight::from_parts(25_000, 0)
@@ -88,5 +80,4 @@ impl WeightInfo for () {
     fn slash_score() -> Weight {
         Weight::from_parts(12_000, 0)
     }
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 }

@@ -1,7 +1,7 @@
 use crate as pallet_cbc_pos;
 use frame_support::{
     parameter_types,
-    traits::{ConstU32, ConstU64},
+    traits::{ConstU32, ConstU128},
 };
 use frame_system as system;
 use sp_core::H256;
@@ -66,8 +66,8 @@ impl pallet_cbc_pos::Config for Test {
     type MaxValidators = ConstU32<10>;
     type ValidatorScoreDecay = ConstU32<5>;
     type MaxSlashingCount = ConstU32<3>;
-    type MinStake = ConstU64<1000>;
-    type Balance = u64;
+    type MinStake = ConstU128<1000>;
+    type Balance = u128;
 }
 
 // Build genesis storage according to the mock runtime.

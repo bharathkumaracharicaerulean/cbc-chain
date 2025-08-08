@@ -5,8 +5,6 @@ pub use pallet::*;
 pub mod weights;
 pub use weights::*;
 
-<<<<<<< HEAD
-=======
 #[cfg(test)]
 mod mock;
 
@@ -29,21 +27,31 @@ sp_api::decl_runtime_apis! {
         fn get_validator_score(validator: AccountId) -> u32;
         fn get_active_validators() -> Vec<AccountId>;
         fn get_slashing_count(validator: AccountId) -> u32;
+        fn get_slashing_history(validator: AccountId) -> Vec<SlashingEvent<Balance>>;
     }
 }
 
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
     use frame_support::{pallet_prelude::*, storage::types::{StorageMap, StorageValue}};
     use frame_system::pallet_prelude::*;
-<<<<<<< HEAD
-=======
     use scale_info::prelude::vec::Vec;
-    use sp_runtime::traits::AtLeast32BitUnsigned;
+    use sp_runtime::traits::{AtLeast32BitUnsigned, SaturatedConversion};
     use codec::MaxEncodedLen;
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
+
+    /// Represents a slashing event with timestamp, reason, and penalty amount
+    #[derive(Clone, Encode, Decode, PartialEq, Eq, Debug, scale_info::TypeInfo)]
+    pub struct SlashingEvent<Balance> {
+        /// Timestamp when the slashing occurred (block number)
+        pub timestamp: u32,
+        /// Reason for the slashing
+        pub reason: Vec<u8>,
+        /// Penalty amount
+        pub penalty_amount: Balance,
+        /// Slashing count after this event
+        pub slashing_count: u32,
+    }
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -52,8 +60,6 @@ pub mod pallet {
     pub trait Config: frame_system::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         type WeightInfo: WeightInfo;
-<<<<<<< HEAD
-=======
 
         /// Minimum score required for a validator to be considered active
         type MinValidatorScore: Get<u32>;
@@ -103,16 +109,11 @@ pub mod pallet {
                 SlashingCount::<T>::insert(validator, count);
             }
         }
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
     }
 
     #[pallet::storage]
     #[pallet::getter(fn validators)]
-<<<<<<< HEAD
-    pub type Validators<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, ()>;
-=======
     pub type Validators<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, bool>;
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 
     #[pallet::storage]
     #[pallet::getter(fn validator_scores)]
@@ -126,25 +127,33 @@ pub mod pallet {
     #[pallet::getter(fn slashing_count)]
     pub type SlashingCount<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, u32>;
 
-<<<<<<< HEAD
-=======
     #[pallet::storage]
     #[pallet::getter(fn stake)]
     pub type Stake<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, ValueQuery>;
 
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
+    /// Storage map to track slashing history per validator
+    /// Key: AccountId, Value: Vec<SlashingEvent>
+    #[pallet::storage]
+    #[pallet::getter(fn slashing_history)]
+    pub type SlashingHistory<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, Vec<SlashingEvent<BalanceOf<T>>>, ValueQuery>;
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         ValidatorRegistered { validator: T::AccountId },
         ScoreSubmitted { validator: T::AccountId, score: u32 },
         ValidatorSlashed { validator: T::AccountId, slashing_count: u32 },
-<<<<<<< HEAD
-=======
         ValidatorRemoved { validator: T::AccountId, reason: Vec<u8> },
         StakeBonded { validator: T::AccountId, amount: BalanceOf<T> },
         StakeUnbonded { validator: T::AccountId, amount: BalanceOf<T> },
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
+        /// New event for slashing history tracking
+        ValidatorSlashedWithHistory { 
+            validator: T::AccountId, 
+            slashing_count: u32,
+            reason: Vec<u8>,
+            penalty_amount: BalanceOf<T>,
+            timestamp: u32,
+        },
     }
 
     #[pallet::error]
@@ -152,14 +161,11 @@ pub mod pallet {
         ValidatorAlreadyRegistered,
         ValidatorNotRegistered,
         InvalidScore,
-<<<<<<< HEAD
-=======
         TooManyValidators,
         ScoreTooLow,
         MaxSlashingCountReached,
         InsufficientStake,
         InvalidStakeAmount,
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
     }
 
     #[pallet::call]
@@ -168,11 +174,6 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::register_validator())]
         pub fn register_validator(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
-<<<<<<< HEAD
-            ensure!(!Validators::<T>::contains_key(&who), Error::<T>::ValidatorAlreadyRegistered);
-            Validators::<T>::insert(&who, ());
-            Self::deposit_event(Event::ValidatorRegistered { validator: who });
-=======
             
             // Check if we've reached max validators
             ensure!(
@@ -188,7 +189,6 @@ pub mod pallet {
             // --- Telemetry: Active validator count ---
             let active_count = Validators::<T>::iter().filter(|(_, active)| *active).count();
             ::log::info!("[cerulea::pos][prometheus] active_validators_count{{}} {}", active_count);
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
             Ok(())
         }
 
@@ -197,32 +197,35 @@ pub mod pallet {
         pub fn submit_score(origin: OriginFor<T>, validator: T::AccountId, score: u32) -> DispatchResult {
             let _who = ensure_signed(origin)?;
             ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
-<<<<<<< HEAD
-            ensure!(score > 0, Error::<T>::InvalidScore);
-            ValidatorScores::<T>::insert(&validator, score);
-            Self::deposit_event(Event::ScoreSubmitted { validator, score });
-=======
             ensure!(score >= T::MinValidatorScore::get(), Error::<T>::ScoreTooLow);
             ValidatorScores::<T>::insert(&validator, score);
             Self::deposit_event(Event::ScoreSubmitted { validator: validator.clone(), score });
             // --- Telemetry: Score submitted ---
             ::log::info!("[cerulea::pos][prometheus] score_submitted{{validator={:?}}} {}", validator, score);
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
             Ok(())
         }
 
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::slash_validator())]
-        pub fn slash_validator(origin: OriginFor<T>, validator: T::AccountId) -> DispatchResult {
+        pub fn slash_validator(origin: OriginFor<T>, validator: T::AccountId, reason: Vec<u8>, penalty_amount: BalanceOf<T>) -> DispatchResult {
             let _who = ensure_signed(origin)?;
             ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
-<<<<<<< HEAD
-            let count = SlashingCount::<T>::get(&validator).unwrap_or(0) + 1;
-            SlashingCount::<T>::insert(&validator, count);
-            Self::deposit_event(Event::ValidatorSlashed { validator, slashing_count: count });
-=======
             
             let count = SlashingCount::<T>::get(&validator).unwrap_or(0) + 1;
+            let current_block = frame_system::Pallet::<T>::block_number();
+            
+            // Create slashing event
+            let slashing_event = SlashingEvent {
+                timestamp: current_block.saturated_into(),
+                reason: reason.clone(),
+                penalty_amount,
+                slashing_count: count,
+            };
+            
+            // Update slashing history
+            let mut history = SlashingHistory::<T>::get(&validator);
+            history.push(slashing_event);
+            SlashingHistory::<T>::insert(&validator, history);
             
             if count >= T::MaxSlashingCount::get() {
                 // Remove validator if max slashing count reached
@@ -238,6 +241,13 @@ pub mod pallet {
             }
             
             Self::deposit_event(Event::ValidatorSlashed { validator: validator.clone(), slashing_count: count });
+            Self::deposit_event(Event::ValidatorSlashedWithHistory { 
+                validator: validator.clone(), 
+                slashing_count: count,
+                reason,
+                penalty_amount,
+                timestamp: current_block.saturated_into(),
+            });
             // --- Telemetry: Validator slashed ---
             ::log::info!("[cerulea::pos][prometheus] validator_slashed{{validator={:?}}} {}", validator, count);
             Ok(())
@@ -264,7 +274,6 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::unbond_stake())]
         pub fn unbond_stake(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            
             ensure!(Validators::<T>::contains_key(&who), Error::<T>::ValidatorNotRegistered);
             
             let current_stake = Stake::<T>::get(&who);
@@ -304,7 +313,6 @@ pub mod pallet {
             ValidatorScores::<T>::insert(&validator, new_score);
 
             Self::deposit_event(Event::ScoreSubmitted { validator, score: new_score });
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
             Ok(())
         }
     }

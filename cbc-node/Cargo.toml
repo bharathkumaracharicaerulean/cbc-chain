@@ -1,19 +1,12 @@
-# 									=======  CBC-NODE  ======
+#  ==========  CBC-NODE  ==========
 
 [package]
 # Basic package metadata
 name = "cbc-node"                     # Name of the package
-<<<<<<< HEAD
-description = "cbc-node."             # Short description of the package
-=======
 description = "CBC Chain Node"             # Short description of the package
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 version = "0.1.0"                     # Version of the package
 license = "Unlicense"                 # License under which the package is distributed
-authors.workspace = true              # Authors are inherited from the workspace
-homepage.workspace = true             # Homepage URL is inherited from the workspace
-repository.workspace = true           # Repository URL is inherited from the workspace
-edition.workspace = true              # Rust edition is inherited from the workspace
+edition = "2021"                     # Rust edition is inherited from the workspace
 publish = false                       # Prevent this package from being published to crates.io
 
 # Build script
@@ -24,13 +17,7 @@ build = "build.rs"                    # Specifies the build script for this pack
 targets = ["x86_64-unknown-linux-gnu"] # Target platforms for which documentation is built
 
 [dependencies]
-<<<<<<< HEAD
-# === CLI and Command-Line Parsing ===
-clap = { features = ["derive"], workspace = true } # Command-line argument parsing library
-=======
-
 pallet-cbc-dcf = { path = "../cbc-pallets/pallet-cbc-dcf" }
-
 
 # === CLI and Command-Line Parsing ===
 clap = { features = ["derive"], workspace = true } # Command-line argument parsing library
@@ -43,7 +30,7 @@ jsonrpsee-core = { workspace = true, features = ["server"] }
 jsonrpsee-http-server = { workspace = true }
 sc-rpc-api = { workspace = true }
 sc-rpc = { workspace = true }
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
+serde_json = { workspace = true }
 
 # === Benchmarking ===
 frame-benchmarking-cli.default-features = true    # CLI tools for runtime benchmarking
@@ -62,11 +49,7 @@ futures = { features = ["thread-pool"], workspace = true } # Asynchronous progra
 
 # === JSON-RPC ===
 jsonrpsee = { features = ["server"], workspace = true }    # JSON-RPC server implementation
-<<<<<<< HEAD
 
-=======
-serde_json = { workspace = true }
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 # === Pallet Transaction Payment ===
 pallet-transaction-payment-rpc.default-features = true # RPC for transaction payment pallet
 pallet-transaction-payment-rpc.workspace = true       # Use workspace version
@@ -80,27 +63,14 @@ sc-cli.default-features = true              # Substrate CLI utilities
 sc-cli.workspace = true                     # Use workspace version
 sc-client-api.default-features = true       # Substrate client API
 sc-client-api.workspace = true              # Use workspace version
-<<<<<<< HEAD
-sc-consensus-aura.default-features = true   # AURA consensus algorithm
-sc-consensus-aura.workspace = true          # Use workspace version
-sc-consensus-grandpa.default-features = true # GRANDPA consensus algorithm
-sc-consensus-grandpa.workspace = true       # Use workspace version
-sc-consensus.default-features = true        # General consensus utilities
-sc-consensus.workspace = true               # Use workspace version
-sc-executor.default-features = true         # Substrate executor
-sc-executor.workspace = true                # Use workspace version
-sc-network.default-features = true          # Substrate networking
-sc-network.workspace = true                 # Use workspace version
-=======
 sc-consensus.default-features = true        # General consensus utilities
 sc-consensus.workspace = true               # Use workspace version
 sp-consensus.default-features = true        # General consensus utilities
 sp-consensus.workspace = true               # Use workspace version
 sc-executor.default-features = true         # Substrate executor
 sc-executor.workspace = true                # Use workspace version
-sc-network = { workspace = true, default-features = false }
+sc-network = { default-features = false, version = "0.49.1" }
 sc-network-types = { workspace = true, default-features = false }
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 sc-offchain.default-features = true         # Offchain worker utilities
 sc-offchain.workspace = true                # Use workspace version
 sc-service.default-features = true          # Substrate service utilities
@@ -114,10 +84,7 @@ sc-transaction-pool.workspace = true        # Use workspace version
 
 # === Runtime ===
 cbc-runtime.workspace = true                # CBC runtime
-<<<<<<< HEAD
-=======
 cbc-consensus = { path = "src/cbc-consensus" } # CBC consensus implementation
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 
 # === Substrate Primitives ===
 sp-api.default-features = true              # Substrate API primitives
@@ -126,11 +93,6 @@ sp-block-builder.default-features = true    # Block builder primitives
 sp-block-builder.workspace = true           # Use workspace version
 sp-blockchain.default-features = true       # Blockchain primitives
 sp-blockchain.workspace = true              # Use workspace version
-<<<<<<< HEAD
-sp-consensus-aura.default-features = true   # AURA consensus primitives
-sp-consensus-aura.workspace = true          # Use workspace version
-=======
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 sp-core.default-features = true             # Core Substrate primitives
 sp-core.workspace = true                    # Use workspace version
 sp-genesis-builder.default-features = true  # Genesis block builder
@@ -146,25 +108,9 @@ sp-runtime.workspace = true                 # Use workspace version
 sp-timestamp.default-features = true        # Timestamp pallet primitives
 sp-timestamp.workspace = true               # Use workspace version
 
-<<<<<<< HEAD
-# === Chain Spec ===
-sc-chain-spec.default-features = true       # Chain specification utilities
-sc-chain-spec.workspace = true              # Use workspace version
-
-# === JSON Serialization ===
-serde = { version = "1.0", features = ["derive"] } # JSON serialization library
-serde_json = { version = "1.0", features = ["raw_value"] } # JSON serialization library
-
 # === RPC System ===
 substrate-frame-rpc-system.default-features = true # FRAME RPC system
 substrate-frame-rpc-system.workspace = true       # Use workspace version
-log = "0.4.27"
-env_logger = "0.11.8"
-=======
-# === RPC System ===
-substrate-frame-rpc-system.default-features = true # FRAME RPC system
-substrate-frame-rpc-system.workspace = true       # Use workspace version
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
 
 [build-dependencies]
 # === Build Script Utilities ===
@@ -193,8 +139,4 @@ try-runtime = [
     "cbc-runtime/try-runtime",                  # Enable try-runtime for CBC runtime
     "sp-runtime/try-runtime",                   # Enable try-runtime for runtime primitives
 ]
-<<<<<<< HEAD
-=======
 
-
->>>>>>> c0e1c816d4065ea122aac1de1ee507dc1010eacc
