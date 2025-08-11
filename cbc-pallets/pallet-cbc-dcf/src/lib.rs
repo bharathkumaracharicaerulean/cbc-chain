@@ -117,6 +117,8 @@ sp_api::decl_runtime_apis! {
         fn is_validator_at_risk(validator: AccountId) -> bool;
         fn get_finality_info() -> (u32, u32);
         fn blocks_since_finalization(current_block: u32) -> u32;
+        fn get_validator_leave_request(validator: AccountId) -> Option<u32>;
+        fn validate_expected_author(block_number: u32, actual_author: AccountId) -> bool;
     }
 }
 
@@ -671,6 +673,11 @@ pub mod pallet {
         ProposalRejected { proposal_id: u32 },
         ValidatorJoined { validator: T::AccountId },
         ValidatorLeft { validator: T::AccountId },
+        AuthorMismatch {
+            block_number: u32,
+            expected_author: T::AccountId,
+            actual_author: T::AccountId,
+        },
 
         ValidatorPoiScoreUpdated {
             validator: T::AccountId,
@@ -2399,6 +2406,23 @@ pub mod pallet {
                     author,
                 });
             }
+        }
+
+        /// Validate if the block author matches the expected author for the given block number.
+        /// Returns true if valid, false if mismatch (and emits AuthorMismatch event).
+        pub fn validate_expected_author(block_number: u32, actual_author: T::AccountId) -> bool {
+            if let Some(expected_author) = Self::get_expected_author(block_number) {
+                if actual_author != expected_author {
+                    // Emit AuthorMismatch event before returning false
+                    Self::deposit_event(Event::AuthorMismatch {
+                        block_number,
+                        expected_author,
+                        actual_author,
+                    });
+                    return false;
+                }
+            }
+            true
         }
 
         /// Check if an account is an active validator.

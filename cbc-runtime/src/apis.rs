@@ -330,6 +330,14 @@ impl_runtime_apis! {
 		fn blocks_since_finalization(current_block: u32) -> u32 {
 			pallet_cbc_dcf::Pallet::<Runtime>::blocks_since_finalization(current_block)
 		}
+
+		fn get_validator_leave_request(validator: AccountId) -> Option<u32> {
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_leave_requests(&validator)
+		}
+
+		fn validate_expected_author(block_number: u32, actual_author: AccountId) -> bool {
+			pallet_cbc_dcf::Pallet::<Runtime>::validate_expected_author(block_number, actual_author)
+		}
 	}
 
 	// Runtime Benchmarking API

@@ -117,14 +117,23 @@ impl DcfImportQueueService {
         if let Some(author) = self.extract_block_author(&block_header) {
             log::info!("DCF Import Queue: Block author: {:?}", author);
             
-            // Validate block authorship through DCF runtime
-            match api.validate_block_author(best_hash, block_number, author.clone()) {
-                Ok(()) => {
-                    log::info!("DCF Import Queue: Block author validation passed for {:?}", author);
+            // Validate expected author and emit AuthorMismatch event if needed
+            match api.validate_expected_author(best_hash, block_number, author.clone()) {
+                Ok(is_valid) => {
+                    if !is_valid {
+                        // AuthorMismatch event was already emitted by the runtime method
+                        log::error!("DCF Import Queue: Author mismatch for block #{} with author {:?}", 
+                                   block_number, author);
+                        
+                        // Reject the block due to author mismatch
+                        return Err(format!("Author mismatch for block #{} with author {:?}", block_number, author));
+                    } else {
+                        log::info!("DCF Import Queue: Block author validation passed for {:?}", author);
+                    }
                 }
                 Err(e) => {
-                    log::error!("DCF Import Queue: Block author validation failed: {:?}", e);
-                    return Err(format!("Author validation failed: {:?}", e));
+                    log::error!("DCF Import Queue: Failed to validate expected author for block #{}: {:?}", block_number, e);
+                    return Err(format!("Failed to validate expected author: {:?}", e));
                 }
             }
             

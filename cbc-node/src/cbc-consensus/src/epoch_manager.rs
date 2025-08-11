@@ -8,8 +8,8 @@ use crate::{
     types::{EpochConfig, ValidatorInfo},
 };
 use std::sync::Arc;
-use log::{info, warn, error};
-use sp_runtime::traits::{Block as BlockTrait};
+use log::{info, warn, error, debug};
+use sp_runtime::traits::{Block as BlockTrait, SaturatedConversion};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
@@ -141,10 +141,35 @@ where
         // Filter validators that meet minimum requirements
         let mut eligible_validators: Vec<(AccountId, u64)> = Vec::new();
         
+        // Get current block number for cooldown check
+        let current_block = self.client.info().best_number.saturated_into::<u32>();
+        
         for (validator, score) in all_scores {
             // Check minimum score requirement
             if score >= 50 { // Minimum score threshold
-                // Check if validator has sufficient stake (this was  checked via PoS pallet)
+                // Check if validator is in cooldown period after leaving
+                match api.get_validator_leave_request(best_hash, validator.clone()) {
+                    Ok(Some(leave_block)) => {
+                        let blocks_passed = current_block.saturating_sub(leave_block);
+                        let cooldown_period: u32 = 1000; // LeaveCooldown from runtime config
+                        
+                        if blocks_passed < cooldown_period {
+                            // Validator is still in cooldown period, skip
+                            debug!("DCF EpochManager: Validator {:?} still in cooldown period ({} blocks remaining)", 
+                                   validator, cooldown_period.saturating_sub(blocks_passed));
+                            continue;
+                        }
+                    }
+                    Ok(None) => {
+                        // No leave request, validator is eligible
+                    }
+                    Err(e) => {
+                        warn!("DCF EpochManager: Failed to check leave request for validator {:?}: {:?}", validator, e);
+                        // Continue with validator to avoid blocking the epoch transition
+                    }
+                }
+                
+                // Check if validator has sufficient stake (this was checked via PoS pallet)
                 eligible_validators.push((validator, score));
             }
         }
