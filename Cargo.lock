@@ -1218,6 +1218,8 @@ dependencies = [
  "log",
  "pallet-cbc-dcf",
  "parity-scale-codec",
+ "parking_lot 0.12.4",
+ "prometheus",
  "sc-basic-authorship",
  "sc-client-api",
  "sc-consensus",

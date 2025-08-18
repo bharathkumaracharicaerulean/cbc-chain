@@ -78,6 +78,7 @@ impl pallet_cbc_poi::Config for Test {
     type ChallengeWindow = ConstU32<5>;        // Epochs allowed for challenge.
     type InferenceReward = ConstU128<1000>;    // Reward for correct inference.
     type ChallengeReward = ConstU128<500>;     // Reward for successful challenge.
+    type DcfInterface = MockDcfInterface;
     type PosInterface = DummyPosInterface;
 }
 

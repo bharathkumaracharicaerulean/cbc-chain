@@ -16,8 +16,37 @@ fn testnet_genesis(
 	endowed_accounts: Vec<AccountId>,   // Accounts pre-funded with balance
 	root: AccountId,                    // Root (sudo) key
 ) -> Value {
+	testnet_genesis_with_stakes(
+		initial_validators,
+		endowed_accounts,
+		root,
+		None, // Use default stakes
+	)
+}
+
+/// Returns a genesis configuration with custom validator stakes
+fn testnet_genesis_with_stakes(
+	initial_validators: Vec<AccountId>, // Validator accounts
+	endowed_accounts: Vec<AccountId>,   // Accounts pre-funded with balance
+	root: AccountId,                    // Root (sudo) key
+	validator_stakes: Option<Vec<u128>>, // Optional custom stakes
+) -> Value {
 	// Create initial validator scores
-	let validator_scores = vec![100; initial_validators.len()];
+	let validator_scores = vec![8000; initial_validators.len()]; // Higher scores for proper calculation
+	
+	// Create validator stakes - use provided stakes or defaults
+	let stakes = validator_stakes.unwrap_or_else(|| {
+		// Default stakes: varying amounts for realistic testing
+		initial_validators.iter().enumerate().map(|(i, _)| {
+			match i {
+				0 => 10_000_000, // Alice: 10M units
+				1 => 8_000_000,  // Bob: 8M units
+				2 => 6_000_000,  // Charlie: 6M units
+				3 => 5_000_000,  // Dave: 5M units
+				_ => 3_000_000,  // Others: 3M units
+			}
+		}).collect()
+	});
 
 	// Create initial inference results
 	let inference_results = initial_validators
@@ -41,11 +70,12 @@ fn testnet_genesis(
 		dcf: pallet_cbc_dcf::GenesisConfig {
 			validators: initial_validators.clone(),
 			validator_scores: validator_scores.clone(),
+			validator_stakes: stakes.clone(),
 			current_epoch: 0,
 			epoch_config: pallet_cbc_dcf::EpochConfig {
-				blocks_per_epoch: 10,      
-				min_stake: 1,              
-				max_validators: 24,        
+				blocks_per_epoch: 100,     // More realistic epoch length
+				min_stake: 1_000_000,      // 1M minimum stake
+				max_validators: 100,       // Support up to 100 validators
 			},
 		},
 		// Configure initial validators
@@ -101,21 +131,86 @@ pub fn local_config_genesis() -> Value {
 }
 
 /// Fetches the JSON representation of the genesis config for the given `PresetId`.
-/// - Supports "dev" and "local" presets.
+/// - Supports "development", "local", "multi_validator", and "high_stake" presets.
 /// - Returns None for unknown presets.
 pub fn get_preset(id: &Option<PresetId>) -> Option<Vec<u8>> {
     match id.as_deref() {
         None => Some(serde_json::to_vec(&development_config_genesis()).unwrap()), // Default to dev
         Some("development") => Some(serde_json::to_vec(&development_config_genesis()).unwrap()),
         Some("local") => Some(serde_json::to_vec(&local_config_genesis()).unwrap()),
+        Some("multi_validator") => Some(serde_json::to_vec(&multi_validator_config_genesis()).unwrap()),
+        Some("high_stake") => Some(serde_json::to_vec(&high_stake_config_genesis()).unwrap()),
         Some("bob_sudo") => Some(serde_json::to_vec(&local_config_genesis()).unwrap()),
         Some("local_testnet") => Some(serde_json::to_vec(&local_config_genesis()).unwrap()),
         _ => None,
     }
 }
 
+/// Returns a multi-validator testnet configuration with custom stakes
+pub fn multi_validator_config_genesis() -> Value {
+	let initial_validators = vec![
+		Sr25519Keyring::Alice.to_account_id(),
+		Sr25519Keyring::Bob.to_account_id(),
+		Sr25519Keyring::Charlie.to_account_id(),
+		Sr25519Keyring::Dave.to_account_id(),
+		Sr25519Keyring::Eve.to_account_id(),
+	];
+	
+	// Custom stakes for different validator profiles
+	let validator_stakes = vec![
+		15_000_000, // Alice: High stake validator
+		12_000_000, // Bob: Medium-high stake
+		8_000_000,  // Charlie: Medium stake
+		5_000_000,  // Dave: Low-medium stake
+		3_000_000,  // Eve: Minimum viable stake
+	];
+	
+	let endowed_accounts = Sr25519Keyring::iter()
+		.map(|v| v.to_account_id())
+		.collect::<Vec<_>>();
+		
+	testnet_genesis_with_stakes(
+		initial_validators,
+		endowed_accounts,
+		Sr25519Keyring::Alice.to_account_id(),
+		Some(validator_stakes),
+	)
+}
+
+/// Returns a high-stake validator configuration for stress testing
+pub fn high_stake_config_genesis() -> Value {
+	let initial_validators = vec![
+		Sr25519Keyring::Alice.to_account_id(),
+		Sr25519Keyring::Bob.to_account_id(),
+		Sr25519Keyring::Charlie.to_account_id(),
+	];
+	
+	// High stakes for all validators
+	let validator_stakes = vec![
+		50_000_000, // Alice: 50M units
+		45_000_000, // Bob: 45M units
+		40_000_000, // Charlie: 40M units
+	];
+	
+	let endowed_accounts = Sr25519Keyring::iter()
+		.map(|v| v.to_account_id())
+		.collect::<Vec<_>>();
+		
+	testnet_genesis_with_stakes(
+		initial_validators,
+		endowed_accounts,
+		Sr25519Keyring::Alice.to_account_id(),
+		Some(validator_stakes),
+	)
+}
+
 /// Returns the list of preset names that are supported by this runtime.
 /// These identifiers can be used when launching the chain with a specific genesis preset.
 pub fn preset_names() -> Vec<PresetId> {
-	vec!["default".into()]
+	vec![
+		"development".into(),
+		"local".into(),
+		"multi_validator".into(),
+		"high_stake".into(),
+	]
 }

@@ -9,12 +9,13 @@ use sp_core::sr25519::Public;
 use cbc_runtime::AccountId;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use std::sync::Arc;
-use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait, Zero, SaturatedConversion};
+use sp_runtime::traits::{Block as BlockTrait, Header as HeaderTrait, Zero, SaturatedConversion, Hash};
 use std::time::{Duration, Instant};
 use std::marker::PhantomData;
 use sc_transaction_pool_api::{TransactionPool, InPoolTransaction};
 use sp_inherents::{InherentDataProvider, InherentData};
 use sp_timestamp::InherentDataProvider as TimestampInherentDataProvider;
+use sp_core::Encode;
 use log::{debug, warn};
 
 /// Factory for creating real blocks with transactions using DCF runtime API for author selection
@@ -78,10 +79,7 @@ where
         // Get transactions from the pool
         let ready_transactions = self.collect_transactions_from_pool().await?;
         
-        // Create inherent data
-        let _inherent_data = self.create_inherent_data().await?;
-        
-        // Create block header with proper block number
+        // Get parent header
         let parent_header = self.client.header(parent_hash)
             .map_err(|e| ConsensusError::Proposer(format!("Failed to get parent header: {:?}", e)))?
             .ok_or_else(|| ConsensusError::Proposer("Parent header not found".into()))?;
@@ -89,18 +87,29 @@ where
         let block_number = (*parent_header.number()).saturated_into::<u32>() + 1;
         let header_number = (block_number as u64).saturated_into::<<B::Header as HeaderTrait>::Number>();
         
+        // For now, create a simple block with just the ready transactions
+        // The runtime will handle inherents and proper root calculations during execution
+        let all_extrinsics = ready_transactions;
+        
+        // Calculate extrinsics root using the correct method
+        let extrinsics_root = <<B::Header as HeaderTrait>::Hashing as Hash>::ordered_trie_root(
+            all_extrinsics.iter().map(|xt| xt.encode()).collect(),
+            sp_runtime::StateVersion::V1,
+        );
+        
+        // Create header with proper roots
         let header = B::Header::new(
             header_number,
             parent_hash,
-            Default::default(), // state root will be calculated by runtime
-            Default::default(), // extrinsics root will be calculated by runtime
-            Default::default(), // digest will be set by runtime
+            Default::default(), // state root will be calculated during execution
+            extrinsics_root,
+            Default::default(), // digest will be set during execution
         );
 
         // Create the complete block with transactions
-        let block = B::new(header, ready_transactions);
+        let block = B::new(header, all_extrinsics);
         
-        debug!("Created block #{} with {} transactions", 
+        debug!("Created block #{} with {} extrinsics from pool", 
               block_number, block.extrinsics().len());
 
         self.last_block_time = Some(Instant::now());
@@ -119,7 +128,7 @@ where
     }
     
     /// Create inherent data for the block
-    async fn create_inherent_data(&self) -> Result<InherentData> {
+    async fn _create_inherent_data(&self) -> Result<InherentData> {
         let mut inherent_data = InherentData::new();
         
         // Add timestamp inherent

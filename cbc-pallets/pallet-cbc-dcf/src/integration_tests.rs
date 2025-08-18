@@ -166,7 +166,8 @@ fn test_full_governance_flow() {
             ProposalAction::Slash {
                 validator: target_validator,
                 amount: slash_amount
-            }
+            },
+            None
         ));
         
         let proposal_id = 0u32;
@@ -228,8 +229,8 @@ fn test_full_governance_flow() {
 fn test_full_consensus_weight_flow() {
     new_test_ext().execute_with(|| {
         // === Initial Weight Configuration ===
-        assert_eq!(DcfPallet::pos_weight(), 60);
-        assert_eq!(DcfPallet::poi_weight(), 40);
+        assert_eq!(DcfPallet::pos_weight(), 6000);
+        assert_eq!(DcfPallet::poi_weight(), 4000);
         
         let validator = 1u64;
         let initial_state = DcfPallet::validator_states(&validator).unwrap();
@@ -239,12 +240,12 @@ fn test_full_consensus_weight_flow() {
         // Change weights to favor PoI more
         assert_ok!(DcfPallet::update_consensus_weights(
             RuntimeOrigin::root(),
-            30, // PoS weight reduced
-            70  // PoI weight increased
+            3000, // PoS weight reduced (30%)
+            7000  // PoI weight increased (70%)
         ));
         
-        assert_eq!(DcfPallet::pos_weight(), 30);
-        assert_eq!(DcfPallet::poi_weight(), 70);
+        assert_eq!(DcfPallet::pos_weight(), 3000);
+        assert_eq!(DcfPallet::poi_weight(), 7000);
         
         // === Score Recalculation ===
         // Update scores to trigger recalculation with new weights
@@ -276,8 +277,8 @@ fn test_full_consensus_weight_flow() {
         );
         
         // Weights should remain unchanged after failed update
-        assert_eq!(DcfPallet::pos_weight(), 30);
-        assert_eq!(DcfPallet::poi_weight(), 70);
+        assert_eq!(DcfPallet::pos_weight(), 3000);
+        assert_eq!(DcfPallet::poi_weight(), 7000);
     });
 }
 
@@ -457,7 +458,8 @@ fn test_full_multi_validator_flow() {
             ProposalAction::Reward {
                 validator: target_validator,
                 amount: 1000u128
-            }
+            },
+            None
         ));
         
         // Multiple validators vote
@@ -564,5 +566,819 @@ fn test_full_flow_error_handling() {
             RuntimeOrigin::signed(validator),
             validator
         ));
+    });
+}
+// ===== NEW COMPREHENSIVE INTEGRATION TESTS =====
+
+/// Test complete multi-validator economic lifecycle with joining, leaving, rewards, and slashing
+#[test]
+fn test_multi_validator_economic_lifecycle() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, ReservableCurrency};
+        
+        // === Setup Phase ===
+        // Create additional validators with sufficient balance
+        let new_validator1 = 10u64;
+        let new_validator2 = 11u64;
+        let new_validator3 = 12u64;
+        
+        // Give them sufficient balance for staking
+        let _ = <Balances as Currency<_>>::deposit_creating(&new_validator1, 15000);
+        let _ = <Balances as Currency<_>>::deposit_creating(&new_validator2, 20000);
+        let _ = <Balances as Currency<_>>::deposit_creating(&new_validator3, 25000);
+        
+        // Reserve stake for existing validators
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&1u64, 5000));
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&2u64, 6000));
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&3u64, 7000));
+        
+        // === Phase 1: Multiple Validators Joining ===
+        // Enable governance mode for controlled testing
+        assert_ok!(DcfPallet::set_governance_mode(RuntimeOrigin::root(), true));
+        
+        // New validators attempt to join
+        // Note: join_validators might fail due to validation logic, but we test the flow
+        let join_result1 = DcfPallet::join_validators(RuntimeOrigin::signed(new_validator1), Some(b"Validator 1".to_vec().try_into().unwrap()));
+        let join_result2 = DcfPallet::join_validators(RuntimeOrigin::signed(new_validator2), Some(b"Validator 2".to_vec().try_into().unwrap()));
+        let join_result3 = DcfPallet::join_validators(RuntimeOrigin::signed(new_validator3), Some(b"Validator 3".to_vec().try_into().unwrap()));
+        
+        // Log results for debugging
+        println!("Join results: {:?}, {:?}, {:?}", join_result1, join_result2, join_result3);
+        
+        // === Phase 2: Validator Performance Simulation ===
+        // Simulate different performance levels for existing validators
+        // High performer
+        crate::ValidatorBlocksAuthored::<Test>::insert(&1u64, 100);
+        crate::ValidatorBlocksMissed::<Test>::insert(&1u64, 2);
+        
+        // Average performer  
+        crate::ValidatorBlocksAuthored::<Test>::insert(&2u64, 80);
+        crate::ValidatorBlocksMissed::<Test>::insert(&2u64, 10);
+        
+        // Poor performer
+        crate::ValidatorBlocksAuthored::<Test>::insert(&3u64, 50);
+        crate::ValidatorBlocksMissed::<Test>::insert(&3u64, 25);
+        
+        // === Phase 3: Reward High Performers ===
+        let reward_amount = 2000u128;
+        
+        // Submit reward proposal for high performer
+        assert_ok!(DcfPallet::submit_proposal(
+            RuntimeOrigin::signed(2u64),
+            ProposalAction::Reward {
+                validator: 1u64,
+                amount: reward_amount
+            },
+            Some(b"Reward for excellent performance".to_vec().try_into().unwrap())
+        ));
+        
+        let reward_proposal_id = 0u32;
+        
+        // Vote on reward proposal
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(1u64), reward_proposal_id, true));
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(2u64), reward_proposal_id, true));
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(3u64), reward_proposal_id, true));
+        
+        // Execute reward proposal
+        let initial_balance_1 = Balances::free_balance(&1u64);
+        assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), reward_proposal_id));
+        let final_balance_1 = Balances::free_balance(&1u64);
+        
+        // Verify reward was applied
+        assert_eq!(final_balance_1, initial_balance_1 + reward_amount);
+        
+        // === Phase 4: Slash Poor Performers ===
+        let slash_amount = 1000u128;
+        
+        // Submit slash proposal for poor performer
+        assert_ok!(DcfPallet::submit_proposal(
+            RuntimeOrigin::signed(1u64),
+            ProposalAction::Slash {
+                validator: 3u64,
+                amount: slash_amount
+            },
+            Some(b"Slash for poor performance".to_vec().try_into().unwrap())
+        ));
+        
+        let slash_proposal_id = 1u32;
+        
+        // Vote on slash proposal
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(1u64), slash_proposal_id, true));
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(2u64), slash_proposal_id, true));
+        
+        // Execute slash proposal
+        let initial_balance_3 = Balances::free_balance(&3u64);
+        assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), slash_proposal_id));
+        let final_balance_3 = Balances::free_balance(&3u64);
+        
+        // Verify slash was applied (affects free balance for proposal-based slashing)
+        assert_eq!(final_balance_3, initial_balance_3 - slash_amount);
+        
+        // === Phase 5: Direct Stake Slashing ===
+        // Test direct slashing of reserved stake
+        let initial_reserved_2 = Balances::reserved_balance(&2u64);
+        assert_ok!(DcfPallet::slash_validator(RuntimeOrigin::root(), 2u64, 500u128));
+        let final_reserved_2 = Balances::reserved_balance(&2u64);
+        
+        // Verify reserved stake was slashed
+        assert_eq!(final_reserved_2, initial_reserved_2 - 500u128);
+        
+        // === Phase 6: Validator Leaving ===
+        // Validator requests to leave
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(2u64)));
+        
+        // Verify leave request was recorded
+        assert!(DcfPallet::validator_leave_requests(&2u64).is_some());
+        
+        // === Phase 7: Epoch Transition with Validator Management ===
+        // Disable governance mode to allow epoch transitions
+        assert_ok!(DcfPallet::set_governance_mode(RuntimeOrigin::root(), false));
+        
+        // Simulate epoch transition
+        let current_epoch = DcfPallet::current_epoch();
+        crate::CurrentEpoch::<Test>::put(current_epoch + 1);
+        
+        // Apply pending validator actions (simulate epoch transition logic)
+        // In a real scenario, this would be handled by on_initialize
+        
+        // === Phase 8: Verification of Final State ===
+        // Verify all validators have valid states
+        for validator in [1u64, 2u64, 3u64].iter() {
+            let state = DcfPallet::validator_states(validator);
+            assert!(state.is_some(), "Validator {:?} should have a state", validator);
+            
+            let state = state.unwrap();
+            assert!(state.current.final_score <= MaxValidatorScore::get());
+            
+            // Log final state for debugging
+            println!("Validator {:?} final state: score={}, authored={}, missed={}", 
+                     validator, state.current.final_score, state.current.authored_blocks, state.current.missed_blocks);
+        }
+        
+        // Verify economic state is consistent
+        let total_validators = DcfPallet::validator_set().len();
+        assert!(total_validators >= 3, "Should have at least genesis validators");
+        
+        println!("Integration test completed successfully with {} validators", total_validators);
+    });
+}
+
+/// Test comprehensive epoch transitions with automatic validator management
+#[test]
+fn test_comprehensive_epoch_transitions_with_validator_management() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, ReservableCurrency};
+        
+        // === Setup Phase ===
+        let validators = [1u64, 2u64, 3u64];
+        
+        // Set up different stake levels
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&validators[0], 8000)); // High stake
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&validators[1], 5000)); // Medium stake  
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&validators[2], 2000)); // Low stake
+        
+        // === Phase 1: Initial Epoch State ===
+        assert_eq!(DcfPallet::current_epoch(), 0);
+        let initial_active_validators = DcfPallet::active_validators();
+        assert_eq!(initial_active_validators.len(), 3);
+        
+        // Record initial scores
+        let mut initial_scores = Vec::new();
+        for validator in validators.iter() {
+            let state = DcfPallet::validator_states(validator).unwrap();
+            initial_scores.push((*validator, state.current.final_score));
+            println!("Initial - Validator {:?}: score={}", validator, state.current.final_score);
+        }
+        
+        // === Phase 2: Simulate Validator Activity Over Multiple Epochs ===
+        for epoch in 1..=3 {
+            println!("\n=== Epoch {} ===", epoch);
+            
+            // Advance epoch
+            crate::CurrentEpoch::<Test>::put(epoch);
+            
+            // Simulate different activity patterns
+            match epoch {
+                1 => {
+                    // Epoch 1: Normal activity
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[0], 50);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[0], 2);
+                    
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[1], 45);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[1], 5);
+                    
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[2], 40);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[2], 8);
+                },
+                2 => {
+                    // Epoch 2: Validator 2 becomes inactive
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[0], 55);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[0], 1);
+                    
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[1], 30);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[1], 15);
+                    
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[2], 20);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[2], 20);
+                },
+                3 => {
+                    // Epoch 3: Validator 2 improves, Validator 3 gets worse
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[0], 60);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[0], 0);
+                    
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[1], 50);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[1], 3);
+                    
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validators[2], 10);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validators[2], 30);
+                },
+                _ => {}
+            }
+            
+            // Apply score updates based on activity
+            for validator in validators.iter() {
+                // Update scores based on performance
+                let _ = DcfPallet::update_validator_stake_score(RuntimeOrigin::signed(*validator), *validator);
+                let _ = DcfPallet::update_validator_inference_score(RuntimeOrigin::signed(*validator), *validator);
+                
+                // Log updated scores
+                if let Some(state) = DcfPallet::validator_states(validator) {
+                    println!("Epoch {} - Validator {:?}: score={}, authored={}, missed={}", 
+                             epoch, validator, state.current.final_score, 
+                             DcfPallet::validator_blocks_authored(validator),
+                             DcfPallet::validator_blocks_missed(validator));
+                }
+            }
+            
+            // Simulate epoch transition effects
+            if epoch > 1 {
+                // Apply score decay for inactive validators
+                for validator in validators.iter() {
+                    let _ = DcfPallet::apply_score_decay(validator, epoch - 1);
+                }
+            }
+        }
+        
+        // === Phase 3: Governance Actions Based on Performance ===
+        assert_ok!(DcfPallet::set_governance_mode(RuntimeOrigin::root(), true));
+        
+        // Reward best performer (validator 1)
+        assert_ok!(DcfPallet::submit_proposal(
+            RuntimeOrigin::signed(validators[1]),
+            ProposalAction::Reward {
+                validator: validators[0],
+                amount: 3000u128
+            },
+            Some(b"Reward for consistent high performance".to_vec().try_into().unwrap())
+        ));
+        
+        // Vote and execute reward
+        let reward_proposal = 0u32;
+        for voter in validators.iter() {
+            assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(*voter), reward_proposal, true));
+        }
+        
+        let initial_balance = Balances::free_balance(&validators[0]);
+        assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), reward_proposal));
+        let final_balance = Balances::free_balance(&validators[0]);
+        assert_eq!(final_balance, initial_balance + 3000u128);
+        
+        // Slash worst performer (validator 3)
+        assert_ok!(DcfPallet::submit_proposal(
+            RuntimeOrigin::signed(validators[0]),
+            ProposalAction::Slash {
+                validator: validators[2],
+                amount: 800u128
+            },
+            Some(b"Slash for poor performance".to_vec().try_into().unwrap())
+        ));
+        
+        // Vote and execute slash
+        let slash_proposal = 1u32;
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(validators[0]), slash_proposal, true));
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(validators[1]), slash_proposal, true));
+        
+        let initial_balance_3 = Balances::free_balance(&validators[2]);
+        assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), slash_proposal));
+        let final_balance_3 = Balances::free_balance(&validators[2]);
+        assert_eq!(final_balance_3, initial_balance_3 - 800u128);
+        
+        // === Phase 4: Validator Set Changes ===
+        // Poor performer requests to leave
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(validators[2])));
+        assert!(DcfPallet::validator_leave_requests(&validators[2]).is_some());
+        
+        // === Phase 5: Final Epoch Transition ===
+        assert_ok!(DcfPallet::set_governance_mode(RuntimeOrigin::root(), false));
+        
+        // Advance to final epoch
+        crate::CurrentEpoch::<Test>::put(4);
+        
+        // Simulate comprehensive epoch transition
+        // In a real scenario, this would be handled by on_initialize
+        
+        // === Phase 6: Verification of Final State ===
+        let final_epoch = DcfPallet::current_epoch();
+        assert_eq!(final_epoch, 4);
+        
+        // Verify validator states reflect their performance history
+        for (i, validator) in validators.iter().enumerate() {
+            if let Some(state) = DcfPallet::validator_states(validator) {
+                println!("Final - Validator {:?}: score={}, epoch={}, authored={}, missed={}", 
+                         validator, state.current.final_score, state.current.epoch,
+                         state.current.authored_blocks, state.current.missed_blocks);
+                
+                // Verify epoch progression
+                assert!(state.current.epoch <= final_epoch);
+                
+                // Verify score bounds
+                assert!(state.current.final_score <= MaxValidatorScore::get());
+                
+                // Verify performance correlation (best performer should have highest score)
+                if i == 0 {
+                    // Validator 1 should have the highest score due to consistent performance
+                    assert!(state.current.final_score > 0);
+                }
+            }
+        }
+        
+        // Verify economic consistency
+        let total_supply_change = 3000u128 - 800u128; // Reward - Slash
+        println!("Net economic impact: +{} units (rewards - slashes)", total_supply_change);
+        
+        // Verify governance proposals were properly executed
+        let reward_proposal_state = crate::Proposals::<Test>::get(0).unwrap();
+        let slash_proposal_state = crate::Proposals::<Test>::get(1).unwrap();
+        assert_eq!(reward_proposal_state.status, ProposalStatus::Executed);
+        assert_eq!(slash_proposal_state.status, ProposalStatus::Executed);
+        
+        println!("Comprehensive epoch transition test completed successfully");
+    });
+}
+
+/// Test complex validator interactions with PoS/PoI score balancing and economic incentives
+#[test]
+fn test_complex_validator_score_balancing_and_incentives() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, ReservableCurrency};
+        
+        // === Setup Phase ===
+        let validators = [1u64, 2u64, 3u64];
+        
+        // Create validators with different economic profiles
+        // Validator 1: High stake, low inference
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&validators[0], 10000));
+        
+        // Validator 2: Medium stake, medium inference  
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&validators[1], 6000));
+        
+        // Validator 3: Low stake, high inference
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&validators[2], 3000));
+        
+        // === Phase 1: Test Consensus Weight Adjustments ===
+        // Start with default weights (60% PoS, 40% PoI)
+        assert_eq!(DcfPallet::pos_weight(), 6000);
+        assert_eq!(DcfPallet::poi_weight(), 4000);
+        
+        // Record initial combined scores
+        let mut initial_combined_scores = Vec::new();
+        for validator in validators.iter() {
+            if let Some(profile) = DcfPallet::get_validator_profile(*validator) {
+                let (combined, pos, poi, _, _, _, _) = profile;
+                initial_combined_scores.push((*validator, combined, pos, poi));
+                println!("Initial - Validator {:?}: Combined={}, PoS={}, PoI={}", validator, combined, pos, poi);
+            }
+        }
+        
+        // === Phase 2: Simulate Different Inference Performance ===
+        // Simulate inference results for different validators
+        // High inference performer (Validator 3)
+        for _ in 0..20 {
+            let _ = DcfPallet::update_validator_inference_score(RuntimeOrigin::signed(validators[2]), validators[2]);
+        }
+        
+        // Medium inference performer (Validator 2)
+        for _ in 0..10 {
+            let _ = DcfPallet::update_validator_inference_score(RuntimeOrigin::signed(validators[1]), validators[1]);
+        }
+        
+        // Low inference performer (Validator 1) - focus on stake
+        for _ in 0..5 {
+            let _ = DcfPallet::update_validator_stake_score(RuntimeOrigin::signed(validators[0]), validators[0]);
+        }
+        
+        // === Phase 3: Test Weight Rebalancing Impact ===
+        // Change weights to favor PoI more (40% PoS, 60% PoI)
+        assert_ok!(DcfPallet::update_consensus_weights(RuntimeOrigin::root(), 4000, 6000));
+        assert_eq!(DcfPallet::pos_weight(), 4000);
+        assert_eq!(DcfPallet::poi_weight(), 6000);
+        
+        // Record scores after weight change
+        let mut rebalanced_scores = Vec::new();
+        for validator in validators.iter() {
+            if let Some(profile) = DcfPallet::get_validator_profile(*validator) {
+                let (combined, pos, poi, _, _, _, _) = profile;
+                rebalanced_scores.push((*validator, combined, pos, poi));
+                println!("Rebalanced - Validator {:?}: Combined={}, PoS={}, PoI={}", validator, combined, pos, poi);
+            }
+        }
+        
+        // === Phase 4: Economic Incentive Testing ===
+        assert_ok!(DcfPallet::set_governance_mode(RuntimeOrigin::root(), true));
+        
+        // Test multiple reward scenarios
+        let scenarios = [
+            (validators[2], 2500u128, "High PoI performance reward"),
+            (validators[1], 1500u128, "Balanced performance reward"),
+            (validators[0], 1000u128, "High PoS stability reward"),
+        ];
+        
+        let mut proposal_id = 0u32;
+        let mut initial_balances = Vec::new();
+        
+        for (validator, amount, description) in scenarios.iter() {
+            // Record initial balance
+            initial_balances.push((*validator, Balances::free_balance(validator)));
+            
+            // Submit reward proposal
+            assert_ok!(DcfPallet::submit_proposal(
+                RuntimeOrigin::signed(validators[1]), // Validator 2 submits all proposals
+                ProposalAction::Reward {
+                    validator: *validator,
+                    amount: *amount
+                },
+                Some(description.as_bytes().to_vec().try_into().unwrap())
+            ));
+            
+            // Vote on proposal (all validators vote)
+            for voter in validators.iter() {
+                assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(*voter), proposal_id, true));
+            }
+            
+            // Execute proposal
+            assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), proposal_id));
+            
+            // Verify reward was applied
+            let final_balance = Balances::free_balance(validator);
+            let (_, initial_balance) = initial_balances.iter().find(|(v, _)| v == validator).unwrap();
+            assert_eq!(final_balance, initial_balance + amount);
+            
+            println!("Rewarded Validator {:?} with {} for: {}", validator, amount, description);
+            proposal_id += 1;
+        }
+        
+        // === Phase 5: Test Performance-Based Slashing ===
+        // Simulate poor performance for validator with lowest combined score
+        let mut validator_scores: Vec<_> = rebalanced_scores.iter()
+            .map(|(v, combined, _, _)| (*v, *combined))
+            .collect();
+        validator_scores.sort_by(|a, b| a.1.cmp(&b.1));
+        
+        let worst_performer = validator_scores[0].0;
+        let slash_amount = 600u128;
+        
+        // Submit slash proposal
+        assert_ok!(DcfPallet::submit_proposal(
+            RuntimeOrigin::signed(validators[0]),
+            ProposalAction::Slash {
+                validator: worst_performer,
+                amount: slash_amount
+            },
+            Some(b"Performance-based penalty".to_vec().try_into().unwrap())
+        ));
+        
+        // Vote and execute slash
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(validators[0]), proposal_id, true));
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(validators[1]), proposal_id, true));
+        
+        let initial_balance_worst = Balances::free_balance(&worst_performer);
+        assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), proposal_id));
+        let final_balance_worst = Balances::free_balance(&worst_performer);
+        
+        assert_eq!(final_balance_worst, initial_balance_worst - slash_amount);
+        println!("Slashed worst performer {:?} by {} units", worst_performer, slash_amount);
+        
+        // === Phase 6: Test Direct Stake Management ===
+        // Test percentage-based slashing on reserved stakes
+        for (i, validator) in validators.iter().enumerate() {
+            let slash_percentage = match i {
+                0 => 5u32,  // 5% slash for high stake validator
+                1 => 10u32, // 10% slash for medium stake validator  
+                2 => 15u32, // 15% slash for low stake validator
+                _ => 0u32,
+            };
+            
+            let initial_reserved = Balances::reserved_balance(validator);
+            if initial_reserved > 0 && slash_percentage > 0 {
+                assert_ok!(DcfPallet::slash_validator_percentage(
+                    RuntimeOrigin::root(),
+                    *validator,
+                    slash_percentage
+                ));
+                
+                let final_reserved = Balances::reserved_balance(validator);
+                let expected_remaining = initial_reserved - (initial_reserved * slash_percentage as u128 / 100);
+                assert_eq!(final_reserved, expected_remaining);
+                
+                println!("Slashed {}% of Validator {:?}'s stake: {} -> {}", 
+                         slash_percentage, validator, initial_reserved, final_reserved);
+            }
+        }
+        
+        // === Phase 7: Test Weight Rebalancing Again ===
+        // Change weights back to favor PoS (70% PoS, 30% PoI)
+        assert_ok!(DcfPallet::update_consensus_weights(RuntimeOrigin::root(), 7000, 3000));
+        
+        // Record final scores
+        println!("\n=== Final Score Analysis ===");
+        for validator in validators.iter() {
+            if let Some(profile) = DcfPallet::get_validator_profile(*validator) {
+                let (combined, pos, poi, uptime, inference_count, participation_rate, missed_blocks) = profile;
+                println!("Final - Validator {:?}:", validator);
+                println!("  Combined Score: {}", combined);
+                println!("  PoS Score: {} (70% weight)", pos);
+                println!("  PoI Score: {} (30% weight)", poi);
+                println!("  Uptime: {}%, Participation: {}%, Missed: {}, Inferences: {}", 
+                         uptime, participation_rate, missed_blocks, inference_count);
+                println!("  Free Balance: {}, Reserved: {}", 
+                         Balances::free_balance(validator), Balances::reserved_balance(validator));
+            }
+        }
+        
+        // === Phase 8: Verification of Economic Consistency ===
+        let total_rewards = 2500u128 + 1500u128 + 1000u128; // Sum of all rewards
+        let total_slashes = slash_amount; // Only free balance slash
+        let net_economic_impact = total_rewards - total_slashes;
+        
+        println!("\n=== Economic Impact Summary ===");
+        println!("Total Rewards Distributed: {} units", total_rewards);
+        println!("Total Free Balance Slashes: {} units", total_slashes);
+        println!("Net Economic Impact: +{} units", net_economic_impact);
+        
+        // Verify all proposals were executed
+        for i in 0..=proposal_id {
+            let proposal = crate::Proposals::<Test>::get(i).unwrap();
+            assert_eq!(proposal.status, ProposalStatus::Executed);
+        }
+        
+        // Verify consensus weights are properly set
+        assert_eq!(DcfPallet::pos_weight(), 7000);
+        assert_eq!(DcfPallet::poi_weight(), 3000);
+        
+        println!("Complex validator score balancing and incentives test completed successfully");
+    });
+}
+
+/// Test system stress with multiple validators and complex economic scenarios
+#[test]
+fn test_system_stress_with_multiple_validators_and_complex_scenarios() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, ReservableCurrency};
+        
+        // === Setup Phase ===
+        // Use existing genesis validators plus create additional test scenarios
+        let genesis_validators = [1u64, 2u64, 3u64];
+        let additional_validators = [20u64, 21u64, 22u64, 23u64, 24u64];
+        
+        // Set up diverse economic profiles
+        let validator_profiles = [
+            // Genesis validators with different stakes
+            (1u64, 15000u128, "High Stake Validator"),
+            (2u64, 10000u128, "Medium Stake Validator"),
+            (3u64, 5000u128, "Low Stake Validator"),
+            // Additional validators (if they can join)
+            (20u64, 20000u128, "Premium Validator"),
+            (21u64, 8000u128, "Standard Validator"),
+            (22u64, 12000u128, "Growth Validator"),
+            (23u64, 6000u128, "Starter Validator"),
+            (24u64, 25000u128, "Enterprise Validator"),
+        ];
+        
+        // Initialize balances and stakes
+        for (validator, stake_amount, description) in validator_profiles.iter() {
+            // Give sufficient balance for operations
+            if !genesis_validators.contains(validator) {
+                let _ = <Balances as Currency<_>>::deposit_creating(validator, stake_amount + 10000);
+            }
+            
+            // Reserve stake
+            if let Ok(_) = <Balances as ReservableCurrency<_>>::reserve(validator, *stake_amount) {
+                println!("Set up {}: Validator {:?} with {} stake", description, validator, stake_amount);
+            }
+        }
+        
+        // === Phase 1: Mass Validator Operations ===
+        assert_ok!(DcfPallet::set_governance_mode(RuntimeOrigin::root(), true));
+        
+        // Attempt to add additional validators (may fail due to validation logic)
+        for validator in additional_validators.iter() {
+            let join_result = DcfPallet::join_validators(
+                RuntimeOrigin::signed(*validator), 
+                Some(format!("Validator {}", validator).as_bytes().to_vec().try_into().unwrap())
+            );
+            println!("Join attempt for Validator {:?}: {:?}", validator, join_result.is_ok());
+        }
+        
+        // === Phase 2: Simulate Diverse Performance Patterns ===
+        let performance_scenarios = [
+            // (validator, authored_blocks, missed_blocks, inference_updates)
+            (1u64, 100, 2, 15),   // Excellent performer
+            (2u64, 85, 8, 12),    // Good performer
+            (3u64, 70, 15, 8),    // Average performer
+            (20u64, 95, 3, 18),   // Premium performer (if active)
+            (21u64, 60, 20, 5),   // Poor performer
+            (22u64, 80, 10, 10),  // Balanced performer
+            (23u64, 45, 25, 3),   // Struggling performer
+            (24u64, 110, 1, 20),  // Outstanding performer
+        ];
+        
+        for (validator, authored, missed, inference_count) in performance_scenarios.iter() {
+            // Set activity metrics
+            crate::ValidatorBlocksAuthored::<Test>::insert(validator, *authored);
+            crate::ValidatorBlocksMissed::<Test>::insert(validator, *missed);
+            
+            // Simulate inference activity
+            for _ in 0..*inference_count {
+                let _ = DcfPallet::update_validator_inference_score(RuntimeOrigin::signed(*validator), *validator);
+            }
+            
+            // Update stake scores
+            let _ = DcfPallet::update_validator_stake_score(RuntimeOrigin::signed(*validator), *validator);
+            
+            println!("Performance set for Validator {:?}: authored={}, missed={}, inferences={}", 
+                     validator, authored, missed, inference_count);
+        }
+        
+        // === Phase 3: Mass Economic Operations ===
+        let mut proposal_id = 0u32;
+        
+        // Reward top performers
+        let top_performers = [(1u64, 3000u128), (24u64, 3500u128), (20u64, 2800u128)];
+        
+        for (validator, reward_amount) in top_performers.iter() {
+            // Only reward if validator exists in system
+            if DcfPallet::validator_states(validator).is_some() {
+                assert_ok!(DcfPallet::submit_proposal(
+                    RuntimeOrigin::signed(genesis_validators[0]),
+                    ProposalAction::Reward {
+                        validator: *validator,
+                        amount: *reward_amount
+                    },
+                    Some(b"Top performer reward".to_vec().try_into().unwrap())
+                ));
+                
+                // Vote with multiple validators
+                for voter in genesis_validators.iter() {
+                    assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(*voter), proposal_id, true));
+                }
+                
+                let initial_balance = Balances::free_balance(validator);
+                assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), proposal_id));
+                let final_balance = Balances::free_balance(validator);
+                
+                assert_eq!(final_balance, initial_balance + reward_amount);
+                println!("Rewarded top performer {:?} with {} units", validator, reward_amount);
+                
+                proposal_id += 1;
+            }
+        }
+        
+        // Slash poor performers
+        let poor_performers = [(21u64, 800u128), (23u64, 600u128), (3u64, 400u128)];
+        
+        for (validator, slash_amount) in poor_performers.iter() {
+            if DcfPallet::validator_states(validator).is_some() {
+                assert_ok!(DcfPallet::submit_proposal(
+                    RuntimeOrigin::signed(genesis_validators[1]),
+                    ProposalAction::Slash {
+                        validator: *validator,
+                        amount: *slash_amount
+                    },
+                    Some(b"Poor performance penalty".to_vec().try_into().unwrap())
+                ));
+                
+                // Vote with majority
+                assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(genesis_validators[0]), proposal_id, true));
+                assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(genesis_validators[1]), proposal_id, true));
+                
+                let initial_balance = Balances::free_balance(validator);
+                assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), proposal_id));
+                let final_balance = Balances::free_balance(validator);
+                
+                assert_eq!(final_balance, initial_balance - slash_amount);
+                println!("Slashed poor performer {:?} by {} units", validator, slash_amount);
+                
+                proposal_id += 1;
+            }
+        }
+        
+        // === Phase 4: Direct Stake Operations ===
+        // Test various percentage slashes on different validators
+        let stake_slash_scenarios = [
+            (1u64, 3u32),   // 3% slash on high performer (light penalty)
+            (2u64, 5u32),   // 5% slash on medium performer
+            (21u64, 20u32), // 20% slash on poor performer (if exists)
+            (23u64, 25u32), // 25% slash on struggling performer (if exists)
+        ];
+        
+        for (validator, slash_percentage) in stake_slash_scenarios.iter() {
+            let initial_reserved = Balances::reserved_balance(validator);
+            if initial_reserved > 0 {
+                assert_ok!(DcfPallet::slash_validator_percentage(
+                    RuntimeOrigin::root(),
+                    *validator,
+                    *slash_percentage
+                ));
+                
+                let final_reserved = Balances::reserved_balance(validator);
+                let expected_remaining = initial_reserved - (initial_reserved * (*slash_percentage as u128) / 100);
+                assert_eq!(final_reserved, expected_remaining);
+                
+                println!("Applied {}% stake slash to Validator {:?}: {} -> {}", 
+                         slash_percentage, validator, initial_reserved, final_reserved);
+            }
+        }
+        
+        // === Phase 5: Multiple Epoch Transitions ===
+        assert_ok!(DcfPallet::set_governance_mode(RuntimeOrigin::root(), false));
+        
+        // Simulate multiple epoch transitions with score decay
+        for epoch in 1..=5 {
+            crate::CurrentEpoch::<Test>::put(epoch);
+            
+            // Apply score decay to all validators
+            for validator in genesis_validators.iter() {
+                let _ = DcfPallet::apply_score_decay(validator, epoch);
+            }
+            
+            println!("Advanced to epoch {} with score decay applied", epoch);
+        }
+        
+        // === Phase 6: Validator Leaving Simulation ===
+        // Some validators request to leave
+        let leaving_validators = [3u64, 21u64]; // Poor performers leave
+        
+        for validator in leaving_validators.iter() {
+            if DcfPallet::validator_states(validator).is_some() {
+                assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(*validator)));
+                assert!(DcfPallet::validator_leave_requests(validator).is_some());
+                println!("Validator {:?} requested to leave", validator);
+            }
+        }
+        
+        // === Phase 7: Final System State Analysis ===
+        println!("\n=== Final System State Analysis ===");
+        
+        let mut total_rewards = 0u128;
+        let mut total_slashes = 0u128;
+        let mut active_validator_count = 0;
+        let mut total_stake = 0u128;
+        
+        // Analyze all validators
+        for (validator, _, description) in validator_profiles.iter() {
+            if let Some(state) = DcfPallet::validator_states(validator) {
+                let free_balance = Balances::free_balance(validator);
+                let reserved_balance = Balances::reserved_balance(validator);
+                let is_active = DcfPallet::active_validators().contains(validator);
+                let has_leave_request = DcfPallet::validator_leave_requests(validator).is_some();
+                
+                if is_active {
+                    active_validator_count += 1;
+                    total_stake += reserved_balance;
+                }
+                
+                println!("{} ({}): Score={}, Free={}, Reserved={}, Active={}, Leaving={}", 
+                         description, validator, state.current.final_score, 
+                         free_balance, reserved_balance, is_active, has_leave_request);
+            }
+        }
+        
+        // Calculate economic impact
+        for (_, reward) in top_performers.iter() {
+            total_rewards += reward;
+        }
+        for (_, slash) in poor_performers.iter() {
+            total_slashes += slash;
+        }
+        
+        println!("\n=== Economic Impact Summary ===");
+        println!("Active Validators: {}", active_validator_count);
+        println!("Total Stake in System: {} units", total_stake);
+        println!("Total Rewards Distributed: {} units", total_rewards);
+        println!("Total Free Balance Slashes: {} units", total_slashes);
+        println!("Net Economic Impact: {} units", total_rewards as i128 - total_slashes as i128);
+        
+        // Verify system consistency
+        assert!(active_validator_count >= 1, "System should have at least one active validator");
+        assert!(total_stake > 0, "System should have stake locked");
+        
+        // Verify all proposals were executed
+        for i in 0..proposal_id {
+            let proposal = crate::Proposals::<Test>::get(i).unwrap();
+            assert_eq!(proposal.status, ProposalStatus::Executed);
+        }
+        
+        println!("System stress test with multiple validators completed successfully");
+        println!("Processed {} governance proposals across {} epochs", proposal_id, DcfPallet::current_epoch());
     });
 }

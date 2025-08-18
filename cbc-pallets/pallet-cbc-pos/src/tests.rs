@@ -76,7 +76,7 @@ mod tests {
             assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
 
             // Slash validator
-            assert_ok!(PalletCbcPos::slash_validator(RuntimeOrigin::signed(2), 1));
+            assert_ok!(PalletCbcPos::slash_validator(&1, 100));
 
             // Verify slashing count
             assert_eq!(PalletCbcPos::slashing_count(1), Some(1));
@@ -91,7 +91,7 @@ mod tests {
 
             // Slash validator multiple times to reach max count
             for _ in 0..3 {
-                assert_ok!(PalletCbcPos::slash_validator(RuntimeOrigin::signed(2), 1));
+                assert_ok!(PalletCbcPos::slash_validator(&1, 100));
             }
 
             // Verify validator was removed
@@ -106,7 +106,7 @@ mod tests {
         new_test_ext().execute_with(|| {
             // Try to slash non-registered validator
             assert_noop!(
-                PalletCbcPos::slash_validator(RuntimeOrigin::signed(2), 1),
+                PalletCbcPos::slash_validator(&1, 100),
                 Error::<Test>::ValidatorNotRegistered
             );
         });
@@ -132,7 +132,7 @@ mod tests {
     fn test_unauthorized_slash() {
         new_test_ext().execute_with(|| {
             // Try to slash with root origin
-            assert_ok!(PalletCbcPos::slash_validator(RuntimeOrigin::root(), 1));
+            assert_ok!(PalletCbcPos::slash_validator(&1, 100));
         });
     }
 

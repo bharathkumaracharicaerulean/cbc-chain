@@ -15,6 +15,33 @@ use sp_blockchain::HeaderBackend;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use cbc_runtime::AccountId;
 
+/// Configuration constants from the runtime
+#[derive(Debug, Clone)]
+pub struct EpochManagerRuntimeConfig {
+    /// Minimum score for good performance
+    pub min_performance_score: u64,
+    /// Score for high performance rewards
+    pub high_performance_score: u64,
+    /// Minimum participation rate percentage
+    pub min_participation_rate: u32,
+    /// High participation rate percentage
+    pub high_participation_rate: u32,
+    /// Maximum missed blocks before penalty
+    pub max_missed_blocks: u32,
+    /// Maximum missed blocks for high performers
+    pub max_missed_blocks_high: u32,
+    /// Score threshold for healthy validator
+    pub healthy_validator_score: u64,
+    /// Participation rate for healthy validator
+    pub healthy_participation_rate: u32,
+    /// Max missed blocks for healthy validator
+    pub healthy_missed_blocks_max: u32,
+    /// Cooldown period in blocks after leaving
+    pub leave_cooldown: u32,
+    /// Number of top validators to display in logs
+    pub top_validators_display_count: u32,
+}
+
 /// Epoch manager for handling epoch transitions and validator set updates
 pub struct EpochManager<B, C>
 where
@@ -42,6 +69,29 @@ where
         }
     }
 
+    /// Get runtime configuration constants
+    fn get_runtime_config(&self) -> Result<EpochManagerRuntimeConfig> {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        let config_tuple = api.get_epoch_manager_config(best_hash)
+            .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get epoch manager config: {:?}", e)))?;
+        
+        Ok(EpochManagerRuntimeConfig {
+            min_performance_score: config_tuple.0,
+            high_performance_score: config_tuple.1,
+            min_participation_rate: config_tuple.2,
+            high_participation_rate: config_tuple.3,
+            max_missed_blocks: config_tuple.4,
+            max_missed_blocks_high: config_tuple.5,
+            healthy_validator_score: config_tuple.6,
+            healthy_participation_rate: config_tuple.7,
+            healthy_missed_blocks_max: config_tuple.8,
+            leave_cooldown: config_tuple.9,
+            top_validators_display_count: config_tuple.10,
+        })
+    }
+
     /// Check if an epoch transition should occur
     pub fn should_transition_epoch(&self, current_block: u32) -> Result<bool> {
         let api = self.client.runtime_api();
@@ -50,16 +100,16 @@ where
         let current_epoch = api.get_current_epoch(best_hash)
             .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get current epoch: {:?}", e)))?;
         
-        let runtime_epoch_config = api.get_epoch_config(best_hash)
-            .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get epoch config: {:?}", e)))?;
+        // Get epoch length from runtime configuration (T::EpochLength)
+        let epoch_length = api.get_epoch_length(best_hash)
+            .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get epoch length: {:?}", e)))?;
         
-        let blocks_per_epoch = runtime_epoch_config.blocks_per_epoch;
-        let epoch_start_block = current_epoch.saturating_mul(blocks_per_epoch);
-        let should_transition = current_block >= epoch_start_block + blocks_per_epoch;
+        let epoch_start_block = current_epoch.saturating_mul(epoch_length);
+        let should_transition = current_block >= epoch_start_block + epoch_length;
         
         if should_transition {
-            info!("DCF EpochManager: Epoch transition needed at block {} (epoch {} -> {})", 
-                  current_block, current_epoch, current_epoch + 1);
+            info!("DCF EpochManager: Epoch transition needed at block {} (epoch {} -> {}, length: {})", 
+                  current_block, current_epoch, current_epoch + 1, epoch_length);
         }
         
         Ok(should_transition)
@@ -144,14 +194,17 @@ where
         // Get current block number for cooldown check
         let current_block = self.client.info().best_number.saturated_into::<u32>();
         
+        // Get runtime configuration
+        let config = self.get_runtime_config()?;
+        
         for (validator, score) in all_scores {
             // Check minimum score requirement
-            if score >= 50 { // Minimum score threshold
+            if score >= config.healthy_validator_score {
                 // Check if validator is in cooldown period after leaving
                 match api.get_validator_leave_request(best_hash, validator.clone()) {
                     Ok(Some(leave_block)) => {
                         let blocks_passed = current_block.saturating_sub(leave_block);
-                        let cooldown_period: u32 = 1000; // LeaveCooldown from runtime config
+                        let cooldown_period = config.leave_cooldown;
                         
                         if blocks_passed < cooldown_period {
                             // Validator is still in cooldown period, skip
@@ -220,6 +273,7 @@ where
     fn update_validator_participation_rates(&self) -> Result<()> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
+        let config = self.get_runtime_config()?;
         
         let active_validators = api.get_active_validators(best_hash)
             .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get active validators: {:?}", e)))?;
@@ -233,13 +287,13 @@ where
                 let participation_rate = if total_blocks > 0 {
                     (authored * 100) / total_blocks
                 } else {
-                    100 // New validators get 100% initially
+                    100 // New validators get full participation initially
                 };
                 
                 total_participation += participation_rate;
                 validator_count += 1;
                 
-                if participation_rate < 80 {
+                if participation_rate < config.healthy_participation_rate {
                     warn!("DCF EpochManager: Low participation rate for validator {:?}: {}%", 
                           validator, participation_rate);
                 }
@@ -261,6 +315,7 @@ where
     fn handle_underperforming_validators(&self) -> Result<()> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
+        let config = self.get_runtime_config()?;
         
         let active_validators = api.get_active_validators(best_hash)
             .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get active validators: {:?}", e)))?;
@@ -272,7 +327,9 @@ where
                 api.get_validator_profile(best_hash, validator.clone()) {
                 
                 // Check for underperformance criteria
-                let is_underperforming = combined_score < 30 || participation_rate < 50 || missed_blocks > 10;
+                let is_underperforming = combined_score < config.min_performance_score || 
+                                        participation_rate < config.min_participation_rate || 
+                                        missed_blocks > config.max_missed_blocks;
                 
                 if is_underperforming {
                     warn!("DCF EpochManager: Underperforming validator detected: {:?} - Combined Score: {}, Participation: {}%, Missed: {}", 
@@ -305,6 +362,86 @@ where
         Ok((current_epoch, active_validators))
     }
 
+    /// Generate validator management proposals based on combined PoS and PoI scores
+    pub fn generate_validator_management_proposals(&self) -> Result<Vec<(AccountId, String, u64, u64, u64)>> {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        let config = self.get_runtime_config()?;
+        let mut proposals = Vec::new();
+        
+        // Get active validators and their scores
+        let active_validators = api.get_active_validators(best_hash)
+            .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get active validators: {:?}", e)))?;
+        
+        let (_pos_weight, _poi_weight) = api.get_consensus_weights(best_hash)
+            .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get consensus weights: {:?}", e)))?;
+        
+        for validator in active_validators.iter() {
+            if let Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
+                api.get_validator_profile(best_hash, validator.clone()) {
+                
+                let mut proposal_reason = String::new();
+                
+                // Check for underperformance
+                if combined_score < config.min_performance_score {
+                    proposal_reason = format!("Low combined score: {}", combined_score);
+                } else if participation_rate < config.min_participation_rate {
+                    proposal_reason = format!("Low participation: {}%", participation_rate);
+                } else if missed_blocks > config.max_missed_blocks_high {
+                    proposal_reason = format!("Too many missed blocks: {}", missed_blocks);
+                } else if pos_score == 0 && poi_score == 0 {
+                    proposal_reason = "No PoS or PoI contribution".to_string();
+                } else if combined_score >= config.high_performance_score {
+                    proposal_reason = format!("High performance reward candidate: {}", combined_score);
+                }
+                
+                if !proposal_reason.is_empty() {
+                    proposals.push((validator.clone(), proposal_reason, combined_score, pos_score, poi_score));
+                }
+            }
+        }
+        
+        info!("EpochManager: Generated {} validator management proposals", proposals.len());
+        Ok(proposals)
+    }
+    
+    /// Update validator set based on combined PoS and PoI scores
+    pub fn update_validator_set_by_combined_scores(&self) -> Result<()> {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get all validators and their combined scores
+        let all_validators = api.get_validator_scores(best_hash)
+            .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get validator scores: {:?}", e)))?;
+        
+        let (pos_weight, poi_weight) = api.get_consensus_weights(best_hash)
+            .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get consensus weights: {:?}", e)))?;
+        
+        let mut validator_performance: Vec<(AccountId, u64, u64, u64)> = Vec::new(); // (validator, combined, pos, poi)
+        
+        for (validator, _stored_score) in all_validators {
+            if let Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, _participation_rate, _missed_blocks))) = 
+                api.get_validator_profile(best_hash, validator.clone()) {
+                validator_performance.push((validator, combined_score, pos_score, poi_score));
+            }
+        }
+        
+        // Sort by combined score (descending)
+        validator_performance.sort_by(|a, b| b.1.cmp(&a.1));
+        
+        // Get runtime configuration for display count
+        let config = self.get_runtime_config()?;
+        
+        // Log top performers
+        info!("EpochManager: Top validators by combined PoS/PoI score:");
+        for (i, (validator, combined, pos, poi)) in validator_performance.iter().take(config.top_validators_display_count as usize).enumerate() {
+            info!("  {}. {:?} - Combined: {}, PoS: {} ({}%), PoI: {} ({}%)", 
+                  i + 1, validator, combined, pos, pos_weight, poi, poi_weight);
+        }
+        
+        Ok(())
+    }
+    
     /// Get validator information for a specific validator
     pub fn get_validator_info(&self, validator: &AccountId) -> Result<Option<ValidatorInfo>> {
         let api = self.client.runtime_api();

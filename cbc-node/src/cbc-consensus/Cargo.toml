@@ -33,6 +33,8 @@ thiserror = "1.0"
 async-trait = "0.1"
 futures = "0.3"
 pallet-cbc-dcf = { workspace = true }
+prometheus = { version = "0.13", default-features = false }
+parking_lot = "0.12"
 
 
 [dev-dependencies]

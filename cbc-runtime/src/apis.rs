@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 use frame_support::{
 	genesis_builder_helper::{build_state},
 	weights::Weight,
+	traits::Get,
 };
 use sp_api::impl_runtime_apis;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
@@ -337,6 +338,43 @@ impl_runtime_apis! {
 
 		fn validate_expected_author(block_number: u32, actual_author: AccountId) -> bool {
 			pallet_cbc_dcf::Pallet::<Runtime>::validate_expected_author(block_number, actual_author)
+		}
+
+		fn get_validator_stake(validator: AccountId) -> u128 {
+			pallet_cbc_dcf::Pallet::<Runtime>::validator_stake(&validator)
+		}
+
+		fn get_leave_request_status(validator: AccountId) -> Option<(u32, u32, bool)> {
+			if let Some(request_block) = pallet_cbc_dcf::Pallet::<Runtime>::validator_leave_requests(&validator) {
+				use sp_runtime::traits::SaturatedConversion;
+				let current_block = frame_system::Pallet::<Runtime>::block_number().saturated_into::<u32>();
+				let cooldown_period: u32 = <Runtime as pallet_cbc_dcf::Config>::LeaveCooldown::get();
+				let expires_at = request_block + cooldown_period;
+				let can_execute = current_block >= expires_at;
+				Some((request_block, expires_at, can_execute))
+			} else {
+				None
+			}
+		}
+
+		fn get_epoch_manager_config() -> (u64, u64, u32, u32, u32, u32, u64, u32, u32, u32, u32) {
+			(
+				<Runtime as pallet_cbc_dcf::Config>::MinPerformanceScore::get(),
+				<Runtime as pallet_cbc_dcf::Config>::HighPerformanceScore::get(),
+				<Runtime as pallet_cbc_dcf::Config>::MinParticipationRate::get(),
+				<Runtime as pallet_cbc_dcf::Config>::HighParticipationRate::get(),
+				<Runtime as pallet_cbc_dcf::Config>::MaxMissedBlocks::get(),
+				<Runtime as pallet_cbc_dcf::Config>::MaxMissedBlocksHigh::get(),
+				<Runtime as pallet_cbc_dcf::Config>::HealthyValidatorScore::get(),
+				<Runtime as pallet_cbc_dcf::Config>::HealthyParticipationRate::get(),
+				<Runtime as pallet_cbc_dcf::Config>::HealthyMissedBlocksMax::get(),
+				<Runtime as pallet_cbc_dcf::Config>::LeaveCooldown::get(),
+				<Runtime as pallet_cbc_dcf::Config>::TopValidatorsDisplayCount::get()
+			)
+		}
+
+		fn get_epoch_length() -> u32 {
+			<Runtime as pallet_cbc_dcf::Config>::EpochLength::get()
 		}
 	}
 

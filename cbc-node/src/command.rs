@@ -36,8 +36,10 @@ impl SubstrateCli for Cli {
 
     fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
         Ok(match id {
-            "dev" | "CBC" => Box::new(chain_spec::development_chain_spec()?),
-            "" | "local" => Box::new(chain_spec::local_chain_spec()?),
+            "dev" | "development" | "CBC" => Box::new(chain_spec::development_chain_spec()?),
+            "" | "local" | "local_testnet" => Box::new(chain_spec::local_chain_spec()?),
+            "multi_validator" => Box::new(chain_spec::multi_validator_chain_spec()?),
+            "high_stake" => Box::new(chain_spec::high_stake_chain_spec()?),
             path => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))?),
         })
     }

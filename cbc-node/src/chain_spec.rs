@@ -33,3 +33,35 @@ pub fn local_chain_spec() -> Result<ChainSpec, String> {
     
     Ok(chain_spec)
 }
+
+pub fn multi_validator_chain_spec() -> Result<ChainSpec, String> {
+    let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
+    
+    let chain_spec = ChainSpec::builder(
+        wasm_binary,
+        None,
+    )
+    .with_name("Multi-Validator Testnet")
+    .with_id("multi_validator")
+    .with_chain_type(ChainType::Local)
+    .with_genesis_config_preset_name("multi_validator")
+    .build();
+    
+    Ok(chain_spec)
+}
+
+pub fn high_stake_chain_spec() -> Result<ChainSpec, String> {
+    let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
+    
+    let chain_spec = ChainSpec::builder(
+        wasm_binary,
+        None,
+    )
+    .with_name("High-Stake Testnet")
+    .with_id("high_stake")
+    .with_chain_type(ChainType::Local)
+    .with_genesis_config_preset_name("high_stake")
+    .build();
+    
+    Ok(chain_spec)
+}

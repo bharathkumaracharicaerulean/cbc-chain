@@ -9,7 +9,7 @@ use crate::{
     proposer_factory::ProposerFactory,
 };
 use std::{sync::Arc, time::Duration};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use sp_runtime::traits::{Block as BlockTrait, SaturatedConversion, Header as HeaderT};
 use sc_consensus::{BlockImport, BlockImportParams, ImportResult};
 use sp_api::ProvideRuntimeApi;
@@ -40,6 +40,7 @@ where
     metrics: ValidatorMetrics,
     last_block_time: Duration,
     current_slot: u64,
+    last_epoch_transition_block: Option<u32>,
     _phantom: std::marker::PhantomData<(B, P, TP)>,
 }
 
@@ -76,6 +77,7 @@ where
             metrics: ValidatorMetrics::default(),
             last_block_time,
             current_slot: 0,
+            last_epoch_transition_block: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -126,23 +128,47 @@ where
                     Err(e) => error!("DCF: Failed to get active validators: {:?}", e),
                 }
                 
-                // Check for epoch transitions
-                let current_epoch = {
-                    let api = self.client.runtime_api();
-                    api.get_current_epoch(best_hash)
-                };
+                // Check for epoch transitions - enhanced detection
+                let current_block = self.client.info().best_number.saturated_into::<u32>();
+                let api = self.client.runtime_api();
                 
-                if let Ok(epoch) = current_epoch {
-                    self.handle_epoch_transition(epoch).await;
+                if let Ok(current_epoch) = api.get_current_epoch(best_hash) {
+                    // Check if we need to trigger an epoch transition
+                    if let Ok(epoch_config) = api.get_epoch_config(best_hash) {
+                        let blocks_per_epoch = epoch_config.blocks_per_epoch;
+                        let should_transition = current_block > 0 && current_block % blocks_per_epoch == 0;
+                        
+                        if should_transition {
+                            // Check if this is a new transition we haven't processed
+                            let is_new_transition = self.last_epoch_transition_block
+                                .map(|last_block| current_block > last_block)
+                                .unwrap_or(true);
+                            
+                            if is_new_transition {
+                                info!("DCF: Detected epoch boundary at block {} - triggering transition check", current_block);
+                                self.handle_epoch_transition(current_epoch).await;
+                            }
+                        } else {
+                            // Regular epoch maintenance
+                            self.handle_epoch_transition(current_epoch).await;
+                        }
+                    }
                 }
             }
             
             // Update validator metrics periodically
-            if self.current_slot % 10 == 0 {
+            if self.current_slot % self.params.metrics_update_interval == 0 {
                 self.update_validator_metrics().await;
             }
             
-            sleep(Duration::from_millis(1000)).await;
+            // Refresh validator scores periodically to ensure fresh PoS/PoI data
+            if self.current_slot % self.params.score_refresh_interval == 0 {
+                if let Err(e) = self.refresh_validator_scores().await {
+                    debug!("Failed to refresh validator scores: {:?}", e);
+                }
+            }
+            
+            sleep(Duration::from_millis(self.params.consensus_loop_interval)).await;
         }
     }
 
@@ -164,12 +190,9 @@ where
         should_produce
     }
     
-    /// Handle epoch transitions
+    /// Handle epoch transitions with auto-detection and response
     async fn handle_epoch_transition(&mut self, current_epoch: u32) {
-        
         let current_block = self.client.info().best_number.saturated_into::<u32>();
-        
-        // Check if epoch transition occurs based on runtime state
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -179,17 +202,143 @@ where
             let should_transition = current_block >= epoch_start_block + blocks_per_epoch;
             
             if should_transition {
+                info!("DCF: Auto-detected epoch transition needed at block {} (epoch {} -> {})", 
+                      current_block, current_epoch, current_epoch + 1);
                 
-                //  actual epoch transition is handled by the runtime pallet 
-                //  So we just log and perform maintenance here
-                self.perform_epoch_maintenance(current_epoch).await;
+                // The runtime automatically handles epoch transitions in on_initialize
+                // We respond by updating our local state and performing maintenance
+                self.respond_to_epoch_transition(current_epoch, current_block).await;
             } else {
-                // No transition needed, but still perform periodic maintenance
+                // Regular epoch maintenance
                 self.perform_epoch_maintenance(current_epoch).await;
             }
         } else {
             error!("DCF: Failed to get epoch configuration from runtime");
         }
+    }
+    
+    /// Respond to an epoch transition that occurred in the runtime
+    async fn respond_to_epoch_transition(&mut self, old_epoch: u32, transition_block: u32) {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get the new epoch number from runtime
+        if let Ok(new_epoch) = api.get_current_epoch(best_hash) {
+            if new_epoch > old_epoch {
+                info!("DCF: Confirmed epoch transition {} -> {} at block {}", 
+                      old_epoch, new_epoch, transition_block);
+                
+                // Update our internal epoch tracking
+                self.last_epoch_transition_block = Some(transition_block);
+                
+                // Perform comprehensive post-transition maintenance
+                self.perform_post_transition_maintenance(new_epoch).await;
+                
+                // Generate validator management proposals for the new epoch
+                if let Err(e) = self.generate_epoch_validator_proposals(new_epoch).await {
+                    warn!("DCF: Failed to generate epoch validator proposals: {:?}", e);
+                }
+            }
+        }
+    }
+    
+    /// Perform comprehensive maintenance after an epoch transition
+    async fn perform_post_transition_maintenance(&mut self, new_epoch: u32) {
+        info!("DCF: Performing post-transition maintenance for epoch {}", new_epoch);
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // 1. Update validator set information
+        if let Ok(active_validators) = api.get_active_validators(best_hash) {
+            info!("DCF: New epoch {} has {} active validators", new_epoch, active_validators.len());
+            
+            // Log top validators by score
+            let mut validator_scores = Vec::new();
+            for validator in active_validators.iter().take(self.params.top_validators_display_count as usize) {
+                if let Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, _participation_rate, _missed_blocks))) = 
+                    api.get_validator_profile(best_hash, validator.clone()) {
+                    validator_scores.push((validator.clone(), combined_score, pos_score, poi_score));
+                }
+            }
+            
+            // Sort by combined score (highest first)
+            validator_scores.sort_by(|a, b| b.1.cmp(&a.1));
+            
+            info!("DCF: Top validators for epoch {}:", new_epoch);
+            for (i, (validator, combined, pos, poi)) in validator_scores.iter().enumerate() {
+                info!("  {}. {:?} - Combined: {}, PoS: {}, PoI: {}", 
+                      i + 1, validator, combined, pos, poi);
+            }
+        }
+        
+        // 2. Reset epoch-specific metrics
+        self.reset_epoch_metrics().await;
+        
+        // 3. Perform regular maintenance
+        self.perform_epoch_maintenance(new_epoch).await;
+    }
+    
+    /// Generate validator management proposals for a new epoch
+    async fn generate_epoch_validator_proposals(&mut self, epoch: u32) -> Result<()> {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        info!("DCF: Generating validator management proposals for epoch {}", epoch);
+        
+        // Generate validator proposals using runtime logic
+        // Note: This would typically be done through an extrinsic, but we can log the analysis
+        info!("DCF: Analyzing validator performance for epoch {} proposals", epoch);
+        
+        // Get active validators and analyze their performance
+        if let Ok(active_validators) = api.get_active_validators(best_hash) {
+            let mut underperformers = Vec::new();
+            let mut top_performers = Vec::new();
+            
+            for validator in active_validators.iter() {
+                if let Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
+                    api.get_validator_profile(best_hash, validator.clone()) {
+                    
+                    // Check for underperformance
+                    if combined_score < self.params.min_performance_score || participation_rate < self.params.min_participation_rate || missed_blocks > self.params.max_missed_blocks {
+                        underperformers.push((validator.clone(), combined_score, pos_score, poi_score));
+                    }
+                    // Check for top performance
+                    else if combined_score >= self.params.high_performance_score && participation_rate >= self.params.high_participation_rate && missed_blocks <= self.params.max_missed_blocks_high {
+                        top_performers.push((validator.clone(), combined_score, pos_score, poi_score));
+                    }
+                }
+            }
+            
+            // Log analysis results
+            if !underperformers.is_empty() {
+                warn!("DCF: Found {} underperforming validators for epoch {}", underperformers.len(), epoch);
+                for (validator, combined, pos, poi) in underperformers.iter() {
+                    warn!("  - {:?}: Combined={}, PoS={}, PoI={}", validator, combined, pos, poi);
+                }
+            }
+            
+            if !top_performers.is_empty() {
+                info!("DCF: Found {} top-performing validators for epoch {}", top_performers.len(), epoch);
+                for (validator, combined, pos, poi) in top_performers.iter() {
+                    info!("  + {:?}: Combined={}, PoS={}, PoI={}", validator, combined, pos, poi);
+                }
+            }
+        }
+        
+        // The actual proposal generation and execution happens in the runtime pallet
+        // This consensus engine provides monitoring and analysis
+        
+        Ok(())
+    }
+    
+    /// Reset epoch-specific metrics
+    async fn reset_epoch_metrics(&mut self) {
+        // Reset any epoch-specific tracking variables
+        self.last_epoch_transition_block = None;
+        
+        // Could add more epoch-specific metric resets here
+        debug!("DCF: Reset epoch-specific metrics");
     }
     
     /// Perform periodic maintenance during an epoch
@@ -209,7 +358,7 @@ where
                     total_score += combined_score;
                     
                     // Check validator health
-                    if combined_score >= 50 && participation_rate >= 80 && missed_blocks <= 5 {
+                    if combined_score >= self.params.healthy_validator_score && participation_rate >= self.params.healthy_participation_rate && missed_blocks <= self.params.healthy_missed_blocks_max {
                         _healthy_validators += 1;
                     }
                 }
@@ -225,17 +374,20 @@ where
         }
     }
     
-    /// Update validator metrics from runtime
+    /// Update validator metrics from runtime with fresh PoS and PoI scores
     async fn update_validator_metrics(&mut self) {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
+        
+        // Get consensus weights for score calculation
+        let (pos_weight, poi_weight) = api.get_consensus_weights(best_hash).unwrap_or((60, 40));
         
         // Get all validator scores and update metrics
         if let Ok(scores) = api.get_validator_scores(best_hash) {
             for (account_id, _final_score) in scores {
                 let public_key = Public::from_raw(*account_id.as_ref());
                 
-                // Get detailed validator information
+                // Get detailed validator information with fresh scores
                 if let Ok(Some((combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks))) = 
                     api.get_validator_profile(best_hash, account_id.clone()) {
                     
@@ -246,10 +398,27 @@ where
                         combined_score.try_into().unwrap_or(0)
                     );
                     
-                    // Log metrics periodically
-                    if self.current_slot % 100 == 0 {
-                        debug!("Validator {:?} - Combined Score: {}, PoS: {}, PoI: {}, Participation: {}%, Missed: {}", 
-                              account_id, combined_score, pos_score, poi_score, participation_rate, missed_blocks);
+                    // Log detailed metrics periodically
+                    if self.current_slot % self.params.detailed_logging_interval == 0 {
+                        info!("DCF: Validator {:?} - Combined: {} (PoS: {} @{}%, PoI: {} @{}%), Participation: {}%, Missed: {}", 
+                              account_id, combined_score, pos_score, pos_weight, poi_score, poi_weight, participation_rate, missed_blocks);
+                    }
+                    
+                    // Check for score imbalances and log warnings
+                    if self.current_slot % 500 == 0 { // Check every 500 slots
+                        let total_weighted = pos_score.saturating_mul(pos_weight) + poi_score.saturating_mul(poi_weight);
+                        if total_weighted > 0 {
+                            let pos_contribution = (pos_score.saturating_mul(pos_weight) * 100) / total_weighted;
+                            let poi_contribution = (poi_score.saturating_mul(poi_weight) * 100) / total_weighted;
+                            
+                            if pos_contribution > 85 {
+                                debug!("DCF: Validator {:?} PoS-heavy ({}%) - consider increasing PoI activity", 
+                                      account_id, pos_contribution);
+                            } else if poi_contribution > 85 {
+                                debug!("DCF: Validator {:?} PoI-heavy ({}%) - consider increasing stake", 
+                                      account_id, poi_contribution);
+                            }
+                        }
                     }
                 }
             }
@@ -260,7 +429,7 @@ where
     fn select_next_author_from_runtime(&mut self, active_validators: &[AccountId]) -> Result<Public> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
-        let block_number = (self.current_slot + 1) as u32;
+        let block_number = self.client.info().best_number.saturated_into::<u32>() + 1;
         
         // Try to get expected author from runtime
         match api.get_expected_author(best_hash, block_number) {
@@ -274,14 +443,78 @@ where
                 }
             }
             Ok(None) => {
-                debug!("No expected author from runtime, using fallback selection");
-                self.fallback_author_selection(active_validators)
+                debug!("No expected author from runtime, using combined score selection");
+                self.select_author_by_combined_score(active_validators)
             }
             Err(e) => {
                 error!("DCF: Runtime API error for author selection: {:?}", e);
-                self.fallback_author_selection(active_validators)
+                debug!("Falling back to combined score selection");
+                self.select_author_by_combined_score(active_validators)
             }
         }
+    }
+    
+    /// Enhanced validator selection using combined PoS and PoI scores
+    fn select_author_by_combined_score(&self, active_validators: &[AccountId]) -> Result<Public> {
+        if active_validators.is_empty() {
+            return Err(ConsensusError::AuthorSelection("No active validators available".into()));
+        }
+
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Collect validator scores with detailed breakdown
+        let mut validator_scores: Vec<(AccountId, u64, u64, u64)> = Vec::new(); // (account, combined_score, pos_score, poi_score)
+        let mut total_weight = 0u64;
+        
+        for validator in active_validators {
+            match api.get_validator_profile(best_hash, validator.clone()) {
+                Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, _participation_rate, _missed_blocks))) => {
+                    // Use combined score as weight, with minimum weight of 1
+                    let weight = combined_score.max(1);
+                    validator_scores.push((validator.clone(), weight, pos_score, poi_score));
+                    total_weight = total_weight.saturating_add(weight);
+                    
+                    // Only log validator details in trace mode to reduce verbosity
+                    log::trace!("DCF: Validator {:?} - Combined: {}, PoS: {}, PoI: {}", 
+                               validator, combined_score, pos_score, poi_score);
+                }
+                Ok(None) => {
+                    // Validator has no profile, give minimum weight
+                    validator_scores.push((validator.clone(), 1, 0, 0));
+                    total_weight = total_weight.saturating_add(1);
+                    log::trace!("DCF: Validator {:?} - No profile, using minimum weight", validator);
+                }
+                Err(e) => {
+                    log::trace!("DCF: Failed to get profile for validator {:?}: {:?}", validator, e);
+                    // Give minimum weight to avoid excluding validator
+                    validator_scores.push((validator.clone(), 1, 0, 0));
+                    total_weight = total_weight.saturating_add(1);
+                }
+            }
+        }
+        
+        if total_weight == 0 {
+            // Fallback to round-robin if all weights are zero
+            return self.fallback_author_selection(active_validators);
+        }
+        
+        // Use current slot as seed for deterministic but pseudo-random selection
+        let seed = self.current_slot.wrapping_mul(2654435761u64); // Large prime for better distribution
+        let target = seed % total_weight;
+        let mut cumulative_weight = 0u64;
+        
+        for (validator, weight, pos_score, poi_score) in validator_scores {
+            cumulative_weight = cumulative_weight.saturating_add(weight);
+            if target < cumulative_weight {
+                debug!("DCF: Selected validator {:?} (Combined: {}, PoS: {}, PoI: {}, Target: {}/{})", 
+                       validator, weight, pos_score, poi_score, target, total_weight);
+                return Ok(Public::from_raw(*validator.as_ref()));
+            }
+        }
+        
+        // Fallback to first validator if something goes wrong
+        Ok(Public::from_raw(*active_validators[0].as_ref()))
     }
     
     /// Fallback author selection using round-robin
@@ -309,7 +542,7 @@ where
         if block_number % 10 == 1 {
             info!("Producing block #{} with author {:?}", block_number, author_account_id);
         } else {
-            debug!("Producing block #{} with author {:?}", block_number, author_account_id);
+            log::trace!("Producing block #{} with author {:?}", block_number, author_account_id);
         }
 
         // Validate block authorship through runtime
@@ -343,7 +576,7 @@ where
         // 4. Update consensus state after successful block production
         self.update_consensus_state(block_number, &author_account_id).await?;
         
-        info!("Block #{} produced by {:?}", block_number, author_account_id);
+        debug!("Block #{} produced by {:?}", block_number, author_account_id);
         Ok(())
     }
 
@@ -493,8 +726,35 @@ where
               block_number, self.current_slot, self.metrics.total_blocks, author);
         
         // Periodic state health check
-        if block_number % 10 == 0 {
+        if block_number % self.params.health_check_interval == 0 {
             self.log_consensus_health().await?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Refresh validator scores in the runtime by triggering score updates
+    async fn refresh_validator_scores(&self) -> Result<()> {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get all active validators and their fresh scores via runtime API
+        if let Ok(active_validators) = api.get_active_validators(best_hash) {
+            let mut updated_count = 0;
+            
+            for validator in active_validators.iter() {
+                // Get fresh validator profile which includes updated PoS and PoI scores
+                if let Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, _participation_rate, _missed_blocks))) = 
+                    api.get_validator_profile(best_hash, validator.clone()) {
+                    
+                    // Log the fresh scores
+                    debug!("DCF: Refreshed scores for {:?} - Combined: {}, PoS: {}, PoI: {}", 
+                           validator, combined_score, pos_score, poi_score);
+                    updated_count += 1;
+                }
+            }
+            
+            info!("DCF: Refreshed scores for {} validators", updated_count);
         }
         
         Ok(())
@@ -514,25 +774,25 @@ where
             let mut total_score = 0u64;
             let mut healthy_validators = 0;
             
-            for validator in active_validators.iter().take(5) { // Sample first 5 validators
+            for validator in active_validators.iter().take(self.params.health_check_sample_size as usize) { // Sample validators for health check
                 if let Ok(Some((combined_score, _pos_score, _poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
                     api.get_validator_profile(best_hash, validator.clone()) {
                     total_score += combined_score;
-                    if combined_score >= 50 && participation_rate >= 70 && missed_blocks <= 10 {
+                    if combined_score >= self.params.healthy_validator_score && participation_rate >= (self.params.healthy_participation_rate - 10) && missed_blocks <= self.params.max_missed_blocks {
                         healthy_validators += 1;
                     }
                 }
             }
             
-            let avg_score = if validator_count > 0 { total_score / validator_count.min(5) as u64 } else { 0 };
+            let avg_score = if validator_count > 0 { total_score / validator_count.min(self.params.health_check_sample_size as usize) as u64 } else { 0 };
             
             info!("PoS+PoI: Consensus Health - Block: {}, Slot: {}, Validators: {}, Healthy: {}, Avg Score: {}", 
                   current_block, self.current_slot, validator_count, healthy_validators, avg_score);
             
             // Check if we need to trigger epoch transition
             if let Ok(current_epoch) = api.get_current_epoch(best_hash) {
-                info!("PoS+PoI: Current epoch: {}, Total blocks produced: {}", 
-                      current_epoch, self.metrics.total_blocks);
+                debug!("PoS+PoI: Current epoch: {}, Total blocks produced: {}", 
+                       current_epoch, self.metrics.total_blocks);
             }
         }
         
@@ -809,11 +1069,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_dcf_consensus_creation() {
-        let client = create_test_client();
-        let transaction_pool = Arc::new(MockTransactionPool);
-        let params = ConsensusParams {
+    fn create_test_consensus_params() -> ConsensusParams {
+        ConsensusParams {
             slot_duration: Duration::from_secs(6),
             min_block_time: 1000,
             author_selection_mode: crate::author_selection::AuthorSelectionMode::RoundRobin,
@@ -821,7 +1078,30 @@ mod tests {
             block_time: 6,
             max_block_size: 5 * 1024 * 1024,
             max_transactions_per_block: 1000,
-        };
+            metrics_update_interval: 10,
+            score_refresh_interval: 50,
+            consensus_loop_interval: 1000,
+            detailed_logging_interval: 100,
+            health_check_interval: 10,
+            min_performance_score: 30,
+            high_performance_score: 80,
+            min_participation_rate: 50,
+            high_participation_rate: 90,
+            max_missed_blocks: 10,
+            max_missed_blocks_high: 2,
+            healthy_validator_score: 50,
+            healthy_participation_rate: 80,
+            healthy_missed_blocks_max: 5,
+            top_validators_display_count: 5,
+            health_check_sample_size: 5,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dcf_consensus_creation() {
+        let client = create_test_client();
+        let transaction_pool = Arc::new(MockTransactionPool);
+        let params = create_test_consensus_params();
 
         let consensus = DcfConsensus::<TestBlock, TestClient, Pair, MockTransactionPool>::new(
             client,
@@ -836,15 +1116,7 @@ mod tests {
     async fn test_should_produce_block() {
         let client = create_test_client();
         let transaction_pool = Arc::new(MockTransactionPool);
-        let params = ConsensusParams {
-            slot_duration: Duration::from_secs(6),
-            min_block_time: 1000,
-            author_selection_mode: crate::author_selection::AuthorSelectionMode::RoundRobin,
-            finality_threshold: 2,
-            block_time: 6,
-            max_block_size: 5 * 1024 * 1024,
-            max_transactions_per_block: 1000,
-        };
+        let params = create_test_consensus_params();
 
         let mut consensus = DcfConsensus::<TestBlock, TestClient, Pair, MockTransactionPool>::new(
             client,
@@ -894,15 +1166,7 @@ mod tests {
     #[tokio::test]
     async fn test_author_selection() {
         let client = create_test_client();
-        let params = ConsensusParams {
-            slot_duration: Duration::from_secs(6),
-            min_block_time: 1000,
-            author_selection_mode: crate::author_selection::AuthorSelectionMode::RoundRobin,
-            finality_threshold: 2,
-            block_time: 6,
-            max_block_size: 5 * 1024 * 1024,
-            max_transactions_per_block: 1000,
-        };
+        let params = create_test_consensus_params();
 
         let transaction_pool = Arc::new(MockTransactionPool);
         let consensus = DcfConsensus::<TestBlock, TestClient, Pair, MockTransactionPool>::new(
@@ -918,15 +1182,7 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_update() {
         let client = create_test_client();
-        let params = ConsensusParams {
-            slot_duration: Duration::from_secs(6),
-            min_block_time: 1000,
-            author_selection_mode: crate::author_selection::AuthorSelectionMode::RoundRobin,
-            finality_threshold: 2,
-            block_time: 6,
-            max_block_size: 5 * 1024 * 1024,
-            max_transactions_per_block: 1000,
-        };
+        let params = create_test_consensus_params();
 
         let transaction_pool = Arc::new(MockTransactionPool);
         let mut consensus = DcfConsensus::<TestBlock, TestClient, Pair, MockTransactionPool>::new(

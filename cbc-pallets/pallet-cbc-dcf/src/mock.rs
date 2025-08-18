@@ -116,14 +116,15 @@ impl pallet_cbc_poi::Config for Test {
     type InferenceReward = InferenceReward;
     type ChallengeReward = ChallengeReward;
     type PosInterface = MockPosInterface;
+    type DcfInterface = crate::Pallet<Test>;
     type WeightInfo = ();
 }
 
 parameter_types! {
     pub const DcfMaxValidators: u32 = 100;
     pub const MaxEpochHistory: u32 = 24;
-    pub const DefaultPosWeight: u64 = 60;
-    pub const DefaultPoiWeight: u64 = 40;
+    pub const DefaultPosWeight: u64 = 6000;
+    pub const DefaultPoiWeight: u64 = 4000;
     pub const MinActiveValidators: u32 = 3;
     pub const DcfMinValidatorScore: u32 = 50;
     pub const DcfValidatorScoreDecay: u32 = 10;
@@ -235,7 +236,83 @@ impl Config for Test {
     type InferencePenaltyHigh = InferencePenaltyHigh;
     type MinStake = DcfMinStake;
     type Balance = u128;
+    type Currency = Balances;
     type WeightInfo = MockWeightInfo;
+    
+    // Missing configuration parameters
+    type MaxInactiveEpochs = ConstU32<5>;
+    type ScoreDecayInterval = ConstU32<10>;
+    type ParticipationUpdateInterval = ConstU32<100>;
+    type UnderperformanceCheckInterval = ConstU32<50>;
+    type ValidatorProposalInterval = ConstU32<200>;
+    type HealthMetricsInterval = ConstU32<1000>;
+    type OffchainWorkerInterval = ConstU32<5>;
+    type LeaveCooldown = ConstU32<1000>;
+    type EpochLength = ConstU32<2400>;
+    type PercentagePrecision = ConstU32<10000>;
+    
+    // Misbehavior reporting
+    type MaxEvidenceLength = ConstU32<1000>;
+    type MisbehaviorSlashThreshold = ConstU32<3>;
+    
+    // Off-chain worker configuration
+    type OffchainWorkerTimeout = ConstU64<5000>;
+    type EstimatedBlockTime = ConstU64<6000>;
+    
+    // Performance thresholds
+    type MinPerformanceScore = ConstU64<30>;
+    type HighPerformanceScore = ConstU64<80>;
+    type MinParticipationRate = ConstU32<50>;
+    type HighParticipationRate = ConstU32<90>;
+    type MaxMissedBlocks = ConstU32<10>;
+    type MaxMissedBlocksHigh = ConstU32<2>;
+    type HealthyValidatorScore = ConstU64<50>;
+    type HealthyParticipationRate = ConstU32<80>;
+    type HealthyMissedBlocksMax = ConstU32<5>;
+    
+    // Score calculation thresholds
+    type ScoreChangeThreshold = ConstU64<1000>;
+    type ScoreChangePercentage = ConstU32<10>;
+    type ScoreImprovementThreshold = ConstU64<1000>;
+    type ScoreImprovementPercentage = ConstU32<10>;
+    
+    // Contribution balance thresholds
+    type MaxPosContribution = ConstU32<90>;
+    type MaxPoiContribution = ConstU32<90>;
+    type ImbalanceWarningThreshold = ConstU32<85>;
+    
+    // Block processing intervals
+    type LeaveRequestCheckInterval = ConstU32<10>;
+    type MetricsUpdateInterval = ConstU32<10>;
+    type ScoreRefreshInterval = ConstU32<50>;
+    type DetailedLoggingInterval = ConstU32<100>;
+    type ImbalanceCheckInterval = ConstU32<500>;
+    
+    // Validator set limits
+    type TopValidatorsDisplayCount = ConstU32<5>;
+    type HealthCheckSampleSize = ConstU32<5>;
+    
+
+    // Additional missing parameters
+    type InferenceConfidenceThresholdLow = ConstU32<70>;
+    type InferenceConfidenceThresholdHigh = ConstU32<90>;
+    type MaxSlashPenalty = ConstU64<50>;
+    type MaxRewardBoost = ConstU64<20>;
+    type SlashPenaltyDivisor = ConstU64<1000>;
+    type RewardBoostDivisor = ConstU64<1000>;
+    type SlashPercent = ConstU32<10>;
+    type ValidatorReward = ConstU128<10000>;
+    type MaxValidatorNameLength = ConstU32<32>;
+    type MaxValidatorWebsiteLength = ConstU32<64>;
+    type MaxValidatorContactLength = ConstU32<64>;
+    type MaxValidatorDescriptionLength = ConstU32<128>;
+    type MaxValidatorLocationLength = ConstU32<32>;
+    type MaxPerformanceHistoryLength = ConstU32<100>;
+    type MaxValidatorHistoryLength = ConstU32<10>;
+    type MaxCommissionRate = ConstU32<10000>;
+    type FullPercentage = ConstU32<100>;
+    type HighPerformancePercentage = ConstU32<80>;
+    type TopPerformerPercentage = ConstU32<20>;
 }
 
 
@@ -260,7 +337,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
     crate::GenesisConfig::<Test> {
         validators: vec![1, 2, 3],
-        validator_scores: vec![60, 70, 80],
+        validator_scores: vec![6000, 7000, 8000],
         current_epoch: 0,
         epoch_config: EpochConfig {
             blocks_per_epoch: 10,

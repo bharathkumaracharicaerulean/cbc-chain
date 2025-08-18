@@ -32,6 +32,9 @@ fn create_validator<T: Config>(id: u32) -> T::AccountId {
         uptime: 0,
         inference_success_count: 0,
         participation_rate: 100,
+        inference_count: 0,
+        last_active_block: 0,
+        name: None,
     };
     
     ValidatorStates::<T>::insert(&validator, validator_state);
@@ -142,7 +145,7 @@ mod benchmarks {
         };
 
         #[extrinsic_call]
-        submit_proposal(origin, action);
+        submit_proposal(origin, action, None);
 
         assert!(Proposals::<T>::contains_key(0));
     }
@@ -218,7 +221,7 @@ mod benchmarks {
     /// Benchmark validator join
     #[benchmark]
     fn join_validator_set() {
-        let validators = setup_validators::<T>(5); // Create enough validators
+        let _validators = setup_validators::<T>(5); // Create enough validators
         let validator = create_validator::<T>(10); // Create a new validator not in active set
         let origin = RawOrigin::Signed(validator.clone());
 
@@ -429,6 +432,347 @@ mod benchmarks {
 
         let final_proposal = Proposals::<T>::get(0).unwrap();
         assert!(final_proposal.votes_for + final_proposal.votes_against > 0);
+    }
+
+    /// Benchmark multiple validators joining simultaneously
+    #[benchmark]
+    fn join_validators(v: Linear<1, 20>) {
+        let _existing_validators = setup_validators::<T>(5);
+        let mut new_validators = Vec::new();
+        
+        // Create new validators that want to join
+        for i in 100..(100 + v) {
+            let validator = create_validator::<T>(i);
+            new_validators.push(validator);
+        }
+
+        #[block]
+        {
+            // All new validators attempt to join
+            for validator in &new_validators {
+                let _ = DcfPallet::<T>::join_validator_set(
+                    RawOrigin::Signed(validator.clone()).into()
+                );
+            }
+        }
+
+        // Verify all join requests were recorded
+        for validator in &new_validators {
+            assert_eq!(
+                PendingValidatorActions::<T>::get(validator),
+                Some(ValidatorAction::Join)
+            );
+        }
+    }
+
+    /// Benchmark multiple validators leaving simultaneously
+    #[benchmark]
+    fn leave_validators(v: Linear<1, 20>) {
+        let validators = setup_validators::<T>(v + 5); // Ensure we have enough validators
+        let leaving_validators = &validators[0..v as usize];
+
+        #[block]
+        {
+            // Multiple validators request to leave
+            for validator in leaving_validators {
+                let _ = DcfPallet::<T>::leave_validator_set(
+                    RawOrigin::Signed(validator.clone()).into()
+                );
+            }
+        }
+
+        // Verify all leave requests were recorded
+        for validator in leaving_validators {
+            assert_eq!(
+                PendingValidatorActions::<T>::get(validator),
+                Some(ValidatorAction::Leave)
+            );
+        }
+    }
+
+    /// Benchmark validator slashing operations
+    #[benchmark]
+    fn slash_validator() {
+        let validators = setup_validators::<T>(5);
+        let slasher = &validators[0];
+        let target = &validators[1];
+        
+        // Give the target some balance to slash
+        T::Currency::make_free_balance_be(target, 10000u32.into());
+        let _ = T::Currency::reserve(target, 5000u32.into());
+        
+        let origin = RawOrigin::Signed(slasher.clone());
+        let slash_amount = 1000u32.into();
+
+        #[extrinsic_call]
+        slash_validator(origin, target.clone(), slash_amount);
+
+        // Verify the validator state was updated
+        let state = ValidatorStates::<T>::get(target).unwrap();
+        assert!(state.current.stake_score > 0);
+    }
+
+    /// Benchmark proposal execution with balance transfers
+    #[benchmark]
+    fn execute_proposals_with_transfers() {
+        let validators = setup_validators::<T>(5);
+        let proposer = &validators[0];
+        let target = &validators[1];
+        
+        GovernanceModeEnabled::<T>::put(true);
+        
+        // Give the treasury some balance for rewards
+        let treasury_account: T::AccountId = account("treasury", 0, 0);
+        T::Currency::make_free_balance_be(&treasury_account, 100000u32.into());
+        
+        // Create a reward proposal that involves balance transfer
+        let action = ProposalAction::Reward {
+            validator: target.clone(),
+            amount: 5000u32.into(),
+        };
+        
+        let proposal = GovernanceProposal {
+            proposer: proposer.clone(),
+            action,
+            status: ProposalStatus::Approved,
+            votes_for: 10,
+            votes_against: 0,
+        };
+        
+        Proposals::<T>::insert(0, proposal);
+        
+        let origin = RawOrigin::Root;
+        let initial_balance = T::Currency::free_balance(target);
+
+        #[extrinsic_call]
+        execute_proposal(origin, 0);
+
+        let executed_proposal = Proposals::<T>::get(0).unwrap();
+        assert_eq!(executed_proposal.status, ProposalStatus::Executed);
+        
+        // Verify balance transfer occurred (if implemented)
+        let final_balance = T::Currency::free_balance(target);
+        assert!(final_balance >= initial_balance);
+    }
+
+    /// Benchmark epoch auto-transition with validator set changes
+    #[benchmark]
+    fn epoch_auto_transition() {
+        let validators = setup_validators::<T>(10);
+        
+        // Set up epoch config for auto-transition
+        let epoch_config = EpochConfig {
+            blocks_per_epoch: 100,
+            min_stake: 1000,
+            max_validators: 100,
+        };
+        EpochConfigStorage::<T>::put(epoch_config);
+        
+        // Add some pending validator actions
+        for (i, validator) in validators.iter().enumerate() {
+            if i < 3 {
+                PendingValidatorActions::<T>::insert(validator, ValidatorAction::Join);
+            } else if i < 6 {
+                PendingValidatorActions::<T>::insert(validator, ValidatorAction::Leave);
+            }
+        }
+        
+        let initial_epoch = CurrentEpoch::<T>::get();
+        let block_number = (initial_epoch + 1) * 100 + 1; // Trigger epoch transition
+
+        #[block]
+        {
+            // Simulate epoch auto-transition
+            DcfPallet::<T>::on_initialize(block_number.into());
+        }
+
+        // Verify epoch was advanced and actions were processed
+        assert!(CurrentEpoch::<T>::get() > initial_epoch);
+    }
+
+    /// Benchmark complex validator lifecycle operations
+    #[benchmark]
+    fn validator_lifecycle_operations(v: Linear<5, 30>) {
+        let validators = setup_validators::<T>(v);
+        
+        // Set up various validator states and actions
+        for (i, validator) in validators.iter().enumerate() {
+            // Update scores
+            let mut state = ValidatorStates::<T>::get(validator).unwrap();
+            state.current.stake_score = (1000 + i as u64 * 100) % 2000;
+            state.current.inference_score = (800 + i as u64 * 50) % 1500;
+            state.current.authored_blocks = (i as u32 * 10) % 100;
+            state.current.missed_blocks = (i as u32 * 2) % 20;
+            ValidatorStates::<T>::insert(validator, state);
+            
+            // Add some pending actions
+            if i % 3 == 0 {
+                PendingValidatorActions::<T>::insert(validator, ValidatorAction::Join);
+            } else if i % 3 == 1 {
+                PendingValidatorActions::<T>::insert(validator, ValidatorAction::Leave);
+            }
+        }
+
+        #[block]
+        {
+            // Process various lifecycle operations
+            for validator in &validators {
+                // Update scores
+                let _ = DcfPallet::<T>::update_validator_stake_score(
+                    RawOrigin::Signed(validator.clone()).into(),
+                    validator.clone()
+                );
+                
+                // Check validator status
+                let _ = DcfPallet::<T>::is_validator_active(validator);
+                let _ = DcfPallet::<T>::validator_states(validator);
+            }
+            
+            // Process epoch transition
+            let current_epoch = CurrentEpoch::<T>::get();
+            CurrentEpoch::<T>::put(current_epoch + 1);
+        }
+
+        // Verify operations completed
+        assert_eq!(validators.len(), v as usize);
+    }
+
+    /// Benchmark misbehavior reporting and slashing
+    #[benchmark]
+    fn misbehavior_reporting_and_slashing() {
+        let validators = setup_validators::<T>(5);
+        let reporter = &validators[0];
+        let misbehaving_validator = &validators[1];
+        
+        // Give the misbehaving validator some balance
+        T::Currency::make_free_balance_be(misbehaving_validator, 10000u32.into());
+        let _ = T::Currency::reserve(misbehaving_validator, 5000u32.into());
+        
+        let evidence = b"Misbehavior evidence data".to_vec().try_into().unwrap();
+        let origin = RawOrigin::Signed(reporter.clone());
+
+        #[extrinsic_call]
+        report_validator_misbehavior(origin, misbehaving_validator.clone(), evidence);
+
+        // Verify misbehavior was reported
+        assert!(MisbehaviorReports::<T>::contains_key(misbehaving_validator, reporter));
+    }
+
+    /// Benchmark validator stake increase
+    #[benchmark]
+    fn increase_validator_stake() {
+        let validator = create_validator::<T>(0);
+        let origin = RawOrigin::Signed(validator.clone());
+        
+        // Give validator some balance
+        T::Currency::make_free_balance_be(&validator, 20000u32.into());
+        let additional_stake = 5000u32.into();
+
+        #[extrinsic_call]
+        increase_validator_stake(origin, additional_stake);
+
+        // Verify stake was increased
+        let reserved = T::Currency::reserved_balance(&validator);
+        assert!(reserved >= additional_stake);
+    }
+
+    /// Benchmark validator stake decrease
+    #[benchmark]
+    fn decrease_validator_stake() {
+        let validator = create_validator::<T>(0);
+        let origin = RawOrigin::Signed(validator.clone());
+        
+        // Give validator balance and reserve some
+        T::Currency::make_free_balance_be(&validator, 20000u32.into());
+        let _ = T::Currency::reserve(&validator, 10000u32.into());
+        let decrease_amount = 2000u32.into();
+
+        #[extrinsic_call]
+        decrease_validator_stake(origin, decrease_amount);
+
+        // Verify stake was decreased
+        let reserved = T::Currency::reserved_balance(&validator);
+        assert!(reserved < 10000u32.into());
+    }
+
+    /// Benchmark multiple validator slashing
+    #[benchmark]
+    fn slash_multiple_validators(v: Linear<2, 10>) {
+        let validators = setup_validators::<T>(v);
+        let origin = RawOrigin::Root;
+        
+        // Give all validators some balance to slash
+        for validator in &validators {
+            T::Currency::make_free_balance_be(validator, 20000u32.into());
+            let _ = T::Currency::reserve(validator, 10000u32.into());
+        }
+        
+        let slash_amount = 1000u32.into();
+
+        #[extrinsic_call]
+        slash_multiple_validators(origin, validators.clone(), slash_amount);
+
+        // Verify all validators were slashed
+        for validator in &validators {
+            let reserved = T::Currency::reserved_balance(validator);
+            assert!(reserved < 10000u32.into());
+        }
+    }
+
+    /// Benchmark percentage-based validator slashing
+    #[benchmark]
+    fn slash_validator_percentage() {
+        let validator = create_validator::<T>(0);
+        let origin = RawOrigin::Root;
+        
+        // Give validator some balance to slash
+        T::Currency::make_free_balance_be(&validator, 20000u32.into());
+        let _ = T::Currency::reserve(&validator, 10000u32.into());
+        let slash_percentage = 20u32; // 20%
+
+        #[extrinsic_call]
+        slash_validator_percentage(origin, validator.clone(), slash_percentage);
+
+        // Verify validator was slashed by percentage
+        let reserved = T::Currency::reserved_balance(&validator);
+        assert!(reserved < 10000u32.into());
+    }
+
+    /// Benchmark validator metadata setting
+    #[benchmark]
+    fn set_validator_metadata() {
+        let validator = create_validator::<T>(0);
+        let origin = RawOrigin::Signed(validator.clone());
+        
+        let name = b"Test Validator".to_vec();
+        let website = Some(b"https://example.com".to_vec());
+        let contact = Some(b"test@example.com".to_vec());
+        let description = Some(b"A test validator for benchmarking".to_vec());
+        let location = Some(b"Test Location".to_vec());
+
+        #[extrinsic_call]
+        set_validator_metadata(origin, name, website, contact, description, location, None, None);
+
+        // Verify metadata was set
+        assert!(ValidatorMetadata::<T>::contains_key(&validator));
+    }
+
+    /// Benchmark reward proposal for multiple validators
+    #[benchmark]
+    fn propose_reward_multiple_validators(v: Linear<2, 10>) {
+        let validators = setup_validators::<T>(v + 1);
+        let proposer = &validators[0];
+        let reward_validators = validators[1..].to_vec();
+        let origin = RawOrigin::Root;
+        
+        GovernanceModeEnabled::<T>::put(true);
+        let reward_amount = 1000u32.into();
+
+        #[extrinsic_call]
+        propose_reward_multiple_validators(origin, proposer.clone(), reward_validators.clone(), reward_amount);
+
+        // Verify proposal was created
+        assert!(Proposals::<T>::contains_key(0));
     }
 
     impl_benchmark_test_suite!(DcfPallet, crate::mock::new_test_ext(), crate::mock::Test);

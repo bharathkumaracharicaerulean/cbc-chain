@@ -243,6 +243,48 @@ parameter_types! {
     pub const InferencePenaltyHigh: u64 = 7;
 
     pub const MaxEpochHistory: u32 = 24;
+    
+    // Performance thresholds
+    pub const MinPerformanceScore: u64 = 30;
+    pub const HighPerformanceScore: u64 = 80;
+    pub const MinParticipationRate: u32 = 50;
+    pub const HighParticipationRate: u32 = 90;
+    pub const MaxMissedBlocks: u32 = 10;
+    pub const MaxMissedBlocksHigh: u32 = 2;
+    pub const HealthyValidatorScore: u64 = 50;
+    pub const HealthyParticipationRate: u32 = 80;
+    pub const HealthyMissedBlocksMax: u32 = 5;
+    
+    // Score calculation thresholds
+    pub const ScoreChangeThreshold: u64 = 1000;
+    pub const ScoreChangePercentage: u32 = 10;
+    pub const ScoreImprovementThreshold: u64 = 1000;
+    pub const ScoreImprovementPercentage: u32 = 10;
+    
+    // Contribution balance thresholds
+    pub const MaxPosContribution: u32 = 90;
+    pub const MaxPoiContribution: u32 = 90;
+    pub const ImbalanceWarningThreshold: u32 = 85;
+    
+    // Block processing intervals
+    pub const LeaveRequestCheckInterval: u32 = 10;
+    pub const MetricsUpdateInterval: u32 = 10;
+    pub const ScoreRefreshInterval: u32 = 50;
+    pub const DetailedLoggingInterval: u32 = 100;
+    pub const ImbalanceCheckInterval: u32 = 500;
+    
+    // Validator set limits
+    pub const TopValidatorsDisplayCount: u32 = 5;
+    pub const HealthCheckSampleSize: u32 = 5;
+    
+    // Percentage constants
+    pub const FullPercentage: u32 = 100;
+    pub const HighPerformancePercentage: u32 = 80;
+    pub const TopPerformerPercentage: u32 = 20;
+    
+    // Misbehavior reporting
+    pub const MaxEvidenceLength: u32 = 1000;
+    pub const MisbehaviorSlashThreshold: u32 = 3;
 }
 
 pub use pallet_cbc_poi;

@@ -27,6 +27,21 @@ use super::{
 use crate::{
     MinValidatorScore, MaxValidatorScore, MinActiveValidators, MaxSlashingCount,
     MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward,
+    // Performance thresholds
+    MinPerformanceScore, HighPerformanceScore, MinParticipationRate, HighParticipationRate,
+    MaxMissedBlocks, MaxMissedBlocksHigh, HealthyValidatorScore, HealthyParticipationRate, HealthyMissedBlocksMax,
+    // Score calculation thresholds
+    ScoreChangeThreshold, ScoreChangePercentage, ScoreImprovementThreshold, ScoreImprovementPercentage,
+    // Contribution balance thresholds
+    MaxPosContribution, MaxPoiContribution, ImbalanceWarningThreshold,
+    // Block processing intervals
+    LeaveRequestCheckInterval, MetricsUpdateInterval, ScoreRefreshInterval, DetailedLoggingInterval, ImbalanceCheckInterval,
+    // Validator set limits
+    TopValidatorsDisplayCount, HealthCheckSampleSize,
+    // Percentage constants
+    FullPercentage, HighPerformancePercentage, TopPerformerPercentage,
+    // Misbehavior reporting
+    MaxEvidenceLength, MisbehaviorSlashThreshold,
 };
 
 // === Constants ===
@@ -71,8 +86,9 @@ parameter_types! {
     // Parameters for validator management
     pub const ValidatorUptimeRequirement: u32 = 90; // 90% uptime requirement
     pub const MaxMissedBlocksPerEpoch: u32 = 50;
-    pub const MinParticipationRate: u32 = 75; // 75% minimum participation
     pub const InactivityEjectionBlocks: u32 = 1000;
+    
+
 }
 
 // === FRAME System Configuration ===
@@ -232,6 +248,7 @@ impl pallet_cbc_dcf::Config for Runtime {
     type SlashPenaltyDivisor = ConstU64<1000>;
     type RewardBoostDivisor = ConstU64<1000>;
     type SlashPercent = ConstU32<10>; // 10% of validator's balance
+    type ValidatorReward = ConstU128<10000>; // Default reward amount (10,000 units)
     
     // Validator metadata limits
     type MaxValidatorNameLength = ConstU32<32>;
@@ -250,6 +267,49 @@ impl pallet_cbc_dcf::Config for Runtime {
     type OffchainWorkerTimeout = ConstU64<30000>; // 30 seconds
     type EstimatedBlockTime = ConstU64<6000>; // 6 seconds
     
+    // Performance thresholds
+    type MinPerformanceScore = MinPerformanceScore;
+    type HighPerformanceScore = HighPerformanceScore;
+    type MinParticipationRate = MinParticipationRate;
+    type HighParticipationRate = HighParticipationRate;
+    type MaxMissedBlocks = MaxMissedBlocks;
+    type MaxMissedBlocksHigh = MaxMissedBlocksHigh;
+    type HealthyValidatorScore = HealthyValidatorScore;
+    type HealthyParticipationRate = HealthyParticipationRate;
+    type HealthyMissedBlocksMax = HealthyMissedBlocksMax;
+    
+    // Score calculation thresholds
+    type ScoreChangeThreshold = ScoreChangeThreshold;
+    type ScoreChangePercentage = ScoreChangePercentage;
+    type ScoreImprovementThreshold = ScoreImprovementThreshold;
+    type ScoreImprovementPercentage = ScoreImprovementPercentage;
+    
+    // Contribution balance thresholds
+    type MaxPosContribution = MaxPosContribution;
+    type MaxPoiContribution = MaxPoiContribution;
+    type ImbalanceWarningThreshold = ImbalanceWarningThreshold;
+    
+    // Block processing intervals
+    type LeaveRequestCheckInterval = LeaveRequestCheckInterval;
+    type MetricsUpdateInterval = MetricsUpdateInterval;
+    type ScoreRefreshInterval = ScoreRefreshInterval;
+    type DetailedLoggingInterval = DetailedLoggingInterval;
+    type ImbalanceCheckInterval = ImbalanceCheckInterval;
+    
+    // Validator set limits
+    type TopValidatorsDisplayCount = TopValidatorsDisplayCount;
+    type HealthCheckSampleSize = HealthCheckSampleSize;
+    
+    // Percentage constants
+    type FullPercentage = FullPercentage;
+    type HighPerformancePercentage = HighPerformancePercentage;
+    type TopPerformerPercentage = TopPerformerPercentage;
+    
+    // Reward distribution percentages
+    type BaseRewardPercentage = ConstU32<60>; // 60% of rewards go to base pool
+    type PerformanceRewardPercentage = ConstU32<25>; // 25% for high performers
+    type TopPerformerRewardPercentage = ConstU32<15>; // 15% for top performers
+    
     // Stake and balance configuration
     type MinStake = ConstU128<1000>;
     type Balance = Balance;
@@ -257,7 +317,7 @@ impl pallet_cbc_dcf::Config for Runtime {
     type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
     
     // Misbehavior reporting configuration
-    type MaxEvidenceLength = ConstU32<1024>; // 1KB for evidence data
-    type MisbehaviorSlashThreshold = ConstU32<3>; // 3 reports trigger automatic slash
+    type MaxEvidenceLength = MaxEvidenceLength;
+    type MisbehaviorSlashThreshold = MisbehaviorSlashThreshold;
 }
 

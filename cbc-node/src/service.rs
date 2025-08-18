@@ -326,6 +326,22 @@ where
         max_transactions_per_block: 1000,
         slot_duration: std::time::Duration::from_secs(6),
         min_block_time: 1000,
+        metrics_update_interval: 10,
+        score_refresh_interval: 50,
+        consensus_loop_interval: 1000,
+        detailed_logging_interval: 100,
+        health_check_interval: 10,
+        min_performance_score: 30,
+        high_performance_score: 80,
+        min_participation_rate: 50,
+        high_participation_rate: 90,
+        max_missed_blocks: 10,
+        max_missed_blocks_high: 2,
+        healthy_validator_score: 50,
+        healthy_participation_rate: 80,
+        healthy_missed_blocks_max: 5,
+        top_validators_display_count: 5,
+        health_check_sample_size: 5,
     };
     
     // This will actually add blocks to the chain state

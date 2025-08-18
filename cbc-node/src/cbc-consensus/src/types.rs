@@ -74,6 +74,38 @@ pub struct ConsensusParams {
     pub slot_duration: std::time::Duration,
     /// Minimum block time in milliseconds
     pub min_block_time: u64,
+    /// Interval for updating validator metrics (in slots)
+    pub metrics_update_interval: u64,
+    /// Interval for refreshing validator scores (in slots)
+    pub score_refresh_interval: u64,
+    /// Interval for consensus loop sleep (in milliseconds)
+    pub consensus_loop_interval: u64,
+    /// Interval for detailed logging (in slots)
+    pub detailed_logging_interval: u64,
+    /// Interval for health checks (in blocks)
+    pub health_check_interval: u32,
+    /// Minimum score threshold for validator performance
+    pub min_performance_score: u64,
+    /// High score threshold for top performer identification
+    pub high_performance_score: u64,
+    /// Minimum participation rate percentage for validators
+    pub min_participation_rate: u32,
+    /// High participation rate percentage for top performers
+    pub high_participation_rate: u32,
+    /// Maximum missed blocks before penalty
+    pub max_missed_blocks: u32,
+    /// Maximum missed blocks for high performers
+    pub max_missed_blocks_high: u32,
+    /// Score threshold for healthy validator classification
+    pub healthy_validator_score: u64,
+    /// Participation rate threshold for healthy validators
+    pub healthy_participation_rate: u32,
+    /// Maximum missed blocks for healthy validators
+    pub healthy_missed_blocks_max: u32,
+    /// Number of top validators to display in logs
+    pub top_validators_display_count: u32,
+    /// Number of validators to sample for health checks
+    pub health_check_sample_size: u32,
 }
 
 /// Block import result
