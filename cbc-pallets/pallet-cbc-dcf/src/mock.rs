@@ -214,6 +214,19 @@ impl WeightInfo for MockWeightInfo {
     fn governance_with_multiple_voters(v: u32) -> Weight {
         Weight::from_parts(8_000u64.saturating_mul(v as u64), 0)
     }
+    fn join_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
+    fn leave_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
+    fn slash_validator() -> Weight { Weight::from_parts(10_000, 0) }
+    fn execute_proposals_with_transfers() -> Weight { Weight::from_parts(10_000, 0) }
+    fn epoch_auto_transition() -> Weight { Weight::from_parts(10_000, 0) }
+    fn validator_lifecycle_operations(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
+    fn misbehavior_reporting_and_slashing() -> Weight { Weight::from_parts(10_000, 0) }
+    fn increase_validator_stake() -> Weight { Weight::from_parts(10_000, 0) }
+    fn decrease_validator_stake() -> Weight { Weight::from_parts(10_000, 0) }
+    fn slash_multiple_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
+    fn slash_validator_percentage() -> Weight { Weight::from_parts(10_000, 0) }
+    fn set_validator_metadata() -> Weight { Weight::from_parts(10_000, 0) }
+    fn propose_reward_multiple_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
 }
 
 impl Config for Test {
@@ -238,6 +251,14 @@ impl Config for Test {
     type Balance = u128;
     type Currency = Balances;
     type WeightInfo = MockWeightInfo;
+
+    // Constants for hardcoded values
+    type MaxValidatorHistorySize = ConstU32<10>;
+    type MaxValidatorNameSize = ConstU32<32>;
+    type MaxRuntimeApiBoundedVecSize = ConstU32<100>;
+    type MaxProposalActionBoundedVecSize = ConstU32<100>;
+    type AuthorNotActiveErrorCode = ConstU8<1>;
+    type AuthorMismatchErrorCode = ConstU8<2>;
     
     // Missing configuration parameters
     type MaxInactiveEpochs = ConstU32<5>;
@@ -250,7 +271,13 @@ impl Config for Test {
     type LeaveCooldown = ConstU32<1000>;
     type EpochLength = ConstU32<2400>;
     type PercentagePrecision = ConstU32<10000>;
-    
+
+    // Trust score weights
+    type TrustScoreUptimeWeight = ConstU64<4000>;
+    type TrustScoreInferenceWeight = ConstU64<4000>;
+    type TrustScoreSlashingWeight = ConstU64<2000>;
+    type MaxTrustScore = ConstU64<10000>;
+
     // Misbehavior reporting
     type MaxEvidenceLength = ConstU32<1000>;
     type MisbehaviorSlashThreshold = ConstU32<3>;
@@ -313,6 +340,17 @@ impl Config for Test {
     type FullPercentage = ConstU32<100>;
     type HighPerformancePercentage = ConstU32<80>;
     type TopPerformerPercentage = ConstU32<20>;
+
+    // Reward distribution percentages
+    type BaseRewardPercentage = ConstU32<60>;
+    type PerformanceRewardPercentage = ConstU32<25>;
+    type TopPerformerRewardPercentage = ConstU32<15>;
+
+    // Trust score configuration
+    type TrustScoreUptimeWeight = TrustScoreUptimeWeight;
+    type TrustScoreInferenceWeight = TrustScoreInferenceWeight;
+    type TrustScoreSlashingWeight = TrustScoreSlashingWeight;
+    type MaxTrustScore = MaxTrustScore;
 }
 
 
@@ -338,15 +376,50 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     crate::GenesisConfig::<Test> {
         validators: vec![1, 2, 3],
         validator_scores: vec![6000, 7000, 8000],
+        validator_stakes: vec![1000, 1000, 1000],
+        validator_names: vec![],
         current_epoch: 0,
         epoch_config: EpochConfig {
-            blocks_per_epoch: 10,
-            min_stake: 1000,
-            max_validators: 100,
+            epoch_length: 10,
+            max_offline_epochs: 2,
         },
+        strict_validation: false,
     }
     .assimilate_storage(&mut storage)
     .unwrap();
+
+    storage.into()
+}
+
+pub fn new_test_ext_with_genesis(genesis_config: crate::GenesisConfig<Test>) -> sp_io::TestExternalities {
+    let mut storage = frame_system::GenesisConfig::<Test>::default()
+        .build_storage()
+        .unwrap();
+
+    // Initialize balances for all potential test accounts (including genesis validators)
+    let mut balances = vec![
+        (1, 10000), (2, 10000), (3, 10000), (4, 10000), (5, 10000),
+    ];
+
+    // Add balances for genesis validators
+    for (i, validator) in genesis_config.validators.iter().enumerate() {
+        let balance = if i < genesis_config.validator_stakes.len() {
+            genesis_config.validator_stakes[i] * 2
+        } else {
+            2000 // Default balance
+        };
+        balances.push((*validator, balance));
+    }
+
+    pallet_balances::GenesisConfig::<Test> {
+        balances,
+        dev_accounts: None,
+    }
+    .assimilate_storage(&mut storage)
+    .unwrap();
+
+    // Use the provided genesis config
+    genesis_config.assimilate_storage(&mut storage).unwrap();
 
     storage.into()
 }

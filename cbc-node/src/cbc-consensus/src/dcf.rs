@@ -972,9 +972,9 @@ pub async fn start_dcf_consensus<B, C, TP>(
     C::Api: RuntimeDcfApi<B, AccountId>,
     TP: TransactionPool<Block = B> + 'static,
 {
-    // Create a mock block import for testing (CAUTION required)
-    let mock_block_import = Arc::new(crate::import_queue::DcfImportQueue::new(client.clone()));
-    let mut consensus: DcfConsensus<B, C, sp_core::sr25519::Pair, TP> = DcfConsensus::new(client, transaction_pool, mock_block_import, params);
+    // Create the DCF block import queue for consensus validation
+    let block_import = Arc::new(crate::import_queue::DcfImportQueue::new(client.clone()));
+    let mut consensus: DcfConsensus<B, C, sp_core::sr25519::Pair, TP> = DcfConsensus::new(client, transaction_pool, block_import, params);
     consensus.run().await;
 }
 

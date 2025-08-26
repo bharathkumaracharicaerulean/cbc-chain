@@ -315,9 +315,23 @@ impl pallet_cbc_dcf::Config for Runtime {
     type Balance = Balance;
     type Currency = Balances;
     type WeightInfo = pallet_cbc_dcf::weights::SubstrateWeight<Runtime>;
+
+    // Constants for hardcoded values
+    type MaxValidatorHistorySize = ConstU32<10>;
+    type MaxValidatorNameSize = ConstU32<32>;
+    type MaxRuntimeApiBoundedVecSize = ConstU32<100>;
+    type MaxProposalActionBoundedVecSize = ConstU32<100>;
+    type AuthorNotActiveErrorCode = ConstU8<1>;
+    type AuthorMismatchErrorCode = ConstU8<2>;
     
     // Misbehavior reporting configuration
     type MaxEvidenceLength = MaxEvidenceLength;
     type MisbehaviorSlashThreshold = MisbehaviorSlashThreshold;
+
+    // Trust score calculation weights
+    type TrustScoreUptimeWeight = ConstU64<4000>; // 40% weight for uptime
+    type TrustScoreInferenceWeight = ConstU64<4000>; // 40% weight for inference success
+    type TrustScoreSlashingWeight = ConstU64<2000>; // 20% weight for slashing penalty
+    type MaxTrustScore = ConstU64<10000>; // Maximum trust score (100.00%)
 }
 

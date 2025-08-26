@@ -35,6 +35,7 @@ fn create_validator<T: Config>(id: u32) -> T::AccountId {
         inference_count: 0,
         last_active_block: 0,
         name: None,
+        trust_score: 0,
     };
     
     ValidatorStates::<T>::insert(&validator, validator_state);
@@ -148,6 +149,289 @@ mod benchmarks {
         submit_proposal(origin, action, None);
 
         assert!(Proposals::<T>::contains_key(0));
+    }
+
+    /// Benchmark join_validators call
+    #[benchmark]
+    fn join_validators() {
+        let new_validator: T::AccountId = account("new_validator", 0, 0);
+        let min_stake = T::MinStake::get();
+
+        // Give the validator sufficient balance
+        T::Currency::make_free_balance_be(&new_validator, min_stake * 2u32.into());
+
+        let origin = RawOrigin::Signed(new_validator.clone());
+
+        #[extrinsic_call]
+        join_validators(origin, None);
+
+        assert!(ValidatorSet::<T>::get().contains(&new_validator));
+        assert_eq!(ValidatorStake::<T>::get(&new_validator), min_stake);
+    }
+
+    /// Benchmark leave_validators call
+    #[benchmark]
+    fn leave_validators() {
+        let validator = create_validator::<T>(0);
+        let min_stake = T::MinStake::get();
+
+        // Setup validator with stake
+        T::Currency::make_free_balance_be(&validator, min_stake * 2u32.into());
+        let _ = T::Currency::reserve(&validator, min_stake);
+        ValidatorStake::<T>::insert(&validator, min_stake);
+
+        // Add to validator set
+        let mut validator_set = ValidatorSet::<T>::get();
+        let _ = validator_set.try_push(validator.clone());
+        ValidatorSet::<T>::put(validator_set.clone());
+        ActiveValidators::<T>::put(validator_set);
+
+        let origin = RawOrigin::Signed(validator.clone());
+
+        #[extrinsic_call]
+        leave_validators(origin);
+
+        assert!(ValidatorLeaveRequests::<T>::contains_key(&validator));
+    }
+
+    /// Benchmark cancel_leave_request call
+    #[benchmark]
+    fn cancel_leave_request() {
+        let validator = create_validator::<T>(0);
+        let current_block = frame_system::Pallet::<T>::block_number().saturated_into::<u32>();
+
+        // Setup validator with pending leave request
+        ValidatorLeaveRequests::<T>::insert(&validator, current_block);
+
+        let origin = RawOrigin::Signed(validator.clone());
+
+        #[extrinsic_call]
+        cancel_leave_request(origin);
+
+        assert!(!ValidatorLeaveRequests::<T>::contains_key(&validator));
+    }
+
+    /// Benchmark slash_validator call
+    #[benchmark]
+    fn slash_validator() {
+        let validator = create_validator::<T>(0);
+        let min_stake = T::MinStake::get();
+        let slash_amount = min_stake / 4u32.into();
+
+        // Setup validator with stake
+        T::Currency::make_free_balance_be(&validator, min_stake * 2u32.into());
+        let _ = T::Currency::reserve(&validator, min_stake);
+        ValidatorStake::<T>::insert(&validator, min_stake);
+
+        let origin = RawOrigin::Root;
+
+        #[extrinsic_call]
+        slash_validator(origin, validator.clone(), slash_amount);
+
+        assert!(ValidatorStake::<T>::get(&validator) < min_stake);
+    }
+
+    /// Benchmark slash_validator_percentage call
+    #[benchmark]
+    fn slash_validator_percentage() {
+        let validator = create_validator::<T>(0);
+        let min_stake = T::MinStake::get();
+
+        // Setup validator with stake
+        T::Currency::make_free_balance_be(&validator, min_stake * 2u32.into());
+        let _ = T::Currency::reserve(&validator, min_stake);
+        ValidatorStake::<T>::insert(&validator, min_stake);
+
+        let origin = RawOrigin::Root;
+
+        #[extrinsic_call]
+        slash_validator_percentage(origin, validator.clone(), 25); // 25%
+
+        assert!(ValidatorStake::<T>::get(&validator) < min_stake);
+    }
+
+    /// Benchmark increase_validator_stake call
+    #[benchmark]
+    fn increase_validator_stake() {
+        let validator = create_validator::<T>(0);
+        let min_stake = T::MinStake::get();
+        let additional_stake = min_stake / 2u32.into();
+
+        // Setup validator with stake and extra balance
+        T::Currency::make_free_balance_be(&validator, min_stake * 3u32.into());
+        let _ = T::Currency::reserve(&validator, min_stake);
+        ValidatorStake::<T>::insert(&validator, min_stake);
+
+        // Add to validator set
+        let mut validator_set = ValidatorSet::<T>::get();
+        let _ = validator_set.try_push(validator.clone());
+        ValidatorSet::<T>::put(validator_set);
+
+        let origin = RawOrigin::Signed(validator.clone());
+
+        #[extrinsic_call]
+        increase_validator_stake(origin, additional_stake);
+
+        assert_eq!(ValidatorStake::<T>::get(&validator), min_stake + additional_stake);
+    }
+
+    /// Benchmark decrease_validator_stake call
+    #[benchmark]
+    fn decrease_validator_stake() {
+        let validator = create_validator::<T>(0);
+        let min_stake = T::MinStake::get();
+        let total_stake = min_stake * 2u32.into();
+        let decrease_amount = min_stake / 2u32.into();
+
+        // Setup validator with higher stake
+        T::Currency::make_free_balance_be(&validator, total_stake * 2u32.into());
+        let _ = T::Currency::reserve(&validator, total_stake);
+        ValidatorStake::<T>::insert(&validator, total_stake);
+
+        // Add to validator set
+        let mut validator_set = ValidatorSet::<T>::get();
+        let _ = validator_set.try_push(validator.clone());
+        ValidatorSet::<T>::put(validator_set);
+
+        let origin = RawOrigin::Signed(validator.clone());
+
+        #[extrinsic_call]
+        decrease_validator_stake(origin, decrease_amount);
+
+        assert_eq!(ValidatorStake::<T>::get(&validator), total_stake - decrease_amount);
+    }
+
+    /// Benchmark report_validator_misbehavior call
+    #[benchmark]
+    fn report_validator_misbehavior() {
+        let reporter = create_validator::<T>(0);
+        let reported = create_validator::<T>(1);
+        let evidence = vec![1u8; 100]; // 100 bytes of evidence
+
+        // Setup both validators in validator set
+        let mut validator_set = ValidatorSet::<T>::get();
+        let _ = validator_set.try_push(reporter.clone());
+        let _ = validator_set.try_push(reported.clone());
+        ValidatorSet::<T>::put(validator_set);
+
+        let bounded_evidence = BoundedVec::try_from(evidence).unwrap();
+        let origin = RawOrigin::Signed(reporter.clone());
+
+        #[extrinsic_call]
+        report_validator_misbehavior(origin, reported.clone(), bounded_evidence);
+
+        assert!(MisbehaviorReports::<T>::contains_key(&reported, &reporter));
+    }
+
+    /// Benchmark simulate_inference call
+    #[benchmark]
+    fn simulate_inference() {
+        let validator = create_validator::<T>(0);
+        let trigger = create_validator::<T>(1);
+
+        let origin = RawOrigin::Signed(trigger.clone());
+
+        #[extrinsic_call]
+        simulate_inference(origin, validator.clone());
+
+        // Verify inference count was incremented
+        let state = ValidatorStates::<T>::get(&validator).unwrap();
+        assert!(state.inference_count > 0);
+    }
+
+    /// Benchmark propose_slash_validator call
+    #[benchmark]
+    fn propose_slash_validator() {
+        let validator = create_validator::<T>(0);
+        let slash_amount = 1000u32.into();
+
+        let origin = RawOrigin::Root;
+
+        #[extrinsic_call]
+        propose_slash_validator(origin, validator.clone(), slash_amount);
+
+        assert!(Proposals::<T>::contains_key(0));
+    }
+
+    /// Benchmark propose_reward_validator call
+    #[benchmark]
+    fn propose_reward_validator() {
+        let validator = create_validator::<T>(0);
+        let reward_amount = 1000u32.into();
+
+        let origin = RawOrigin::Root;
+
+        #[extrinsic_call]
+        propose_reward_validator(origin, validator.clone(), reward_amount);
+
+        assert!(Proposals::<T>::contains_key(0));
+    }
+
+    /// Benchmark propose_eject_validator call
+    #[benchmark]
+    fn propose_eject_validator() {
+        let validator = create_validator::<T>(0);
+        let reason = EjectionReason::ScoreBelowThreshold;
+
+        let origin = RawOrigin::Root;
+
+        #[extrinsic_call]
+        propose_eject_validator(origin, validator.clone(), reason);
+
+        assert!(Proposals::<T>::contains_key(0));
+    }
+
+    /// Benchmark slash_multiple_validators call
+    #[benchmark]
+    fn slash_multiple_validators() {
+        let validators = setup_validators::<T>(5);
+        let slash_amount = 100u32.into();
+        let min_stake = T::MinStake::get();
+
+        // Setup all validators with stake
+        for validator in &validators {
+            T::Currency::make_free_balance_be(validator, min_stake * 2u32.into());
+            let _ = T::Currency::reserve(validator, min_stake);
+            ValidatorStake::<T>::insert(validator, min_stake);
+        }
+
+        let bounded_validators = BoundedVec::try_from(validators.clone()).unwrap();
+        let origin = RawOrigin::Root;
+
+        #[extrinsic_call]
+        slash_multiple_validators(origin, bounded_validators, slash_amount);
+
+        // Verify all validators were slashed
+        for validator in &validators {
+            assert!(ValidatorStake::<T>::get(validator) < min_stake);
+        }
+    }
+
+    /// Benchmark on_initialize hook (most expensive operation)
+    #[benchmark]
+    fn on_initialize() {
+        let validators = setup_validators::<T>(10);
+        let epoch_length = T::EpochLength::get();
+
+        // Setup epoch boundary
+        let epoch_boundary_block = epoch_length;
+        frame_system::Pallet::<T>::set_block_number(epoch_boundary_block.into());
+
+        // Setup validator states and stakes
+        let min_stake = T::MinStake::get();
+        for validator in &validators {
+            T::Currency::make_free_balance_be(validator, min_stake * 2u32.into());
+            let _ = T::Currency::reserve(validator, min_stake);
+            ValidatorStake::<T>::insert(validator, min_stake);
+        }
+
+        #[block]
+        {
+            DcfPallet::<T>::on_initialize(epoch_boundary_block.into());
+        }
+
+        // Verify epoch transition occurred
+        assert!(CurrentEpoch::<T>::get() > 0);
     }
 
     /// Benchmark proposal voting

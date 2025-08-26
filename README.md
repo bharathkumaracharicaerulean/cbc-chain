@@ -20,13 +20,13 @@ CBC Chain introduces a revolutionary consensus mechanism that goes beyond tradit
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    CBC Chain Architecture                    │
+│                    CBC Chain Architecture                   │
 ├─────────────────────────────────────────────────────────────┤
 │  Runtime Layer                                              │
 │  ├── pallet-cbc-dcf    (Dynamic Consensus Framework)        │
-│  ├── pallet-cbc-pos    (Proof of Stake Logic)              │
-│  ├── pallet-cbc-poi    (Proof of Inference Logic)          │
-│  └── Standard Substrate Pallets (Balances, System, etc.)   │
+│  ├── pallet-cbc-pos    (Proof of Stake Logic)               │
+│  ├── pallet-cbc-poi    (Proof of Inference Logic)           │
+│  └── Standard Substrate Pallets (Balances, System, etc.)    │
 ├─────────────────────────────────────────────────────────────┤
 │  Consensus Layer                                            │
 │  ├── DCF Consensus Engine                                   │
@@ -36,7 +36,7 @@ CBC Chain introduces a revolutionary consensus mechanism that goes beyond tradit
 ├─────────────────────────────────────────────────────────────┤
 │  Node Layer                                                 │
 │  ├── CBC Node Implementation                                │
-│  ├── RPC APIs                                              │
+│  ├── RPC APIs                                               │
 │  ├── Network Protocol                                       │
 │  └── Client Services                                        │
 └─────────────────────────────────────────────────────────────┘
@@ -330,12 +330,3 @@ This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENS
 - **Discord**: https://discord.gg/cbc-chain
 - **Twitter**: https://twitter.com/cbc_chain
 
-## 🙏 Acknowledgments
-
-Built with [Substrate](https://substrate.io/) by [Parity Technologies](https://parity.io/).
-
-Special thanks to the Substrate and Polkadot communities for their foundational work in blockchain technology.
-
----
-
-**Note**: This is an active development project. The roadmap and features may change as development progresses. For the latest updates, please check our [GitHub releases](https://github.com/your-org/cbc-chain/releases) and [development blog](https://blog.cbc-chain.io).

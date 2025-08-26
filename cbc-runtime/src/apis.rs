@@ -376,6 +376,21 @@ impl_runtime_apis! {
 		fn get_epoch_length() -> u32 {
 			<Runtime as pallet_cbc_dcf::Config>::EpochLength::get()
 		}
+
+		fn validate_block_author_strict(block_number: u32, actual_author: AccountId) -> Result<(), u8> {
+			// Check if the author is an active validator
+			if !pallet_cbc_dcf::Pallet::<Runtime>::is_validator_active(&actual_author) {
+				return Err(<Runtime as pallet_cbc_dcf::Config>::AuthorNotActiveErrorCode::get()); // AuthorNotActive
+			}
+
+			// Check if the author matches the expected author
+			// The AuthorMismatch event will be emitted by the validate_expected_author function
+			if !pallet_cbc_dcf::Pallet::<Runtime>::validate_expected_author(block_number, actual_author) {
+				return Err(<Runtime as pallet_cbc_dcf::Config>::AuthorMismatchErrorCode::get()); // AuthorMismatch
+			}
+
+			Ok(())
+		}
 	}
 
 	// Runtime Benchmarking API

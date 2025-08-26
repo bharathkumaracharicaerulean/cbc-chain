@@ -31,9 +31,26 @@ fn testnet_genesis_with_stakes(
 	root: AccountId,                    // Root (sudo) key
 	validator_stakes: Option<Vec<u128>>, // Optional custom stakes
 ) -> Value {
+	testnet_genesis_with_stakes_and_names(
+		initial_validators,
+		endowed_accounts,
+		root,
+		validator_stakes,
+		None, // No names by default
+	)
+}
+
+/// Returns a genesis configuration with custom validator stakes and names
+fn testnet_genesis_with_stakes_and_names(
+	initial_validators: Vec<AccountId>, // Validator accounts
+	endowed_accounts: Vec<AccountId>,   // Accounts pre-funded with balance
+	root: AccountId,                    // Root (sudo) key
+	validator_stakes: Option<Vec<u128>>, // Optional custom stakes
+	validator_names: Option<Vec<Option<Vec<u8>>>>, // Optional validator names
+) -> Value {
 	// Create initial validator scores
 	let validator_scores = vec![8000; initial_validators.len()]; // Higher scores for proper calculation
-	
+
 	// Create validator stakes - use provided stakes or defaults
 	let stakes = validator_stakes.unwrap_or_else(|| {
 		// Default stakes: varying amounts for realistic testing
@@ -46,6 +63,11 @@ fn testnet_genesis_with_stakes(
 				_ => 3_000_000,  // Others: 3M units
 			}
 		}).collect()
+	});
+
+	// Create validator names - use provided names or defaults
+	let names = validator_names.unwrap_or_else(|| {
+		vec![None; initial_validators.len()] // No names by default
 	});
 
 	// Create initial inference results
@@ -77,6 +99,8 @@ fn testnet_genesis_with_stakes(
 				min_stake: 1_000_000,      // 1M minimum stake
 				max_validators: 100,       // Support up to 100 validators
 			},
+			validator_names: names,     // Use provided names or defaults
+			strict_validation: true,    // Enable strict validation
 		},
 		// Configure initial validators
 		pallet_cbc_pos: pallet_cbc_pos::GenesisConfig {
@@ -155,7 +179,7 @@ pub fn multi_validator_config_genesis() -> Value {
 		Sr25519Keyring::Dave.to_account_id(),
 		Sr25519Keyring::Eve.to_account_id(),
 	];
-	
+
 	// Custom stakes for different validator profiles
 	let validator_stakes = vec![
 		15_000_000, // Alice: High stake validator
@@ -164,16 +188,26 @@ pub fn multi_validator_config_genesis() -> Value {
 		5_000_000,  // Dave: Low-medium stake
 		3_000_000,  // Eve: Minimum viable stake
 	];
-	
+
+	// Custom validator names for better identification
+	let validator_names = vec![
+		Some(b"Alice-Validator".to_vec()),
+		Some(b"Bob-Validator".to_vec()),
+		Some(b"Charlie-Validator".to_vec()),
+		Some(b"Dave-Validator".to_vec()),
+		Some(b"Eve-Validator".to_vec()),
+	];
+
 	let endowed_accounts = Sr25519Keyring::iter()
 		.map(|v| v.to_account_id())
 		.collect::<Vec<_>>();
-		
-	testnet_genesis_with_stakes(
+
+	testnet_genesis_with_stakes_and_names(
 		initial_validators,
 		endowed_accounts,
 		Sr25519Keyring::Alice.to_account_id(),
 		Some(validator_stakes),
+		Some(validator_names),
 	)
 }
 
@@ -184,23 +218,31 @@ pub fn high_stake_config_genesis() -> Value {
 		Sr25519Keyring::Bob.to_account_id(),
 		Sr25519Keyring::Charlie.to_account_id(),
 	];
-	
+
 	// High stakes for all validators
 	let validator_stakes = vec![
 		50_000_000, // Alice: 50M units
 		45_000_000, // Bob: 45M units
 		40_000_000, // Charlie: 40M units
 	];
-	
+
+	// High-stake validator names
+	let validator_names = vec![
+		Some(b"Alice-HighStake".to_vec()),
+		Some(b"Bob-HighStake".to_vec()),
+		Some(b"Charlie-HighStake".to_vec()),
+	];
+
 	let endowed_accounts = Sr25519Keyring::iter()
 		.map(|v| v.to_account_id())
 		.collect::<Vec<_>>();
-		
-	testnet_genesis_with_stakes(
+
+	testnet_genesis_with_stakes_and_names(
 		initial_validators,
 		endowed_accounts,
 		Sr25519Keyring::Alice.to_account_id(),
 		Some(validator_stakes),
+		Some(validator_names),
 	)
 }
 
