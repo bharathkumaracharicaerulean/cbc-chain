@@ -45,6 +45,15 @@ pub trait WeightInfo {
     fn propose_reward_validator() -> Weight;
     fn propose_eject_validator() -> Weight;
     fn slash_multiple_validators() -> Weight;
+    fn execute_proposals() -> Weight;
+    fn epoch_transition() -> Weight;
+    fn set_validator_metadata() -> Weight;
+    fn update_validator_activity() -> Weight;
+    fn distribute_epoch_rewards() -> Weight;
+    fn propose_default_reward_validator() -> Weight;
+    fn propose_default_reward_multiple_validators() -> Weight;
+    fn propose_reward_all_active_validators() -> Weight;
+    fn propose_reward_multiple_validators(v: u32) -> Weight;
 }
 
 /// Weights for the pallet using the Substrate node and recommended hardware.
@@ -333,8 +342,81 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().writes(3))
     }
 
+    /// Storage: Proposals (r:3 w:3)
+    /// Storage: ValidatorStates (r:3 w:3)
+    fn execute_proposals() -> Weight {
+        Weight::from_parts(75_000, 0)
+            .saturating_add(T::DbWeight::get().reads(9))
+            .saturating_add(T::DbWeight::get().writes(9))
+    }
 
+    /// Storage: CurrentEpoch (r:1 w:1)
+    /// Storage: ActiveValidators (r:1 w:1)
+    /// Storage: PendingValidatorActions (r:10 w:10)
+    /// Storage: ValidatorStates (r:10 w:10)
+    fn epoch_transition() -> Weight {
+        Weight::from_parts(120_000, 0)
+            .saturating_add(T::DbWeight::get().reads(22))
+            .saturating_add(T::DbWeight::get().writes(22))
+    }
 
+    /// Storage: ValidatorMetadata (r:1 w:1)
+    /// Storage: ValidatorNames (r:0 w:1)
+    fn set_validator_metadata() -> Weight {
+        Weight::from_parts(25_000, 0)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    /// Storage: ValidatorStates (r:1 w:1)
+    fn update_validator_activity() -> Weight {
+        Weight::from_parts(20_000, 0)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+
+    /// Storage: ValidatorStates (r:5 w:5)
+    /// Storage: ValidatorStake (r:5 w:0)
+    /// Storage: Currency operations (r:10 w:5)
+    fn distribute_epoch_rewards() -> Weight {
+        Weight::from_parts(80_000, 0)
+            .saturating_add(T::DbWeight::get().reads(20))
+            .saturating_add(T::DbWeight::get().writes(10))
+    }
+
+    /// Storage: Proposals (r:1 w:1)
+    /// Storage: NextProposalId (r:1 w:1)
+    fn propose_default_reward_validator() -> Weight {
+        Weight::from_parts(30_000, 0)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    /// Storage: Proposals (r:1 w:1)
+    /// Storage: NextProposalId (r:1 w:1)
+    fn propose_default_reward_multiple_validators() -> Weight {
+        Weight::from_parts(35_000, 0)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    /// Storage: Proposals (r:1 w:1)
+    /// Storage: NextProposalId (r:1 w:1)
+    /// Storage: ActiveValidators (r:1 w:0)
+    fn propose_reward_all_active_validators() -> Weight {
+        Weight::from_parts(40_000, 0)
+            .saturating_add(T::DbWeight::get().reads(3))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    /// Storage: Proposals (r:1 w:1)
+    /// Storage: NextProposalId (r:1 w:1)
+    fn propose_reward_multiple_validators(v: u32) -> Weight {
+        Weight::from_parts(35_000, 0)
+            .saturating_add(Weight::from_parts(2_000, 0).saturating_mul(v.into()))
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
 
 }
 
@@ -454,5 +536,59 @@ impl WeightInfo for () {
             .saturating_add(RocksDbWeight::get().writes(10))
     }
 
+    fn execute_proposals() -> Weight {
+        Weight::from_parts(75_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(9))
+            .saturating_add(RocksDbWeight::get().writes(9))
+    }
+
+    fn epoch_transition() -> Weight {
+        Weight::from_parts(120_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(22))
+            .saturating_add(RocksDbWeight::get().writes(22))
+    }
+
+    fn set_validator_metadata() -> Weight {
+        Weight::from_parts(25_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(1))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn update_validator_activity() -> Weight {
+        Weight::from_parts(20_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(1))
+            .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn distribute_epoch_rewards() -> Weight {
+        Weight::from_parts(80_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(20))
+            .saturating_add(RocksDbWeight::get().writes(10))
+    }
+
+    fn propose_default_reward_validator() -> Weight {
+        Weight::from_parts(30_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn propose_default_reward_multiple_validators() -> Weight {
+        Weight::from_parts(35_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn propose_reward_all_active_validators() -> Weight {
+        Weight::from_parts(40_000, 0)
+            .saturating_add(RocksDbWeight::get().reads(3))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn propose_reward_multiple_validators(v: u32) -> Weight {
+        Weight::from_parts(35_000, 0)
+            .saturating_add(Weight::from_parts(2_000, 0).saturating_mul(v.into()))
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
 
 }

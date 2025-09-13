@@ -4,39 +4,57 @@
 //! that works in conjunction with the DCF runtime pallet.
 
 use crate::types::ValidatorMetrics;
+use crate::metrics::ConsensusMetrics;
 use std::sync::Arc;
 use log::{info, error, debug, warn};
-use sp_runtime::traits::{Block as BlockTrait, SaturatedConversion, Header as HeaderT};
+use sp_runtime::traits::{Block as BlockTrait, SaturatedConversion, Header as HeaderT, NumberFor};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sc_consensus::{BlockImport, BlockImportParams, BlockCheckParams, ImportResult};
 use sp_consensus::Error;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use cbc_runtime::AccountId;
+use sp_runtime::generic::DigestItem;
+use codec::Decode;
+use sc_client_api::Backend;
 
 /// Block import queue for DCF consensus
-pub struct DcfImportQueue<B, C>
+pub struct DcfImportQueue<B, C, BE>
 where
     B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
+    BE: Backend<B>,
 {
     client: Arc<C>,
     metrics: ValidatorMetrics,
-    _phantom: std::marker::PhantomData<B>,
+    consensus_metrics: Option<ConsensusMetrics>,
+    _phantom: std::marker::PhantomData<(B, BE)>,
 }
 
-impl<B, C> DcfImportQueue<B, C>
+impl<B, C, BE> DcfImportQueue<B, C, BE>
 where
     B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
+    BE: Backend<B>,
 {
     /// Create a new import queue
     pub fn new(client: Arc<C>) -> Self {
         Self {
             client,
             metrics: ValidatorMetrics::default(),
+            consensus_metrics: None,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Create a new import queue with consensus metrics
+    pub fn new_with_metrics(client: Arc<C>, consensus_metrics: ConsensusMetrics) -> Self {
+        Self {
+            client,
+            metrics: ValidatorMetrics::default(),
+            consensus_metrics: Some(consensus_metrics),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -51,14 +69,47 @@ where
         self.metrics = ValidatorMetrics::default();
         info!("DCF ImportQueue: Metrics reset");
     }
+
+    /// Extract block author from block header digest
+    fn extract_block_author(&self, header: &B::Header) -> Result<AccountId, Error> {
+        // Look for the author in the digest items
+        for digest_item in header.digest().logs() {
+            match digest_item {
+                DigestItem::PreRuntime(engine_id, data) => {
+                    // For CBC consensus, we expect the author to be encoded in the pre-runtime digest
+                    if engine_id == b"cbcc" {
+                        // Try to decode the author from the digest data
+                        if let Ok(author) = AccountId::decode(&mut &data[..]) {
+                            return Ok(author);
+                        }
+                    }
+                }
+                DigestItem::Consensus(engine_id, data) => {
+                    // Alternative: author might be in consensus digest
+                    if engine_id == b"cbcc" {
+                        if let Ok(author) = AccountId::decode(&mut &data[..]) {
+                            return Ok(author);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        // If we can't extract the author from digest, this is an error
+        Err(sp_consensus::Error::ClientImport(
+            "Failed to extract block author from header digest".to_string()
+        ))
+    }
 }
 
 #[async_trait::async_trait]
-impl<B, C> BlockImport<B> for DcfImportQueue<B, C>
+impl<B, C, BE> BlockImport<B> for DcfImportQueue<B, C, BE>
 where
     B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
+    BE: Backend<B>,
 {
     type Error = Error;
 
@@ -95,6 +146,15 @@ where
         
         debug!("DCF ImportQueue: Importing block #{} ({:?})", block_number, block_hash);
         
+        // Extract block author from header digest
+        let author = match self.extract_block_author(&block.header) {
+            Ok(author) => author,
+            Err(e) => {
+                error!("DCF ImportQueue: Failed to extract block author for block #{}: {:?}", block_number, e);
+                return Err(e);
+            }
+        };
+        
         // Validate that we have active validators
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
@@ -105,6 +165,26 @@ where
         if active_validators.is_empty() {
             error!("DCF ImportQueue: Block import failed for block #{}: No active validators", block_number);
             return Ok(ImportResult::imported(false));
+        }
+
+        // Validate block author using runtime API
+        let expected_author = api.get_expected_author(best_hash, block_number)
+            .map_err(|e| sp_consensus::Error::ClientImport(format!("Failed to get expected author: {:?}", e)))?;
+        
+        if Some(author.clone()) != expected_author {
+            // Report author mismatch via runtime API for event emission
+            if let Err(e) = api.report_author_mismatch(best_hash, block_number, expected_author.clone(), author.clone()) {
+                warn!("DCF ImportQueue: Failed to report author mismatch: {:?}", e);
+            }
+            
+            // Reject the block with author mismatch error
+            let error_msg = format!(
+                "Block author mismatch: expected {:?}, got {:?} for block {}",
+                expected_author, author, block_number
+            );
+            error!("DCF ImportQueue: {}", error_msg);
+            
+            return Err(sp_consensus::Error::ClientImport(error_msg));
         }
         
         // Set proper import parameters
@@ -134,6 +214,13 @@ where
             }
         }
         
+        // Update consensus metrics if available
+        if let Some(ref _metrics) = self.consensus_metrics {
+            // Update metrics manually since we can't use the generic update_from_runtime here
+            // due to trait bound constraints. We'll update the metrics in the service layer instead.
+            debug!("DCF ImportQueue: Consensus metrics available but update deferred to service layer");
+        }
+
         // Log periodic statistics
         if block_number % 10u32 == 0 {
             let current_epoch = api.get_current_epoch(best_hash).unwrap_or(0);
@@ -156,11 +243,12 @@ where
     }
 }
 
-impl<B, C> DcfImportQueue<B, C>
+impl<B, C, BE> DcfImportQueue<B, C, BE>
 where
     B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
+    BE: Backend<B>,
 {
     /// Handle justifications for finality (stub implementation as requested)
     pub fn import_justifications(

@@ -10,6 +10,8 @@ pub trait WeightInfo {
 	fn store_something() -> Weight;
 	fn submit_inference() -> Weight;
 	fn challenge_inference() -> Weight;
+	fn resolve_challenge() -> Weight;
+	fn epoch_cleanup() -> Weight;
 }
 
 /// Weights for pallet_cbc_poi using the Substrate node and recommended hardware.
@@ -32,6 +34,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	fn challenge_inference() -> Weight {
 		Weight::from_parts(30_000, 0)
 			.saturating_add(RocksDbWeight::get().reads_writes(1_u64, 1_u64)) // db read + write
+	}
+
+	/// Weight for `resolve_challenge`.
+	fn resolve_challenge() -> Weight {
+		Weight::from_parts(25_000, 0)
+			.saturating_add(RocksDbWeight::get().reads_writes(2_u64, 2_u64)) // db reads + writes
+	}
+
+	/// Weight for `epoch_cleanup`.
+	fn epoch_cleanup() -> Weight {
+		Weight::from_parts(40_000, 0)
+			.saturating_add(RocksDbWeight::get().reads_writes(10_u64, 5_u64)) // cleanup operations
 	}
 }
 
@@ -56,5 +70,15 @@ impl WeightInfo for () {
 	fn challenge_inference() -> Weight {
 		Weight::from_parts(30_000, 0)
 			.saturating_add(RocksDbWeight::get().reads_writes(1_u64, 1_u64))
+	}
+
+	fn resolve_challenge() -> Weight {
+		Weight::from_parts(25_000, 0)
+			.saturating_add(RocksDbWeight::get().reads_writes(2_u64, 2_u64))
+	}
+
+	fn epoch_cleanup() -> Weight {
+		Weight::from_parts(40_000, 0)
+			.saturating_add(RocksDbWeight::get().reads_writes(10_u64, 5_u64))
 	}
 }

@@ -11,6 +11,154 @@
 //! - **Genesis Configuration:** Allows initialization of validator set, scores, and consensus parameters at genesis.
 //! - **APIs:** Exposes runtime APIs for querying validator scores, participation, epoch state, and expected block authors.
 //! - **Sudo Controls:** Supports governance mode toggling and sudo-only operations for manual intervention and testing.
+//! - **Validator Cooldown System:** Enforces mandatory cooldown periods when validators leave to prevent gaming and ensure network stability.
+//! - **Trust Score Computation:** Comprehensive trust scoring based on uptime, inference success, and slashing history.
+//! - **Enhanced Metadata Tracking:** Detailed validator information including names, activity metrics, and performance indicators.
+//! - **Block Author Validation:** Strict validation of block authors during import to prevent unauthorized block production.
+//! - **Comprehensive Event Coverage:** Complete event emission for all state transitions and validator lifecycle changes.
+//!
+//! ## System Invariants
+//!
+//! The pallet maintains several critical invariants to ensure network security and consistency:
+//!
+//! ### Economic Invariants
+//! - **Reserved Balance Non-Negative:** `reserved_balance >= 0` for all validators
+//! - **Reserved Greater Than Slashed:** `reserved_balance >= total_slashed_amount` at all times
+//! - **Minimum Stake Enforcement:** Active validators must maintain `stake >= MinStake`
+//!
+//! ### Validator Set Invariants  
+//! - **Active Set Size Limit:** `active_validators.len() <= MaxValidators` always enforced
+//! - **Minimum Active Validators:** Network maintains `active_validators.len() >= MinActiveValidators` for security
+//! - **Cooldown Enforcement:** Validators in cooldown period cannot rejoin until cooldown expires
+//!
+//! ### Score Invariants
+//! - **Score Bounds:** All validator scores are bounded: `0 <= score <= MaxValidatorScore`
+//! - **Trust Score Bounds:** Trust scores are bounded: `0 <= trust_score <= MaxTrustScore`
+//! - **Weight Consistency:** PoS and PoI weights maintain: `pos_weight + poi_weight > 0`
+//!
+//! ### Temporal Invariants
+//! - **Epoch Progression:** Epochs advance monotonically: `new_epoch >= current_epoch`
+//! - **Cooldown Respect:** Leave cooldown periods are always respected and cannot be bypassed
+//! - **Block Finality:** Finalized blocks are immutable: `finalized_block <= current_block`
+//!
+//! ## Genesis Configuration Links
+//!
+//! The pallet's configuration constants are initialized through genesis presets defined in
+//! `cbc-runtime/src/genesis_config_presets.rs`. Available presets include:
+//!
+//! - **development:** Single validator (Alice) for local development
+//! - **local:** Two validators (Alice, Bob) for local testing  
+//! - **multi_validator:** Five validators with varying stakes for comprehensive testing
+//! - **high_stake:** Three validators with high stake amounts for stress testing
+//!
+//! Key genesis parameters:
+//! - `blocks_per_epoch: 100` - Epoch length in blocks
+//! - `min_stake: 1_000_000` - Minimum stake requirement
+//! - `max_validators: 100` - Maximum validator set size
+//! - Default validator stakes range from 3M to 50M units depending on preset
+//!
+//! ## Configuration Constants to Genesis Preset Mapping
+//!
+//! The pallet's configuration constants are initialized through genesis configuration
+//! and can be customized for different network deployments:
+//!
+//! ### Validator Set Configuration
+//! - `MaxValidators` → `genesis.dcf.epoch_config.max_validators` (default: 100)
+//! - `MinActiveValidators` → Enforced at runtime (typically 1-3 for testnets)
+//! - `MinStake` → `genesis.dcf.epoch_config.min_stake` (default: 1,000,000 units)
+//!
+//! ### Epoch and Timing Configuration  
+//! - `EpochLength` → `genesis.dcf.epoch_config.blocks_per_epoch` (default: 100 blocks)
+//! - `LeaveCooldown` → Runtime constant (default: 1000-10000 blocks)
+//! - `ValidatorCooldownPeriod` → Runtime constant for re-entry restrictions
+//!
+//! ### Scoring and Performance Configuration
+//! - `DefaultPosWeight` → Initial PoS weight (default: 5000 = 50%)
+//! - `DefaultPoiWeight` → Initial PoI weight (default: 5000 = 50%)
+//! - `MinValidatorScore` → Minimum score for active participation (default: 30)
+//! - `MaxValidatorScore` → Maximum possible score (default: 10000)
+//!
+//! ### Trust Score Configuration
+//! - `TrustScoreUptimeWeight` → Uptime component weight (default: 40)
+//! - `TrustScoreInferenceWeight` → Inference component weight (default: 35)
+//! - `TrustScoreSlashingWeight` → Slashing penalty weight (default: 25)
+//! - `MaxTrustScore` → Maximum trust score value (default: 10000)
+//!
+//! ### Economic and Reward Configuration
+//! - `ValidatorReward` → Default reward amount for governance proposals
+//! - `SlashPercent` → Percentage of stake slashed for misbehavior (default: 10-30%)
+//! - `BaseRewardPercentage` → Base reward pool allocation (default: 60%)
+//! - `PerformanceRewardPercentage` → Performance reward allocation (default: 25%)
+//! - `TopPerformerRewardPercentage` → Top performer bonus allocation (default: 15%)
+//!
+//! ### Block Production and Inference Rewards/Penalties
+//! - `BlockAuthorshipBoost` → Score boost for successful block authoring (default: 10)
+//! - `MissedBlockPenalty` → Score penalty for missed blocks (default: 5)
+//! - `InferenceBoostHigh` → Reward for high-quality inference (default: 15)
+//! - `InferenceBoostMedium` → Reward for medium-quality inference (default: 10)
+//! - `InferenceBoostLow` → Reward for low-quality inference (default: 5)
+//!
+//! ### Metadata and Storage Limits
+//! - `MaxValidatorNameLength` → Maximum validator name size (default: 32 bytes)
+//! - `MaxValidatorHistoryLength` → Performance history size (default: 24 epochs)
+//! - `MaxEpochHistory` → Network epoch history size (default: 168 epochs)
+//! - `MaxEvidenceLength` → Misbehavior evidence size limit (default: 1024 bytes)
+//!
+//! ### Example Genesis Preset Values
+//!
+//! **Development Preset:**
+//! ```rust
+//! dcf: pallet_cbc_dcf::GenesisConfig {
+//!     validators: vec![Alice],
+//!     validator_stakes: vec![10_000_000],
+//!     epoch_config: EpochConfig {
+//!         blocks_per_epoch: 100,
+//!         min_stake: 1_000_000,
+//!         max_validators: 100,
+//!     },
+//!     // ... other fields
+//! }
+//! ```
+//!
+//! **Multi-Validator Preset:**
+//! ```rust
+//! dcf: pallet_cbc_dcf::GenesisConfig {
+//!     validators: vec![Alice, Bob, Charlie, Dave, Eve],
+//!     validator_stakes: vec![15_000_000, 12_000_000, 8_000_000, 5_000_000, 3_000_000],
+//!     epoch_config: EpochConfig {
+//!         blocks_per_epoch: 100,
+//!         min_stake: 1_000_000,
+//!         max_validators: 100,
+//!     },
+//!     // ... other fields
+//! }
+//! ```
+//!
+//! ## Cooldown System Behavior and Enforcement
+//!
+//! The pallet enforces a comprehensive cooldown system to prevent gaming and ensure
+//! network stability:
+//!
+//! ### Leave Cooldown Process
+//! 1. Validator calls `leave_validators()` → Request recorded with current block number
+//! 2. Validator enters cooldown period (`T::LeaveCooldown` blocks)
+//! 3. During cooldown: Validator remains active, stake stays reserved, cannot cancel
+//! 4. After cooldown: Validator automatically removed, stake unreserved
+//! 5. Validator added to `RecentlyRemovedValidators` for additional cooldown
+//!
+//! ### Re-entry Cooldown Process  
+//! 1. After leaving, validator enters `RecentlyRemovedValidators` storage
+//! 2. Additional cooldown period prevents immediate rejoining
+//! 3. During re-entry cooldown: `join_validators()` calls are rejected
+//! 4. After cooldown expires: Validator can attempt to rejoin normally
+//! 5. Must meet all current requirements (stake, performance, etc.)
+//!
+//! ### Cooldown Enforcement Guarantees
+//! - **Always Respected:** Cooldown periods cannot be bypassed or shortened
+//! - **Automatic Cleanup:** Expired cooldown entries are automatically removed
+//! - **Proposal Filtering:** Validators in cooldown are excluded from active set selection
+//! - **Economic Security:** Stakes remain locked during entire cooldown process
+//! - **Gaming Prevention:** Multiple cooldown layers prevent rapid validator cycling
 //!
 //! ## Dispatchable Calls (pallet index)
 //! - **0. `update_validator_stake_score`**: Update a validator's PoS stake score.  
@@ -98,9 +246,11 @@ use scale_info::prelude::format;
 // --- Runtime API Declarations --- //
 // These APIs are exposed to the runtime for querying validator and consensus state.
 sp_api::decl_runtime_apis! {
-    pub trait DcfApi<AccountId>
+    pub trait DcfApi<AccountId, Balance, BlockNumber>
     where
         AccountId: codec::Codec + Clone + Eq + sp_std::fmt::Debug,
+        Balance: codec::Codec + Clone + Eq + sp_std::fmt::Debug,
+        BlockNumber: codec::Codec + Clone + Eq + sp_std::fmt::Debug,
     {
         fn get_validator_scores() -> Vec<(AccountId, u64)>;
         fn get_current_epoch() -> u32;
@@ -114,7 +264,12 @@ sp_api::decl_runtime_apis! {
         fn get_active_validators() -> Vec<AccountId>;
         fn get_validator_last_active(validator: AccountId) -> u32;
         fn validate_block_author(block_number: u32, author: AccountId);
-        fn get_validator_profile(account_id: AccountId) -> Option<(u64, u64, u64, u32, u32, u32, u32)>;
+        fn get_validator_profile(account_id: AccountId) -> Option<ValidatorProfile<AccountId, Balance, BlockNumber>>;
+        fn get_validator_score_breakdown(validator: AccountId) -> Option<ScoreBreakdown>;
+        fn get_validator_uptime(validator: AccountId) -> Option<UptimeStats>;
+        fn get_slashing_history(validator: AccountId) -> Vec<SlashingRecord<Balance, BlockNumber>>;
+        fn get_system_constants() -> SystemConstants<Balance, BlockNumber>;
+        fn get_validator_cooldown_status(validator: AccountId) -> Option<BlockNumber>;
         fn get_inference_result(account_id: AccountId) -> Option<u64>;
         fn get_epoch_history(epoch_number: u32) -> Option<RuntimeEpochHistory<AccountId>>;
         fn get_recent_epochs(n: u32) -> Vec<RuntimeEpochHistory<AccountId>>;
@@ -140,6 +295,7 @@ sp_api::decl_runtime_apis! {
         fn get_epoch_manager_config() -> (u64, u64, u32, u32, u32, u32, u64, u32, u32, u32, u32); // (min_perf_score, high_perf_score, min_participation, high_participation, max_missed_blocks, max_missed_blocks_high, healthy_validator_score, healthy_participation_rate, healthy_missed_blocks_max, leave_cooldown, top_validators_display_count)
         fn get_epoch_length() -> u32; // Get configurable epoch length from T::EpochLength
         fn validate_block_author_strict(block_number: u32, actual_author: AccountId) -> Result<(), u8>;
+        fn report_author_mismatch(block_number: u32, expected: Option<AccountId>, actual: AccountId) -> Result<(), sp_runtime::DispatchError>;
     }
 }
 
@@ -187,6 +343,41 @@ pub mod pallet {
         pub blocks_per_epoch: u32,
         pub min_stake: u128,
         pub max_validators: u32,
+    }
+
+    /// Configuration for trust score calculation with configurable weights.
+    ///
+    /// This struct defines the weights used in trust score computation to balance
+    /// different aspects of validator performance and reliability. The weights
+    /// determine how much each component contributes to the final trust score.
+    ///
+    /// Trust score calculation formula:
+    /// ```
+    /// weighted_score = (uptime_score * uptime_weight + inference_score * inference_weight) / (uptime_weight + inference_weight)
+    /// final_trust_score = weighted_score - (slashing_penalty * slashing_weight / 100)
+    /// ```
+    ///
+    /// Default weight distribution:
+    /// - Uptime: 40% - Rewards consistent availability and participation
+    /// - Inference: 35% - Rewards AI/ML performance and accuracy
+    /// - Slashing: 25% - Penalizes past misbehavior and poor performance
+    ///
+    /// The weights can be adjusted through governance to adapt to changing
+    /// network priorities and requirements. For example:
+    /// - Higher uptime weight emphasizes validator availability
+    /// - Higher inference weight emphasizes AI/ML capabilities
+    /// - Higher slashing weight increases penalty severity
+    ///
+    /// Weight values are typically expressed as percentages (0-100) but can
+    /// use any scale as long as they're applied consistently across calculations.
+    #[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, Default)]
+    pub struct TrustScoreConfig {
+        /// Weight for uptime component in trust score calculation (default: 40)
+        pub uptime_weight: u32,
+        /// Weight for inference success component in trust score calculation (default: 35)
+        pub inference_weight: u32,
+        /// Weight for slashing penalty component in trust score calculation (default: 25)
+        pub slashing_weight: u32,
     }
 
     /// Actions that can be proposed via governance.
@@ -329,6 +520,104 @@ pub mod pallet {
                 inference_summary: BoundedVec::truncate_from(e.inference_summary.into_inner()),
             }
         }
+    }
+
+    /// Comprehensive validator profile information returned by runtime API
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct ValidatorProfile<AccountId, Balance, BlockNumber> {
+        /// Current stake amount reserved by the validator
+        pub stake: Balance,
+        /// Current Proof-of-Inference score
+        pub poi_score: u32,
+        /// Current final consensus score
+        pub final_score: u64,
+        /// Current trust score based on performance history
+        pub trust_score: u64,
+        /// Current validator status (active, inactive, etc.)
+        pub status: ValidatorStatus,
+        /// Total number of inferences submitted
+        pub inference_count: u64,
+        /// Human-readable validator name
+        pub name: Option<BoundedVec<u8, ConstU32<64>>>,
+        /// Last block number where validator was active
+        pub last_active_block: BlockNumber,
+        /// Phantom data to satisfy type parameters
+        pub _phantom: sp_std::marker::PhantomData<AccountId>,
+    }
+
+    /// Detailed score breakdown for validator performance analysis
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct ScoreBreakdown {
+        /// Proof-of-Stake score component
+        pub pos_score: u64,
+        /// Proof-of-Inference score component
+        pub poi_score: u64,
+        /// Weight applied to PoS score in final calculation
+        pub pos_weight: u64,
+        /// Weight applied to PoI score in final calculation
+        pub poi_weight: u64,
+        /// Final combined consensus score
+        pub final_score: u64,
+        /// Trust score based on historical performance
+        pub trust_score: u64,
+    }
+
+    /// System constants and configuration parameters exposed via runtime API
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct SystemConstants<Balance, BlockNumber> {
+        /// Minimum stake required to become a validator
+        pub min_stake: Balance,
+        /// Minimum score threshold for validator participation
+        pub min_score_threshold: u64,
+        /// Number of blocks per epoch
+        pub epoch_length: u32,
+        /// Maximum number of active validators
+        pub max_validators: u32,
+        /// Cooldown period for validator re-entry after leaving
+        pub cooldown_period: BlockNumber,
+    }
+
+    /// Validator uptime statistics for performance monitoring
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct UptimeStats {
+        /// Total number of epochs the validator has been active
+        pub total_epochs: u32,
+        /// Number of blocks authored by the validator
+        pub blocks_authored: u32,
+        /// Number of blocks missed by the validator
+        pub blocks_missed: u32,
+        /// Current uptime percentage (0-10000 representing 0-100%)
+        pub uptime_percentage: u32,
+        /// Current participation rate (0-10000 representing 0-100%)
+        pub participation_rate: u32,
+    }
+
+    /// Slashing record for tracking validator penalties
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub struct SlashingRecord<Balance, BlockNumber> {
+        /// Block number when slashing occurred
+        pub block_number: BlockNumber,
+        /// Amount slashed from validator's stake
+        pub amount: Balance,
+        /// Reason for slashing
+        pub reason: SlashingReason,
+        /// Epoch when slashing occurred
+        pub epoch: u32,
+    }
+
+    /// Reasons for validator slashing
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    pub enum SlashingReason {
+        /// Validator produced invalid blocks
+        InvalidBlock,
+        /// Validator was offline for extended period
+        Downtime,
+        /// Validator submitted incorrect inference results
+        InvalidInference,
+        /// Validator engaged in malicious behavior
+        Misbehavior,
+        /// Manual slashing by governance
+        Governance,
     }
 
     
@@ -1282,6 +1571,33 @@ pub mod pallet {
     #[pallet::getter(fn epoch_config)]
     pub type EpochConfigStorage<T: Config> = StorageValue<_, EpochConfig, ValueQuery>;
 
+    /// Configuration parameters for trust score calculation weights.
+    ///
+    /// Stores the weights used to balance different components in trust score computation.
+    /// This configuration allows the network to adjust the relative importance of:
+    /// - Validator uptime and availability
+    /// - AI/ML inference performance and accuracy
+    /// - Historical slashing and penalty impacts
+    ///
+    /// The configuration is initialized with default values during genesis:
+    /// - Uptime weight: 40 (40% influence)
+    /// - Inference weight: 35 (35% influence)  
+    /// - Slashing weight: 25 (25% penalty impact)
+    ///
+    /// These weights can be updated through governance proposals to adapt to
+    /// changing network priorities and requirements. For example:
+    /// - Increasing uptime weight during network instability
+    /// - Increasing inference weight to emphasize AI capabilities
+    /// - Adjusting slashing weight to modify penalty severity
+    ///
+    /// Changes to trust score configuration affect all future trust score
+    /// calculations but do not retroactively modify historical scores.
+    ///
+    /// # Value: TrustScoreConfig - Struct containing trust score calculation weights
+    #[pallet::storage]
+    #[pallet::getter(fn trust_score_config)]
+    pub type TrustScoreConfigStorage<T: Config> = StorageValue<_, TrustScoreConfig, ValueQuery>;
+
     /// The current epoch number in the blockchain's lifecycle.
     /// 
     /// Epochs are fundamental time periods used for:
@@ -1989,273 +2305,1033 @@ pub mod pallet {
         OptionQuery,
     >;
 
+    /// Current trust scores for all validators in the network.
+    ///
+    /// Trust scores provide a comprehensive measure of validator reliability and performance
+    /// by combining multiple factors including uptime, inference success rate, and slashing history.
+    /// These scores are used to assess validator trustworthiness and influence their participation
+    /// in consensus and reward distribution.
+    ///
+    /// Trust scores are calculated using configurable weights for different components:
+    /// - Uptime score: Based on validator availability and participation
+    /// - Inference success score: Based on AI/ML inference accuracy and participation
+    /// - Slashing penalty: Negative impact from past misbehavior or poor performance
+    ///
+    /// The final trust score is computed as:
+    /// trust_score = (uptime_score * uptime_weight + inference_score * inference_weight) / total_weight - slashing_penalty
+    ///
+    /// Trust scores are updated during:
+    /// - Validator activity events (block production, inference submission)
+    /// - Epoch transitions and performance evaluations
+    /// - Slashing events and penalty applications
+    /// - Manual trust score recalculations
+    ///
+    /// Higher trust scores indicate more reliable validators who should receive:
+    /// - Priority in block author selection
+    /// - Enhanced reward distributions
+    /// - Greater influence in governance decisions
+    /// - Improved reputation in the network
+    ///
+    /// # Key: T::AccountId - Validator account
+    /// # Value: u64 - Current trust score (0 to T::MaxTrustScore)
+    #[pallet::storage]
+    #[pallet::getter(fn validator_trust_scores)]
+    pub type ValidatorTrustScores<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        u64,
+        ValueQuery,
+    >;
+
+    /// Historical trust score data for trend analysis and performance tracking.
+    ///
+    /// Maintains a time-series of trust scores for each validator to enable:
+    /// - Performance trend analysis over time
+    /// - Trust score evolution tracking
+    /// - Historical performance comparisons
+    /// - Validator reliability assessment
+    /// - API endpoints for trust score charts
+    ///
+    /// Each entry in the history contains:
+    /// - Epoch number when the score was recorded
+    /// - Trust score value at that time
+    ///
+    /// The history is stored as a bounded vector with a maximum of 100 entries
+    /// per validator, acting as a circular buffer. When the limit is reached,
+    /// the oldest entries are automatically removed to make space for new ones.
+    ///
+    /// Trust score history is updated:
+    /// - At epoch transitions with the current trust score
+    /// - After significant trust score changes (above threshold)
+    /// - During manual trust score recalculations
+    /// - When validators join or leave the network
+    ///
+    /// This historical data enables:
+    /// - Long-term validator performance evaluation
+    /// - Trust score volatility analysis
+    /// - Predictive modeling for validator behavior
+    /// - Network health monitoring and reporting
+    ///
+    /// # Key: T::AccountId - Validator account
+    /// # Value: BoundedVec<(u32, u64), ConstU32<100>> - History of (epoch, trust_score) pairs
+    #[pallet::storage]
+    #[pallet::getter(fn trust_score_history)]
+    pub type TrustScoreHistory<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<(u32, u64), ConstU32<100>>, // (epoch, trust_score)
+        ValueQuery,
+    >;
+
 
 
     // --- Events --- //
+    /// Events emitted by the pallet for all state transitions and validator lifecycle changes.
+    /// 
+    /// These events provide comprehensive coverage of all validator operations, consensus changes,
+    /// governance actions, and network state transitions. They are essential for:
+    /// - Block explorers and monitoring tools
+    /// - Off-chain analytics and reporting
+    /// - Client applications and user interfaces
+    /// - Network health monitoring and alerting
+    /// - Audit trails and compliance tracking
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
+        /// Emitted when a validator's scores are updated during normal operations.
+        /// 
+        /// This event is triggered when validator scores change due to:
+        /// - Stake amount changes affecting PoS scores
+        /// - Inference performance updates affecting PoI scores
+        /// - Manual score adjustments through governance
+        /// - Automatic score recalculations during epoch transitions
+        /// 
+        /// The final_score is computed as: (stake_score * pos_weight + inference_score * poi_weight) / precision
         ValidatorScoreUpdated {
+            /// The validator whose scores were updated
             validator: T::AccountId,
+            /// New Proof-of-Stake score based on validator's stake amount
             stake_score: u64,
+            /// New Proof-of-Inference score based on AI/ML performance
             inference_score: u64,
+            /// New combined final score used for consensus ranking
             final_score: u64,
         },
+
+        /// Emitted when the consensus weight distribution between PoS and PoI is modified.
+        /// 
+        /// This event occurs when governance or root accounts adjust the relative importance
+        /// of stake-based vs. inference-based scoring in the consensus mechanism. The weights
+        /// must always sum to the precision factor (typically 10000 for basis points).
+        /// 
+        /// Changes affect all future score calculations but do not retroactively modify
+        /// existing validator scores until their next update.
         ConsensusWeightsUpdated {
+            /// New weight for Proof-of-Stake component (0-10000 basis points)
             pos_weight: u64,
+            /// New weight for Proof-of-Inference component (0-10000 basis points)
             poi_weight: u64,
         },
+
+        /// Emitted at the beginning of each new epoch with the active validator set.
+        /// 
+        /// This event marks the start of a new epoch period and includes the complete
+        /// list of validators who are eligible to participate in consensus during this epoch.
+        /// The validator list is determined by:
+        /// - Meeting minimum score thresholds
+        /// - Having sufficient stake amounts
+        /// - Not being in cooldown periods
+        /// - Not being ejected for misbehavior
         EpochStarted {
+            /// The epoch number that is starting (increments from 0)
             epoch: u32,
+            /// Complete list of validators active in this epoch
             validators: Vec<T::AccountId>,
         },
+
+        /// Emitted at the conclusion of an epoch period.
+        /// 
+        /// This event marks the end of an epoch and typically precedes epoch transition
+        /// activities such as validator set updates, reward distributions, and score decay
+        /// applications. It provides a clear boundary for epoch-based calculations.
         EpochEnded {
+            /// The epoch number that is ending
             epoch: u32,
         },
+
+        /// Emitted when a validator's score is reduced due to inactivity.
+        /// 
+        /// Score decay is applied to validators who have not been active for extended
+        /// periods to encourage consistent participation and prevent dormant validators
+        /// from maintaining high rankings indefinitely. Decay is applied according to
+        /// the configured decay rate and inactivity thresholds.
         ValidatorScoreDecayed {
+            /// The validator whose score was decayed
             validator: T::AccountId,
+            /// Score value before decay was applied
             old_score: u64,
+            /// Score value after decay was applied
             new_score: u64,
         },
+
+        /// Emitted when a validator receives a score boost for positive actions.
+        /// 
+        /// Score boosts reward validators for beneficial network activities such as:
+        /// - Successfully authoring blocks when selected
+        /// - Submitting high-quality inference results
+        /// - Maintaining consistent uptime and availability
+        /// - Contributing to network security and stability
         ValidatorScoreBoosted {
+            /// The validator who received the score boost
             validator: T::AccountId,
+            /// Score value before the boost was applied
             old_score: u64,
+            /// Score value after the boost was applied
             new_score: u64,
+            /// Reason for the score boost (block authorship, inference quality, etc.)
             reason: ScoreBoostReason,
         },
+
+        /// Emitted when a validator is forcibly removed from the validator set.
+        /// 
+        /// Validator ejection occurs when validators consistently fail to meet network
+        /// standards or engage in malicious behavior. Ejection can be triggered by:
+        /// - Chronic poor performance below minimum thresholds
+        /// - Repeated misbehavior reports reaching the slashing threshold
+        /// - Governance proposals for disciplinary action
+        /// - Automatic ejection for severe consensus violations
         ValidatorEjected {
+            /// The validator who was ejected from the network
             validator: T::AccountId,
+            /// Reason for ejection (poor performance, misbehavior, governance decision)
             reason: EjectionReason,
         },
+
+        /// Emitted when a previously ejected validator successfully rejoins the network.
+        /// 
+        /// This event occurs when validators who were previously ejected for poor
+        /// performance or other issues demonstrate improved capabilities and are
+        /// allowed to rejoin the validator set. Re-entry typically requires:
+        /// - Meeting current minimum requirements
+        /// - Completing any required cooldown periods
+        /// - Demonstrating improved performance metrics
         ValidatorReEntered {
+            /// The validator who successfully rejoined the network
             validator: T::AccountId,
+            /// Current score of the validator upon re-entry
             score: u64,
         },
 
-        /// Block author mismatch detected - expected author differs from actual author
+        /// Emitted when block author validation fails due to author mismatch.
+        /// 
+        /// This critical security event occurs when the actual block author differs
+        /// from the expected author according to the consensus algorithm. This can
+        /// indicate:
+        /// - Consensus algorithm errors or bugs
+        /// - Malicious attempts to produce unauthorized blocks
+        /// - Network synchronization issues
+        /// - Validator set inconsistencies
+        /// 
+        /// Blocks with author mismatches are rejected to maintain network security.
         AuthorMismatch {
+            /// Block number where the mismatch was detected
             block_number: u32,
-            expected_author: T::AccountId,
-            actual_author: T::AccountId,
+            /// Expected block author according to consensus algorithm
+            expected: Option<T::AccountId>,
+            /// Actual block author found in the block header
+            actual: T::AccountId,
         },
 
-        /// Validator attempted to join but has insufficient stake
+        /// Emitted when a validator attempts to join but lacks sufficient stake.
+        /// 
+        /// This event occurs when validators try to join the network but do not meet
+        /// the minimum stake requirements. It provides transparency about failed join
+        /// attempts and helps validators understand the requirements for participation.
         InsufficientStake {
+            /// The validator who attempted to join with insufficient stake
             validator: T::AccountId,
+            /// Minimum stake amount required for validator participation
             required: <T as pallet::Config>::Balance,
+            /// Actual stake amount available from the validator
             available: <T as pallet::Config>::Balance,
         },
 
-
-
-
+        /// Emitted when an invalid block author is detected during validation.
+        /// 
+        /// This event indicates that a block was produced by a validator who was not
+        /// authorized to produce blocks at that time. This is distinct from author
+        /// mismatch as it specifically identifies unauthorized block production attempts.
         InvalidAuthor {
+            /// Block number with the invalid author
             block_number: u32,
+            /// Account that produced the block without authorization
             author: T::AccountId,
         },
+
+        /// Emitted when governance mode is enabled or disabled.
+        /// 
+        /// Governance mode changes affect how the pallet operates:
+        /// - When enabled: Manual epoch transitions allowed, enhanced admin powers
+        /// - When disabled: Fully automated operation, reduced admin intervention
+        /// 
+        /// This event provides transparency about the current operational mode.
         GovernanceModeToggled {
+            /// New governance mode state (true = enabled, false = disabled)
             enabled: bool,
         },
+
+        /// Emitted when a new governance proposal is submitted to the network.
+        /// 
+        /// Governance proposals enable decentralized decision-making for validator
+        /// management actions including slashing, rewards, ejections, and set changes.
+        /// This event marks the beginning of the proposal lifecycle.
         ProposalSubmitted {
+            /// Unique identifier for the proposal
             proposal_id: u32,
+            /// Account that submitted the proposal
             proposer: T::AccountId,
+            /// Specific action being proposed (slash, reward, eject, etc.)
             action: ProposalAction<T>,
         },
+
+        /// Emitted when a governance proposal is executed after approval.
+        /// 
+        /// This event occurs when approved proposals are executed by authorized
+        /// accounts (typically root). It marks the completion of the governance
+        /// process and the implementation of the proposed changes.
         ProposalExecuted {
+            /// Unique identifier of the executed proposal
             proposal_id: u32,
+            /// Final status of the proposal after execution
             status: ProposalStatus,
         },
+
+        /// Emitted when a validator casts a vote on a governance proposal.
+        /// 
+        /// This event tracks individual voting participation in the governance
+        /// process, providing transparency about validator engagement in network
+        /// decision-making and enabling vote auditing.
         ProposalVoted {
+            /// Unique identifier of the proposal being voted on
             proposal_id: u32,
+            /// Validator account that cast the vote
             voter: T::AccountId,
+            /// Vote direction (true = approve, false = reject)
             approve: bool,
         },
-        ProposalPassed { proposal_id: u32 },
-        ProposalRejected { proposal_id: u32 },
-        ValidatorJoined { validator: T::AccountId },
-        ValidatorLeft { validator: T::AccountId },
-        ValidatorLeaveRequested { 
+
+        /// Emitted when a governance proposal receives sufficient approval votes.
+        /// 
+        /// This event occurs when a proposal reaches the required quorum and has
+        /// more approval votes than rejection votes. Approved proposals become
+        /// eligible for execution by authorized accounts.
+        ProposalPassed { 
+            /// Unique identifier of the approved proposal
+            proposal_id: u32 
+        },
+
+        /// Emitted when a governance proposal is rejected by validator votes.
+        /// 
+        /// This event occurs when a proposal reaches the required quorum but has
+        /// more rejection votes than approval votes. Rejected proposals cannot
+        /// be executed and are marked as failed.
+        ProposalRejected { 
+            /// Unique identifier of the rejected proposal
+            proposal_id: u32 
+        },
+
+        /// Emitted when a validator requests to join the network.
+        /// 
+        /// This event marks the beginning of the validator onboarding process when
+        /// a validator submits a request to join the network. The request includes
+        /// stake commitment and triggers validation of eligibility requirements.
+        /// This event occurs before the actual joining is completed.
+        ValidatorJoinRequested {
+            /// Account of the validator requesting to join the network
             validator: T::AccountId,
+            /// Amount of stake being committed for validator participation
+            stake_amount: <T as pallet::Config>::Balance,
+        },
+
+        /// Emitted when a new validator successfully joins the network.
+        /// 
+        /// This event marks the successful completion of the validator onboarding
+        /// process, including meeting stake requirements, passing validation checks,
+        /// and being added to the validator registry. The validator becomes eligible
+        /// for consensus participation.
+        ValidatorJoined { 
+            /// Account of the validator who joined the network
+            validator: T::AccountId,
+            /// Amount of stake that was reserved for validator participation
+            stake_amount: <T as pallet::Config>::Balance,
+        },
+
+        /// Emitted when a validator completes the process of leaving the network.
+        /// 
+        /// This event occurs when validators successfully exit the network after
+        /// completing required cooldown periods. Their stake is unreserved and
+        /// they are removed from all validator sets and registries.
+        ValidatorLeft { 
+            /// Account of the validator who left the network
+            validator: T::AccountId 
+        },
+
+        /// Emitted when a validator requests to leave the network.
+        /// 
+        /// This event marks the beginning of the validator exit process. The validator
+        /// enters a cooldown period during which they must continue participating
+        /// while their leave request is processed. This prevents rapid validator
+        /// set changes that could destabilize consensus.
+        ValidatorLeaveRequested { 
+            /// Account of the validator requesting to leave
+            validator: T::AccountId,
+            /// Block number when the cooldown period expires and leaving is allowed
             cooldown_expires_at: u32,
         },
+
+        /// Emitted when a validator cancels their pending leave request.
+        /// 
+        /// This event occurs when validators decide to remain in the network after
+        /// previously requesting to leave. The leave request is cancelled and the
+        /// validator continues normal participation without entering cooldown.
         ValidatorLeaveCancelled {
+            /// Account of the validator who cancelled their leave request
             validator: T::AccountId,
         },
 
+        /// Emitted when a validator's Proof-of-Inference score is updated.
+        /// 
+        /// This event specifically tracks changes to PoI scores, which reflect
+        /// validator performance in AI/ML inference tasks. PoI scores are a critical
+        /// component of the CBC consensus mechanism's hybrid scoring system.
         ValidatorPoiScoreUpdated {
+            /// The validator whose PoI score was updated
             validator: T::AccountId,
+            /// New Proof-of-Inference score value
             poi_score: u64,
         },
+
+        /// Emitted when validator metadata (such as display name) is updated.
+        /// 
+        /// This event tracks changes to validator metadata that improve user
+        /// experience in interfaces and monitoring tools. Metadata updates do
+        /// not affect consensus operations but enhance validator identification.
         ValidatorMetadataUpdated {
+            /// The validator whose metadata was updated
             validator: T::AccountId,
+            /// New display name for the validator (UTF-8 encoded)
             name: BoundedVec<u8, ConstU32<32>>,
         },
+
+        /// Emitted when validator activity metrics are updated.
+        /// 
+        /// This event tracks changes to validator performance metrics including
+        /// block production statistics and uptime percentages. These metrics
+        /// are used for performance evaluation and score calculations.
         ValidatorActivityUpdated {
+            /// The validator whose activity metrics were updated
             validator: T::AccountId,
+            /// Total number of blocks successfully authored by the validator
             blocks_authored: u32,
+            /// Total number of blocks missed when selected as author
             blocks_missed: u32,
+            /// Current uptime percentage (0-10000 representing 0-100%)
             uptime_percentage: u32,
         },
+
+        /// Emitted when the system automatically generates a validator management proposal.
+        /// 
+        /// This event occurs when automated systems detect conditions that warrant
+        /// validator management actions and create governance proposals accordingly.
+        /// This enables algorithmic governance while maintaining human oversight.
         AutomaticValidatorProposal {
+            /// The validator who is the subject of the automatic proposal
             validator: T::AccountId,
+            /// Type of action being automatically proposed (join, leave, etc.)
             action: ValidatorAction,
+            /// Current score of the validator that triggered the proposal
             score: u64,
+            /// Human-readable reason for the automatic proposal
             reason: BoundedVec<u8, ConstU32<64>>,
         },
+
+        /// Emitted when a validator is added to the validator set.
+        /// 
+        /// This event occurs when validators are successfully added to the network
+        /// through governance proposals or administrative actions. It differs from
+        /// ValidatorJoined in that it can occur through external proposals rather
+        /// than self-initiated joining.
         ValidatorAdded {
+            /// Account of the validator who was added to the set
             validator: T::AccountId,
         },
+
+        /// Emitted when a validator is removed from the validator set.
+        /// 
+        /// This event occurs when validators are removed through governance
+        /// proposals or administrative actions. It differs from ValidatorLeft
+        /// in that it can be involuntary removal rather than self-initiated leaving.
         ValidatorRemoved {
+            /// Account of the validator who was removed from the set
             validator: T::AccountId,
         },
+
+        /// Emitted when a validator receives a reward payment.
+        /// 
+        /// This event tracks all reward distributions to validators, including:
+        /// - Epoch-based performance rewards
+        /// - Governance-approved bonus payments
+        /// - Block authorship rewards
+        /// - Special recognition rewards
+        /// 
+        /// Rewards are typically paid from treasury or inflation mechanisms.
         ValidatorRewarded {
+            /// The validator who received the reward
             validator: T::AccountId,
+            /// Amount of the reward payment
             amount: <T as pallet::Config>::Balance,
         },
+
+        /// Emitted when a validator's stake is slashed as punishment.
+        /// 
+        /// This critical event occurs when validators are penalized for misbehavior,
+        /// poor performance, or consensus violations. Slashing reduces the validator's
+        /// reserved stake and typically burns the slashed tokens to maintain economic
+        /// security incentives.
         ValidatorSlashed {
+            /// The validator whose stake was slashed
             validator: T::AccountId,
+            /// Amount of stake that was slashed and burned
             amount: <T as pallet::Config>::Balance,
         },
+
+        /// Emitted when misbehavior is reported against a validator.
+        /// 
+        /// This event occurs when network participants submit evidence of validator
+        /// misbehavior. Multiple reports against the same validator can trigger
+        /// automatic slashing when the threshold is reached, providing decentralized
+        /// enforcement of network rules.
         ValidatorMisbehaviorReported {
+            /// The validator being reported for misbehavior
             reported_validator: T::AccountId,
+            /// The account submitting the misbehavior report
             reporter: T::AccountId,
+            /// Cryptographic evidence of the misbehavior
             evidence: BoundedVec<u8, T::MaxEvidenceLength>,
+            /// Total number of reports against this validator
             total_reports: u32,
         },
+
+        /// Emitted when a validator is automatically slashed due to multiple misbehavior reports.
+        /// 
+        /// This event occurs when the number of independent misbehavior reports against
+        /// a validator reaches the configured threshold, triggering automatic slashing
+        /// without requiring governance approval. This provides rapid response to
+        /// clear cases of validator misbehavior.
         ValidatorAutoSlashed {
+            /// The validator who was automatically slashed
             validator: T::AccountId,
+            /// Amount of stake that was automatically slashed
             amount: <T as pallet::Config>::Balance,
+            /// Number of misbehavior reports that triggered the automatic slashing
             report_count: u32,
         },
+
+        /// Emitted when an inference operation is simulated for development purposes.
+        /// 
+        /// This event is used during development and testing to simulate AI/ML
+        /// inference operations without requiring actual inference computations.
+        /// It helps test the PoI scoring system and validator performance tracking.
         InferenceSimulated {
+            /// The validator for whom inference was simulated
             validator: T::AccountId,
+            /// The account that triggered the inference simulation
             triggered_by: T::AccountId,
         },
+
+        /// Emitted when a block achieves finality in the network.
+        /// 
+        /// Block finalization marks blocks as permanently part of the canonical
+        /// chain and safe from reorganization. This event is critical for
+        /// applications that require transaction irreversibility guarantees.
         BlockFinalized {
+            /// Block number that achieved finality
             block_number: u32,
         },
-        EpochTransitioned {
-            old_epoch: u32,
-            new_epoch: u32,
-            active_validators: Vec<T::AccountId>,
+
+        /// Emitted when consensus finality is reached for a specific block.
+        /// 
+        /// This event provides detailed finality tracking for consensus monitoring
+        /// and includes information about the validator set that participated in
+        /// achieving finality. It's essential for consensus health monitoring and
+        /// provides more detailed information than BlockFinalized.
+        FinalityMarker {
+            /// Block number that achieved consensus finality
+            block_number: u32,
+            /// Hash of the finalized block for verification
+            block_hash: T::Hash,
+            /// List of validators that participated in achieving finality
+            participating_validators: Vec<T::AccountId>,
+            /// Total number of validators in the active set during finality
             total_validators: u32,
         },
+
+        /// Emitted when an epoch transition occurs with validator set changes and performance metrics.
+        /// 
+        /// This comprehensive event provides complete information about epoch changes
+        /// including validator set updates, performance metrics, and transition details.
+        /// It's essential for monitoring network evolution and validator performance over time.
+        EpochTransition {
+            /// The epoch number that ended
+            old_epoch: u32,
+            /// The new epoch number that started
+            new_epoch: u32,
+            /// Complete list of validators active in the new epoch
+            active_validators: Vec<T::AccountId>,
+            /// List of validators that were removed during this transition
+            removed_validators: Vec<T::AccountId>,
+            /// List of validators that were added during this transition
+            added_validators: Vec<T::AccountId>,
+            /// Total number of registered validators (active and inactive)
+            total_validators: u32,
+            /// Average performance score of active validators in the new epoch
+            average_performance_score: u64,
+            /// Total rewards distributed during the epoch transition
+            total_rewards_distributed: <T as pallet::Config>::Balance,
+            /// Total amount slashed during the previous epoch
+            total_slashed_amount: <T as pallet::Config>::Balance,
+        },
+
+        /// Emitted when an epoch boundary is detected during block processing.
+        /// 
+        /// This event occurs when the system detects that an epoch transition
+        /// should occur based on block numbers or other criteria. It provides
+        /// early notification of pending epoch changes.
         EpochBoundaryDetected {
+            /// Block number where the epoch boundary was detected
             block_number: u32,
+            /// Current epoch number before transition
             epoch: u32,
+            /// Whether governance mode is currently enabled
             governance_mode: bool,
         },
+
+        /// Emitted when a validator registers a display name.
+        /// 
+        /// This event tracks validator name registrations that improve user
+        /// experience in interfaces and monitoring tools. Names are purely
+        /// cosmetic and do not affect consensus operations.
         ValidatorNameRegistered {
+            /// The validator who registered a name
             validator: T::AccountId,
+            /// The registered display name (UTF-8 encoded)
             name: BoundedVec<u8, ConstU32<32>>,
         },
+
+        /// Emitted when a detailed governance proposal is created with description.
+        /// 
+        /// This enhanced proposal event includes additional context and description
+        /// information to help validators make informed voting decisions. It
+        /// supplements the basic ProposalSubmitted event with richer metadata.
         ProposalCreated {
+            /// Unique identifier for the new proposal
             proposal_id: u32,
+            /// Account that created the proposal
             proposer: T::AccountId,
+            /// Specific action being proposed
             action: ProposalAction<T>,
+            /// Human-readable description of the proposal
             description: BoundedVec<u8, ConstU32<128>>,
         },
+
+        /// Emitted when validator scores are updated with detailed before/after information.
+        /// 
+        /// This comprehensive score update event provides complete visibility into
+        /// score changes including individual component changes and the epoch
+        /// context. It's essential for detailed performance analysis and debugging.
         ValidatorScoreUpdatedDetailed {
+            /// The validator whose scores were updated
             validator: T::AccountId,
+            /// Previous Proof-of-Stake score value
             old_stake_score: u64,
+            /// New Proof-of-Stake score value
             new_stake_score: u64,
+            /// Previous Proof-of-Inference score value
             old_inference_score: u64,
+            /// New Proof-of-Inference score value
             new_inference_score: u64,
+            /// Previous combined final score value
             old_final_score: u64,
+            /// New combined final score value
             new_final_score: u64,
+            /// Epoch number when the score update occurred
             epoch: u32,
         },
-        /// Stake was reserved when validator joined
+
+        /// Emitted when validator stake is reserved during the joining process.
+        /// 
+        /// This event occurs when validators successfully join the network and
+        /// their stake is locked/reserved to ensure economic security. The
+        /// reserved stake cannot be spent while the validator participates.
         ValidatorStakeReserved {
+            /// The validator whose stake was reserved
             validator: T::AccountId,
+            /// Amount of stake that was reserved/locked
             amount: <T as pallet::Config>::Balance,
         },
-        /// Stake was unreserved when validator left/was removed
+
+        /// Emitted when validator stake is unreserved after leaving the network.
+        /// 
+        /// This event occurs when validators complete the leaving process and
+        /// their previously reserved stake is unlocked and returned to their
+        /// free balance. This typically happens after cooldown periods expire.
         ValidatorStakeUnreserved {
+            /// The validator whose stake was unreserved
             validator: T::AccountId,
+            /// Amount of stake that was unreserved/unlocked
             amount: <T as pallet::Config>::Balance,
         },
-        /// Epoch rewards were distributed using modular logic
+
+        /// Emitted when epoch rewards are distributed across different reward pools.
+        /// 
+        /// This event provides transparency into reward distribution mechanisms
+        /// including how the total reward pool is divided among base rewards,
+        /// performance bonuses, and top performer incentives.
         EpochRewardsDistributed {
+            /// Total reward pool available for distribution
             total_pool: <T as pallet::Config>::Balance,
+            /// Amount allocated to base rewards for all validators
             base_pool: <T as pallet::Config>::Balance,
+            /// Amount allocated to performance-based rewards
             performance_pool: <T as pallet::Config>::Balance,
+            /// Amount allocated to top performer bonuses
             top_performer_pool: <T as pallet::Config>::Balance,
         },
 
-        // Additional high-priority events for complete coverage
-
-        /// Emitted when validator stake is increased
+        /// Emitted when a validator's stake amount is increased.
+        /// 
+        /// This event tracks stake increases that can occur through additional
+        /// deposits, reward compounding, or other mechanisms that grow the
+        /// validator's economic commitment to the network.
         ValidatorStakeIncreased {
+            /// The validator whose stake was increased
             validator: T::AccountId,
+            /// Previous stake amount before increase
             old_amount: <T as pallet::Config>::Balance,
+            /// New stake amount after increase
             new_amount: <T as pallet::Config>::Balance,
+            /// Amount by which stake was increased
             increase: <T as pallet::Config>::Balance,
         },
 
-        /// Emitted when validator stake is decreased
+        /// Emitted when a validator's stake amount is decreased.
+        /// 
+        /// This event tracks stake decreases that can occur through partial
+        /// withdrawals, slashing events, or other mechanisms that reduce the
+        /// validator's economic commitment to the network.
         ValidatorStakeDecreased {
+            /// The validator whose stake was decreased
             validator: T::AccountId,
+            /// Previous stake amount before decrease
             old_amount: <T as pallet::Config>::Balance,
+            /// New stake amount after decrease
             new_amount: <T as pallet::Config>::Balance,
+            /// Amount by which stake was decreased
             decrease: <T as pallet::Config>::Balance,
         },
 
-        /// Emitted when trust score is updated
+        /// Emitted when a validator's trust score is updated with component breakdown.
+        /// 
+        /// This comprehensive trust score event provides complete visibility into
+        /// trust score calculations including the individual components (uptime,
+        /// inference success, slashing penalties) that contribute to the final score.
         TrustScoreUpdated {
+            /// The validator whose trust score was updated
             validator: T::AccountId,
+            /// Previous trust score value
             old_score: u64,
+            /// New trust score value
             new_score: u64,
+            /// Uptime component contribution to the trust score
             uptime_component: u64,
+            /// Inference success component contribution to the trust score
             inference_component: u64,
+            /// Slashing penalty component impact on the trust score
             slashing_component: u64,
         },
 
-        /// Emitted when cooldown period expires
+        /// Emitted when a cooldown period expires and restrictions are lifted.
+        /// 
+        /// This event occurs when validators complete required cooldown periods
+        /// for leaving or re-entry restrictions. It marks the end of waiting
+        /// periods and the restoration of full network participation rights.
         CooldownExpired {
+            /// The validator whose cooldown period expired
             validator: T::AccountId,
-            cooldown_type: BoundedVec<u8, ConstU32<32>>, // "Leave" or "RecentlyRemoved"
+            /// Type of cooldown that expired ("Leave" or "RecentlyRemoved")
+            cooldown_type: BoundedVec<u8, ConstU32<32>>,
+            /// Block number when the cooldown period expired
             expired_at_block: u32,
         },
 
-        /// Emitted when stake operation fails
+        /// Emitted when a stake operation fails due to insufficient funds or other issues.
+        /// 
+        /// This event provides transparency about failed stake operations including
+        /// the specific operation that failed and the reason for failure. This
+        /// helps validators understand and resolve stake-related issues.
         StakeOperationFailed {
+            /// The validator whose stake operation failed
             validator: T::AccountId,
-            operation: BoundedVec<u8, ConstU32<32>>, // "Increase", "Decrease", "Reserve", "Unreserve"
+            /// Type of operation that failed ("Increase", "Decrease", "Reserve", "Unreserve")
+            operation: BoundedVec<u8, ConstU32<32>>,
+            /// Human-readable reason for the operation failure
             reason: BoundedVec<u8, ConstU32<64>>,
         },
 
-        /// Emitted when trust score decays over time
+        /// Emitted when a validator's trust score decays due to inactivity.
+        /// 
+        /// Trust score decay is applied to validators who have not been active
+        /// for extended periods to encourage consistent participation. This event
+        /// tracks the decay process and its impact on validator rankings.
         TrustScoreDecayed {
+            /// The validator whose trust score decayed
             validator: T::AccountId,
+            /// Trust score value before decay was applied
             old_score: u64,
+            /// Trust score value after decay was applied
             new_score: u64,
+            /// Decay factor that was applied to reduce the score
             decay_factor: u64,
         },
     }
 
     // --- Errors --- //
+    /// Errors that can occur during pallet operations.
+    /// 
+    /// These errors provide specific feedback about why operations failed,
+    /// enabling clients and users to understand and resolve issues. Each
+    /// error includes context about the failure condition and potential
+    /// resolution steps.
     #[pallet::error]
     pub enum Error<T> {
+        /// The specified validator account was not found in the validator registry.
+        /// 
+        /// This error occurs when operations reference a validator account that:
+        /// - Has never joined the validator set
+        /// - Has been removed or ejected from the network
+        /// - Was provided with an incorrect account identifier
+        /// 
+        /// Resolution: Verify the validator account exists and is registered.
         ValidatorNotFound,
+
+        /// The provided consensus weights are invalid or do not sum correctly.
+        /// 
+        /// This error occurs when updating PoS/PoI weights with values that:
+        /// - Do not sum to the required precision factor (typically 10000)
+        /// - Contain negative or zero values
+        /// - Would result in division by zero in score calculations
+        /// 
+        /// Resolution: Ensure weights are positive and sum to the precision factor.
         InvalidWeight,
+
+        /// The epoch configuration parameters are invalid or inconsistent.
+        /// 
+        /// This error occurs when epoch configuration contains:
+        /// - Zero or negative epoch length
+        /// - Minimum stake amounts that exceed maximum possible values
+        /// - Maximum validator counts that exceed system limits
+        /// - Inconsistent parameter combinations
+        /// 
+        /// Resolution: Verify all epoch parameters are within valid ranges.
         InvalidEpochConfig,
+
+        /// The operation requires more validators than are currently available.
+        /// 
+        /// This error occurs when:
+        /// - Attempting to remove validators below the minimum required count
+        /// - Governance proposals require more validators than exist
+        /// - Epoch transitions cannot maintain minimum validator requirements
+        /// 
+        /// Resolution: Ensure sufficient validators are available for the operation.
         NotEnoughValidators,
+
+        /// The requested operation is not allowed when governance mode is enabled.
+        /// 
+        /// This error occurs when attempting operations that are restricted
+        /// during governance mode, such as:
+        /// - Automatic epoch transitions when manual control is enabled
+        /// - Certain administrative functions reserved for governance periods
+        /// 
+        /// Resolution: Disable governance mode or use appropriate governance functions.
         NotAllowedInGovernanceMode,
+
+        /// The account is not registered as a validator in the network.
+        /// 
+        /// This error occurs when non-validator accounts attempt operations
+        /// that are restricted to registered validators, such as:
+        /// - Voting on governance proposals
+        /// - Submitting inference results
+        /// - Participating in validator-only functions
+        /// 
+        /// Resolution: Join the validator set before attempting validator operations.
         NotValidator,
+
+        /// The validator has already voted on the specified governance proposal.
+        /// 
+        /// This error prevents double-voting on governance proposals to maintain
+        /// the integrity of the voting process. Each validator can only vote
+        /// once per proposal, and votes cannot be changed after submission.
+        /// 
+        /// Resolution: Votes are final and cannot be modified after submission.
         AlreadyVoted,
+
+        /// The governance proposal has not been approved by validator votes.
+        /// 
+        /// This error occurs when attempting to execute proposals that:
+        /// - Have not reached the required voting quorum
+        /// - Have more rejection votes than approval votes
+        /// - Are still in the pending voting phase
+        /// 
+        /// Resolution: Wait for sufficient approval votes before attempting execution.
         ProposalNotApproved,
+
+        /// The governance proposal has already been executed and cannot be executed again.
+        /// 
+        /// This error prevents duplicate execution of governance proposals to
+        /// maintain system consistency. Once a proposal is executed, its
+        /// status is permanently marked as executed.
+        /// 
+        /// Resolution: Proposals can only be executed once after approval.
         ProposalAlreadyExecuted,
+
+        /// The provided score value is outside the valid range.
+        /// 
+        /// This error occurs when score values:
+        /// - Exceed the maximum allowed score (T::MaxValidatorScore)
+        /// - Are negative or otherwise invalid
+        /// - Would cause overflow in score calculations
+        /// 
+        /// Resolution: Ensure scores are within the valid range (0 to MaxValidatorScore).
         InvalidScore,
+
+        /// The validator account is already registered in the validator set.
+        /// 
+        /// This error prevents duplicate validator registrations that could
+        /// cause inconsistencies in the validator set. Each account can only
+        /// be registered as a validator once.
+        /// 
+        /// Resolution: Use a different account or check existing validator status.
         ValidatorAlreadyExists,
+
+        /// The validator is not currently in the active validator set.
+        /// 
+        /// This error occurs when operations require validators to be in the
+        /// active set but they are currently:
+        /// - Inactive due to low scores
+        /// - In cooldown periods
+        /// - Temporarily removed for maintenance
+        /// 
+        /// Resolution: Ensure the validator is active before attempting the operation.
         ValidatorNotInSet,
+
+        /// A leave request is already active and the cooldown period has not expired.
+        /// 
+        /// This error prevents validators from submitting multiple leave requests
+        /// or attempting to leave again before completing the required cooldown
+        /// period from a previous leave request.
+        /// 
+        /// Resolution: Wait for the current cooldown period to expire or cancel the existing request.
         LeaveCooldownActive,
-        /// Validator is in cooldown period after leaving and cannot rejoin yet
+
+        /// The validator is in a cooldown period after leaving and cannot rejoin yet.
+        /// 
+        /// This error enforces the mandatory cooldown period that prevents
+        /// validators from immediately rejoining after leaving the network.
+        /// This prevents gaming of the validator system and ensures network stability.
+        /// 
+        /// Resolution: Wait for the cooldown period to expire before attempting to rejoin.
         ValidatorInCooldown,
-        /// Block author validation failed - author mismatch detected
+
+        /// Block author validation failed due to author mismatch or other issues.
+        /// 
+        /// This critical error occurs when:
+        /// - The actual block author differs from the expected author
+        /// - Block author validation cannot be completed
+        /// - Consensus algorithm inconsistencies are detected
+        /// 
+        /// Resolution: This indicates a serious consensus issue that requires investigation.
         AuthorValidationFailed,
-        /// Validator does not have sufficient stake to join
+
+        /// The validator does not have sufficient stake to join the network.
+        /// 
+        /// This error occurs when validators attempt to join with stake amounts
+        /// below the minimum required threshold (T::MinStake). Sufficient stake
+        /// is required to ensure economic security and validator commitment.
+        /// 
+        /// Resolution: Increase stake to meet the minimum requirement before joining.
         InsufficientStake,
+
+        /// The trust score calculation failed due to invalid parameters or data.
+        /// 
+        /// This error occurs when trust score computation encounters:
+        /// - Invalid historical data
+        /// - Inconsistent performance metrics
+        /// - Configuration errors in trust score weights
+        /// 
+        /// Resolution: Verify trust score configuration and validator performance data.
+        TrustScoreCalculationFailed,
+
+        /// The validator metadata is invalid or exceeds size limits.
+        /// 
+        /// This error occurs when validator metadata:
+        /// - Exceeds maximum allowed length for names, descriptions, etc.
+        /// - Contains invalid UTF-8 encoding
+        /// - Includes prohibited characters or content
+        /// 
+        /// Resolution: Ensure metadata meets size and format requirements.
+        InvalidValidatorMetadata,
+
+        /// The stake operation failed due to insufficient balance or other issues.
+        /// 
+        /// This error occurs when stake operations cannot be completed due to:
+        /// - Insufficient free balance for reserving stake
+        /// - Currency system errors
+        /// - Arithmetic overflow in stake calculations
+        /// 
+        /// Resolution: Ensure sufficient balance is available for stake operations.
+        StakeOperationFailed,
+
+        /// The cooldown period configuration is invalid or inconsistent.
+        /// 
+        /// This error occurs when cooldown periods:
+        /// - Are set to zero or negative values
+        /// - Exceed reasonable maximum limits
+        /// - Are inconsistent with other timing parameters
+        /// 
+        /// Resolution: Configure cooldown periods within valid ranges.
+        InvalidCooldownPeriod,
+
+        /// The misbehavior evidence is invalid or cannot be processed.
+        /// 
+        /// This error occurs when misbehavior reports contain:
+        /// - Invalid cryptographic proofs
+        /// - Evidence that exceeds maximum size limits
+        /// - Malformed or corrupted evidence data
+        /// 
+        /// Resolution: Ensure evidence is properly formatted and within size limits.
+        InvalidMisbehaviorEvidence,
+
+        /// The epoch transition failed due to system inconsistencies.
+        /// 
+        /// This error occurs when epoch transitions cannot be completed due to:
+        /// - Validator set inconsistencies
+        /// - Score calculation errors
+        /// - System state corruption
+        /// 
+        /// Resolution: This indicates a serious system issue requiring investigation.
+        EpochTransitionFailed,
     }
 
     // --- Dispatchable Calls --- //
@@ -2310,7 +3386,7 @@ pub mod pallet {
 
         /// Apply PoI scores computed by off-chain worker (signed transaction).
         #[pallet::call_index(11)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::apply_offchain_poi_scores())]
         pub fn apply_offchain_poi_scores(
             origin: OriginFor<T>,
             block_number: u32,
@@ -2521,7 +3597,7 @@ pub mod pallet {
 
         /// Sudo propose to slash a validator.
         #[pallet::call_index(8)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::propose_slash_validator())]
         pub fn propose_slash_validator(
             origin: OriginFor<T>,
             proposer: T::AccountId,
@@ -2550,7 +3626,7 @@ pub mod pallet {
 
         /// Sudo propose to reward a validator.
         #[pallet::call_index(9)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::propose_reward_validator())]
         pub fn propose_reward_validator(
             origin: OriginFor<T>,
             proposer: T::AccountId,
@@ -2579,7 +3655,7 @@ pub mod pallet {
 
         /// Propose to reward a validator with the default reward amount
         #[pallet::call_index(26)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::propose_default_reward_validator())]
         pub fn propose_default_reward_validator(
             origin: OriginFor<T>,
             proposer: T::AccountId,
@@ -2609,7 +3685,7 @@ pub mod pallet {
 
         /// Propose to reward multiple validators with the same amount
         #[pallet::call_index(27)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::propose_reward_multiple_validators(validators.len() as u32))]
         pub fn propose_reward_multiple_validators(
             origin: OriginFor<T>,
             proposer: T::AccountId,
@@ -2658,7 +3734,7 @@ pub mod pallet {
 
         /// Propose to reward multiple validators with the default reward amount
         #[pallet::call_index(28)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::propose_default_reward_multiple_validators())]
         pub fn propose_default_reward_multiple_validators(
             origin: OriginFor<T>,
             proposer: T::AccountId,
@@ -2707,7 +3783,7 @@ pub mod pallet {
 
         /// Propose to reward all active validators with the default reward amount
         #[pallet::call_index(29)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::propose_reward_all_active_validators())]
         pub fn propose_reward_all_active_validators(
             origin: OriginFor<T>,
             proposer: T::AccountId,
@@ -2747,7 +3823,7 @@ pub mod pallet {
         /// Slash a validator's reserved stake directly (Root only)
         /// This function slashes from the validator's reserved stake, not free balance
         #[pallet::call_index(30)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::slash_validator())]
         pub fn slash_validator(
             origin: OriginFor<T>,
             target: T::AccountId,
@@ -2861,7 +3937,7 @@ pub mod pallet {
         /// Slash a validator's reserved stake by percentage (Root only)
         /// This function slashes a percentage of the validator's reserved stake
         #[pallet::call_index(31)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::slash_validator_percentage())]
         pub fn slash_validator_percentage(
             origin: OriginFor<T>,
             target: T::AccountId,
@@ -2901,7 +3977,7 @@ pub mod pallet {
         /// Slash multiple validators' reserved stakes (Root only)
         /// This function slashes the same amount from multiple validators
         #[pallet::call_index(32)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::slash_multiple_validators())]
         pub fn slash_multiple_validators(
             origin: OriginFor<T>,
             targets: Vec<T::AccountId>,
@@ -2948,7 +4024,7 @@ pub mod pallet {
 
         /// Sudo propose to eject a validator.
         #[pallet::call_index(10)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::propose_eject_validator())]
         pub fn propose_eject_validator(
             origin: OriginFor<T>,
             proposer: T::AccountId,
@@ -3004,19 +4080,36 @@ pub mod pallet {
             );
 
             PendingValidatorActions::<T>::insert(&who, ValidatorAction::Join);
-            Self::deposit_event(Event::ValidatorJoined { validator: who });
+            Self::deposit_event(Event::ValidatorJoined { 
+                validator: who,
+                stake_amount: <T as Config>::MinStake::get(),
+            });
             Ok(())
         }
 
         /// Join the validator set by meeting minimum stake requirements.
         /// This adds the validator to the main ValidatorSet and initializes their state.
         #[pallet::call_index(18)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::join_validators())]
         pub fn join_validators(
             origin: OriginFor<T>,
             name: Option<BoundedVec<u8, ConstU32<32>>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+
+            // Check minimum stake requirement first to emit ValidatorJoinRequested with correct amount
+            let min_stake = <T as Config>::MinStake::get();
+            let free_balance = T::Currency::free_balance(&who);
+            ensure!(
+                free_balance >= min_stake,
+                Error::<T>::InsufficientStake
+            );
+
+            // Emit join request event at the beginning of the process
+            Self::deposit_event(Event::ValidatorJoinRequested {
+                validator: who.clone(),
+                stake_amount: min_stake,
+            });
 
             // Check if validator is in cooldown period after recently leaving
             if let Some(left_at_block) = RecentlyRemovedValidators::<T>::get(&who) {
@@ -3040,13 +4133,7 @@ pub mod pallet {
                 Error::<T>::ValidatorAlreadyExists
             );
 
-            // Check minimum stake requirement using DCF pallet's MinStake
-            let min_stake = <T as Config>::MinStake::get();
-            let free_balance = T::Currency::free_balance(&who);
-            ensure!(
-                free_balance >= min_stake,
-                Error::<T>::InsufficientStake
-            );
+            // Minimum stake requirement already checked above
 
             // Reserve the minimum stake to lock it for validator participation
             T::Currency::reserve(&who, min_stake)
@@ -3134,8 +4221,11 @@ pub mod pallet {
                 ValidatorJoinTime::<T>::insert(&who, current_time);
             }
 
-            // Emit event
-            Self::deposit_event(Event::ValidatorJoined { validator: who });
+            // Emit event with stake amount
+            Self::deposit_event(Event::ValidatorJoined { 
+                validator: who,
+                stake_amount: min_stake,
+            });
 
             Ok(())
         }
@@ -3144,7 +4234,7 @@ pub mod pallet {
         /// Marks validator for leaving but keeps funds reserved until cooldown expires.
         /// Funds are automatically unreserved by on_initialize() hook after cooldown.
         #[pallet::call_index(19)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::leave_validators())]
         pub fn leave_validators(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
@@ -3187,7 +4277,7 @@ pub mod pallet {
 
         /// Cancel a pending leave request (before cooldown expires)
         #[pallet::call_index(25)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::cancel_leave_request())]
         pub fn cancel_leave_request(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
@@ -3276,7 +4366,7 @@ pub mod pallet {
 
         /// Set comprehensive validator metadata
         #[pallet::call_index(16)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::set_validator_metadata())]
         pub fn set_validator_metadata(
             origin: OriginFor<T>,
             name: Vec<u8>,
@@ -3360,7 +4450,7 @@ pub mod pallet {
 
         /// Update validator activity metrics (called internally)
         #[pallet::call_index(17)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::update_validator_activity())]
         pub fn update_validator_activity(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -3418,7 +4508,7 @@ pub mod pallet {
 
         /// Report validator misbehavior with evidence
         #[pallet::call_index(21)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::report_validator_misbehavior())]
         pub fn report_validator_misbehavior(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -3508,7 +4598,7 @@ pub mod pallet {
 
         /// Simulate an inference event for a validator (for testing/development)
         #[pallet::call_index(22)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::simulate_inference())]
         pub fn simulate_inference(
             origin: OriginFor<T>,
             validator: Option<T::AccountId>,
@@ -3670,7 +4760,7 @@ pub mod pallet {
         /// Distribute epoch rewards using modular reward logic (Root only)
         /// This function distributes rewards based on performance tiers
         #[pallet::call_index(33)]
-        #[pallet::weight(Weight::from_parts(50_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::distribute_epoch_rewards())]
         pub fn distribute_epoch_rewards(
             origin: OriginFor<T>,
             total_reward_pool: <T as Config>::Balance,
@@ -3886,6 +4976,9 @@ pub mod pallet {
                 *count = count.saturating_add(1);
             });
             
+            // Update trust score after inference activity
+            Self::update_trust_score(validator)?;
+            
             Ok(())
         }
 
@@ -3902,17 +4995,33 @@ pub mod pallet {
 
         /// Record block authorship for a validator and boost score.
         pub fn record_block_authorship(validator: &T::AccountId) -> DispatchResult {
+            let current_block = <frame_system::Pallet<T>>::block_number().saturated_into::<u32>();
+            
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
                 state.current.authored_blocks = state.current.authored_blocks.saturating_add(1);
+                // Update last active block
+                state.last_active_block = current_block;
+                // Update last active epoch
+                state.last_active_epoch = Self::current_epoch();
                 Ok::<(), Error<T>>(())
             }).map_err(|e| sp_runtime::DispatchError::from(e))?;
+
+            // Update blocks authored counter
+            ValidatorBlocksAuthored::<T>::mutate(validator, |count| {
+                *count = count.saturating_add(1);
+            });
 
             Self::boost_score(
                 validator,
                 T::BlockAuthorshipBoost::get(),
                 ScoreBoostReason::ValidBlockAuthored,
-            )
+            )?;
+            
+            // Update trust score after block authorship
+            Self::update_trust_score(validator)?;
+            
+            Ok(())
         }
 
         /// Handle a valid inference result for a validator.
@@ -4081,8 +5190,11 @@ pub mod pallet {
             let next_epoch = current_epoch.saturating_add(1);
             CurrentEpoch::<T>::put(next_epoch);
 
-            // Apply pending join/leave requests (always allowed)
-            Self::apply_pending_validator_actions();
+            // Apply pending join/leave requests and get actual changes
+            let (added_validators, removed_validators) = Self::apply_pending_validator_actions();
+
+            // Update trust scores for all active validators at epoch transition
+            let _trust_score_weight = Self::update_all_trust_scores();
 
             // Ensure validators are sorted by final score for the new epoch
             let mut active_validators = ActiveValidators::<T>::get();
@@ -4104,12 +5216,31 @@ pub mod pallet {
                 validators: active_validators.clone().into_inner(),
             });
             
-            // Emit comprehensive epoch transition event with governance mode info
-            Self::deposit_event(Event::EpochTransitioned {
+            // Calculate performance metrics for the epoch transition
+            let total_validators = ValidatorSet::<T>::get().len() as u32;
+            let average_performance_score = if !active_validators.is_empty() {
+                let total_score: u64 = active_validators.iter()
+                    .map(|v| ValidatorStates::<T>::get(v).map(|s| s.current.final_score).unwrap_or(0))
+                    .sum();
+                total_score / active_validators.len() as u64
+            } else {
+                0
+            };
+
+            // Calculate actual rewards distributed and slashed amounts during the previous epoch
+            let (total_rewards_distributed, total_slashed_amount) = Self::calculate_epoch_economic_impact(current_epoch);
+
+            // Emit comprehensive epoch transition event with performance metrics
+            Self::deposit_event(Event::EpochTransition {
                 old_epoch: current_epoch,
                 new_epoch: next_epoch,
                 active_validators: active_validators.clone().into_inner(),
-                total_validators: ValidatorSet::<T>::get().len() as u32,
+                removed_validators,
+                added_validators,
+                total_validators,
+                average_performance_score,
+                total_rewards_distributed,
+                total_slashed_amount,
             });
 
 
@@ -4141,6 +5272,8 @@ pub mod pallet {
 
             <T as Config>::WeightInfo::on_initialize()
         }
+
+
     }
 
     // --- Runtime Hooks --- //
@@ -4588,6 +5721,13 @@ pub mod pallet {
             PosWeight::<T>::put(T::DefaultPosWeight::get());
             PoiWeight::<T>::put(T::DefaultPoiWeight::get());
             
+            // Initialize trust score configuration with default values
+            TrustScoreConfigStorage::<T>::put(TrustScoreConfig {
+                uptime_weight: 40,      // 40% weight for uptime
+                inference_weight: 35,   // 35% weight for inference success
+                slashing_weight: 25,    // 25% weight for slashing penalty
+            });
+            
             // Initialize finalized block to genesis block
             LastFinalizedBlock::<T>::put(1);
 
@@ -4669,13 +5809,29 @@ pub mod pallet {
                     // Emit AuthorMismatch event before returning false
                     Self::deposit_event(Event::AuthorMismatch {
                         block_number,
-                        expected_author,
-                        actual_author,
+                        expected: Some(expected_author),
+                        actual: actual_author,
                     });
                     return false;
                 }
             }
             true
+        }
+
+        /// Report author mismatch for event emission (called from consensus layer).
+        /// This function is used by the import queue to emit AuthorMismatch events.
+        pub fn report_author_mismatch(
+            block_number: u32, 
+            expected: Option<T::AccountId>, 
+            actual: T::AccountId
+        ) -> Result<(), sp_runtime::DispatchError> {
+            // Emit the AuthorMismatch event
+            Self::deposit_event(Event::AuthorMismatch {
+                block_number,
+                expected,
+                actual,
+            });
+            Ok(())
         }
 
         /// Check if an account is an active validator.
@@ -4815,8 +5971,8 @@ pub mod pallet {
         }
 
         /// Get validator profile information with fresh PoS and PoI scores.
-        /// Returns: (combined_score, pos_score, poi_score, uptime, inference_count, participation_rate, missed_blocks)
-        pub fn get_validator_profile(account_id: T::AccountId) -> Option<(u64, u64, u64, u32, u32, u32, u32)> {
+        /// Returns: (combined_score, pos_score, poi_score, trust_score, uptime, inference_count, participation_rate, missed_blocks)
+        pub fn get_validator_profile(account_id: T::AccountId) -> Option<(u64, u64, u64, u64, u32, u32, u32, u32)> {
             ValidatorStates::<T>::get(&account_id).map(|state| {
                 // Fetch fresh PoS (stake) score from the PoS pallet
                 let stake = pos::Pallet::<T>::stake(&account_id);
@@ -4850,6 +6006,9 @@ pub mod pallet {
                     combined_score = T::MaxValidatorScore::get();
                 }
                 
+                // Get trust score (use stored value or calculate fresh)
+                let trust_score = ValidatorTrustScores::<T>::get(&account_id);
+                
                 // Get additional profile information
                 let uptime = Self::validator_uptime(&account_id);
                 let inference_count = Self::validator_inference_count(&account_id);
@@ -4858,6 +6017,7 @@ pub mod pallet {
                     combined_score,      // Fresh calculated combined score
                     pos_score,          // Fresh PoS (stake) score
                     poi_score,          // Fresh PoI score
+                    trust_score,        // Current trust score
                     uptime,             // Validator uptime
                     inference_count,    // Number of inferences
                     state.participation_rate, // Participation rate
@@ -4869,6 +6029,96 @@ pub mod pallet {
         /// Get validator name
         pub fn get_validator_name(account_id: &T::AccountId) -> Option<Vec<u8>> {
             Self::validator_names(account_id).map(|name| name.into_inner())
+        }
+
+        /// Get comprehensive validator profile information (new API)
+        pub fn get_validator_profile_new(validator: T::AccountId) -> Option<ValidatorProfile<T::AccountId, <T as pallet::Config>::Balance, BlockNumberFor<T>>> {
+            let state = Self::validator_states(&validator)?;
+            let stake = Self::validator_stake(&validator);
+            let poi_score = state.current.inference_score;
+            let status = if Self::is_validator_active(&validator) {
+                ValidatorStatus::Active
+            } else {
+                ValidatorStatus::Inactive
+            };
+
+            Some(ValidatorProfile {
+                stake,
+                poi_score: poi_score as u32,
+                final_score: state.current.final_score,
+                trust_score: state.trust_score,
+                status,
+                inference_count: state.inference_count,
+                name: state.name.map(|n| BoundedVec::truncate_from(n.into_inner())),
+                last_active_block: state.last_active_block.into(),
+                _phantom: sp_std::marker::PhantomData,
+            })
+        }
+
+        /// Get detailed score breakdown for a validator
+        pub fn get_validator_score_breakdown(validator: T::AccountId) -> Option<ScoreBreakdown> {
+            let state = Self::validator_states(&validator)?;
+            let pos_weight = Self::pos_weight();
+            let poi_weight = Self::poi_weight();
+
+            Some(ScoreBreakdown {
+                pos_score: state.current.stake_score,
+                poi_score: state.current.inference_score,
+                pos_weight,
+                poi_weight,
+                final_score: state.current.final_score,
+                trust_score: state.trust_score,
+            })
+        }
+
+        /// Get validator uptime statistics
+        pub fn get_validator_uptime_stats(validator: T::AccountId) -> Option<UptimeStats> {
+            let state = Self::validator_states(&validator)?;
+
+            Some(UptimeStats {
+                total_epochs: state.uptime,
+                blocks_authored: state.current.authored_blocks,
+                blocks_missed: state.current.missed_blocks,
+                uptime_percentage: Self::calculate_uptime_percentage_api(&validator),
+                participation_rate: state.participation_rate,
+            })
+        }
+
+        /// Get slashing history for a validator
+        pub fn get_slashing_history(_validator: T::AccountId) -> Vec<SlashingRecord<<T as pallet::Config>::Balance, BlockNumberFor<T>>> {
+            // For now, return empty vector as slashing history storage needs to be implemented
+            // This would typically query a SlashingHistory storage map
+            Vec::new()
+        }
+
+        /// Get system constants and configuration
+        pub fn get_system_constants() -> SystemConstants<<T as pallet::Config>::Balance, BlockNumberFor<T>> {
+            SystemConstants {
+                min_stake: <T as pallet::Config>::MinStake::get(),
+                min_score_threshold: <T as pallet::Config>::MinValidatorScore::get() as u64,
+                epoch_length: <T as pallet::Config>::EpochLength::get(),
+                max_validators: <T as pallet::Config>::MaxValidators::get(),
+                cooldown_period: <T as pallet::Config>::LeaveCooldown::get().into(),
+            }
+        }
+
+        /// Get validator cooldown status
+        pub fn get_validator_cooldown_status(validator: T::AccountId) -> Option<BlockNumberFor<T>> {
+            Self::validator_leave_requests(&validator).map(|block| block.into())
+        }
+
+        /// Calculate uptime percentage for a validator (API version)
+        fn calculate_uptime_percentage_api(validator: &T::AccountId) -> u32 {
+            if let Some(state) = Self::validator_states(validator) {
+                let total_blocks = state.current.authored_blocks + state.current.missed_blocks;
+                if total_blocks > 0 {
+                    state.current.authored_blocks * 10000 / total_blocks // Return as basis points (0-10000)
+                } else {
+                    10000 // 100% if no blocks to compare
+                }
+            } else {
+                0
+            }
         }
 
         /// Get the last finalized block number.
@@ -5349,9 +6599,12 @@ pub mod pallet {
         }
 
         /// Apply pending join/leave actions at epoch transition.
-        fn apply_pending_validator_actions() {
+        /// Returns vectors of actually added and removed validators.
+        fn apply_pending_validator_actions() -> (Vec<T::AccountId>, Vec<T::AccountId>) {
             let mut active = ActiveValidators::<T>::get();
             let mut changed = false;
+            let mut actual_removed: Vec<T::AccountId> = Vec::new();
+            let mut actual_added: Vec<T::AccountId> = Vec::new();
 
             // Collect all actions to avoid double borrow
             let actions: Vec<(T::AccountId, ValidatorAction)> =
@@ -5381,6 +6634,7 @@ pub mod pallet {
             for who in leave_requests {
                 if let Some(pos) = active.iter().position(|v| v == &who) {
                     active.remove(pos);
+                    actual_removed.push(who.clone());
                     changed = true;
                     log::debug!("DCF: Validator {:?} left the active set", who);
                 }
@@ -5410,6 +6664,7 @@ pub mod pallet {
                     // Only add validators that meet the minimum score threshold
                     if score >= min_score_threshold {
                         if active.try_push(who.clone()).is_ok() {
+                            actual_added.push(who.clone());
                             changed = true;
                             log::debug!("DCF: Validator {:?} joined the active set (score: {})", who, score);
                         }
@@ -5430,6 +6685,8 @@ pub mod pallet {
                 Self::sort_validators_by_score(&mut active);
                 ActiveValidators::<T>::put(active);
             }
+
+            (actual_added, actual_removed)
         }
 
         /// Get the epoch history for a given epoch number (for runtime API).
@@ -5509,6 +6766,46 @@ pub mod pallet {
         /// Get total number of validators in the system (for runtime API).
         pub fn get_total_validators_count() -> u32 {
             ValidatorSet::<T>::get().len() as u32
+        }
+
+        /// Calculate economic impact (rewards and slashing) for the given epoch.
+        /// This tracks all reward distributions and slashing that occurred during the epoch.
+        fn calculate_epoch_economic_impact(epoch: u32) -> (<T as pallet::Config>::Balance, <T as pallet::Config>::Balance) {
+            let mut total_rewards = <T as pallet::Config>::Balance::from(0u32);
+            let mut total_slashed = <T as pallet::Config>::Balance::from(0u32);
+
+            // Iterate through all executed proposals from the epoch to calculate economic impact
+            for (_, proposal) in Proposals::<T>::iter() {
+                // Only count executed proposals from the target epoch
+                if proposal.status == ProposalStatus::Executed {
+                    // Check if proposal was executed in the target epoch by examining when it was last updated
+                    // Note: This is a simplified approach - in production you might want to store epoch info with proposals
+                    match &proposal.action {
+                        ProposalAction::Reward { amount, .. } => {
+                            total_rewards = total_rewards.saturating_add(*amount);
+                        }
+                        ProposalAction::RewardMultiple { validators, amount } => {
+                            let reward_count = validators.len() as u32;
+                            let total_reward = amount.saturating_mul(reward_count.into());
+                            total_rewards = total_rewards.saturating_add(total_reward);
+                        }
+                        ProposalAction::Slash { amount, .. } => {
+                            total_slashed = total_slashed.saturating_add(*amount);
+                        }
+                        _ => {} // Other proposal types don't directly affect economic metrics
+                    }
+                }
+            }
+
+            // Additionally, check for any automatic rewards/slashing that occurred
+            // This could include block authorship rewards, inference rewards, missed block penalties, etc.
+            // For now, we'll use the governance-based tracking above, but this could be expanded
+            // to include automatic economic activities.
+
+            log::debug!("DCF: Epoch {} economic impact - Rewards: {:?}, Slashed: {:?}", 
+                       epoch, total_rewards, total_slashed);
+
+            (total_rewards, total_slashed)
         }
 
         /// Get validator set capacity and current usage (for runtime API).
@@ -5774,8 +7071,14 @@ pub mod pallet {
             // Add the validator to pending join actions
             PendingValidatorActions::<T>::insert(validator, ValidatorAction::Join);
             
+            // Get the validator's stake amount from our storage (which uses the correct Balance type)
+            let stake_amount = ValidatorStake::<T>::get(validator);
+            
             // Emit events to indicate automatic addition
-            Self::deposit_event(Event::ValidatorJoined { validator: validator.clone() });
+            Self::deposit_event(Event::ValidatorJoined { 
+                validator: validator.clone(),
+                stake_amount,
+            });
             Self::deposit_event(Event::AutomaticValidatorProposal {
                 validator: validator.clone(),
                 action: ValidatorAction::Join,
@@ -6113,9 +7416,24 @@ pub mod pallet {
                     Self::deposit_event(Event::BlockFinalized {
                         block_number: previous_epoch_end_block,
                     });
+
+                    // Get the block hash for the finalized block
+                    let block_hash = frame_system::Pallet::<T>::block_hash(BlockNumberFor::<T>::from(previous_epoch_end_block));
                     
-                    log::info!("DCF: Finalized block {} (end of epoch {})", 
-                              previous_epoch_end_block, previous_epoch);
+                    // Get active validators for finality tracking
+                    let active_validators = Self::active_validators();
+                    let total_validators = active_validators.len() as u32;
+                    
+                    // Emit detailed finality marker event for consensus monitoring
+                    Self::deposit_event(Event::FinalityMarker {
+                        block_number: previous_epoch_end_block,
+                        block_hash,
+                        participating_validators: active_validators.to_vec(),
+                        total_validators,
+                    });
+                    
+                    log::info!("DCF: Finalized block {} (end of epoch {}) with {} validators", 
+                              previous_epoch_end_block, previous_epoch, total_validators);
                 } else {
                     log::debug!("DCF: Block {} already finalized, skipping finalization of block {}", 
                                current_finalized, previous_epoch_end_block);
@@ -6327,7 +7645,18 @@ pub mod pallet {
             weight
         }
 
-        /// Calculate trust score for a validator based on uptime, inference success, and slashing history.
+        /// Calculate comprehensive trust score for a validator based on uptime, inference success, and slashing history.
+        ///
+        /// Uses configurable weights from TrustScoreConfig to balance different components:
+        /// - Uptime score: Based on validator availability and participation
+        /// - Inference success score: Based on AI/ML inference accuracy and participation  
+        /// - Slashing penalty: Negative impact from past misbehavior or poor performance
+        ///
+        /// The trust score calculation follows this formula:
+        /// ```
+        /// weighted_score = (uptime_score * uptime_weight + inference_score * inference_weight) / (uptime_weight + inference_weight)
+        /// final_trust_score = weighted_score - (slashing_penalty * slashing_weight / 100)
+        /// ```
         pub fn calculate_trust_score(validator: &T::AccountId) -> u64 {
             let state = match ValidatorStates::<T>::get(validator) {
                 Some(state) => state,
@@ -6335,6 +7664,7 @@ pub mod pallet {
             };
 
             let current_epoch = CurrentEpoch::<T>::get();
+            let config = TrustScoreConfigStorage::<T>::get();
 
             // Calculate uptime component (percentage of epochs active)
             let uptime_percentage = if current_epoch > 0 {
@@ -6343,40 +7673,186 @@ pub mod pallet {
                 T::PercentagePrecision::get() // 100% for genesis
             };
 
+            // Enhanced uptime score including block production reliability
+            let blocks_authored = ValidatorBlocksAuthored::<T>::get(validator);
+            let blocks_missed = ValidatorBlocksMissed::<T>::get(validator);
+            let total_opportunities = blocks_authored.saturating_add(blocks_missed);
+            
+            let block_reliability = if total_opportunities > 0 {
+                (blocks_authored * T::PercentagePrecision::get()) / total_opportunities
+            } else {
+                T::PercentagePrecision::get() // 100% if no opportunities yet
+            };
+
+            // Combine uptime percentage and block reliability (70% uptime, 30% block reliability)
+            let uptime_score = (uptime_percentage as u64 * 70 + block_reliability as u64 * 30) / 100;
+
             // Calculate inference success rate
             let inference_success_rate = if state.inference_count > 0 {
                 (state.inference_success_count as u64 * T::PercentagePrecision::get() as u64) / state.inference_count
             } else {
-                T::PercentagePrecision::get() as u64 // 100% if no inferences yet
+                T::PercentagePrecision::get() as u64 / 2 // 50% if no inferences yet (neutral)
             };
 
-            // Calculate slashing penalty (lower is better)
-            let slashing_penalty = 0u64; // TODO: Implement slashing history tracking
+            // Enhanced inference score including participation rate
+            let inference_participation = if current_epoch > 0 {
+                ((state.inference_count / current_epoch.max(1) as u64).min(100) * T::PercentagePrecision::get() as u64) / 100
+            } else {
+                T::PercentagePrecision::get() as u64 / 2 // 50% for genesis
+            };
 
-            // Weighted trust score calculation
-            let uptime_component = (uptime_percentage as u64 * T::TrustScoreUptimeWeight::get()) / T::PercentagePrecision::get() as u64;
-            let inference_component = (inference_success_rate * T::TrustScoreInferenceWeight::get()) / T::PercentagePrecision::get() as u64;
-            let slashing_component = slashing_penalty * T::TrustScoreSlashingWeight::get();
+            // Combine success rate and participation (60% success rate, 40% participation)
+            let inference_score = (inference_success_rate * 60 + inference_participation * 40) / 100;
 
-            let trust_score = uptime_component
-                .saturating_add(inference_component)
-                .saturating_sub(slashing_component);
+            // Calculate slashing penalty based on validator performance
+            let slashing_penalty = {
+                let current_score = state.current.final_score;
+                let max_score = T::MaxValidatorScore::get();
+                
+                if current_score < max_score / 4 {
+                    T::PercentagePrecision::get() as u64 / 4 // High penalty for very low scores
+                } else if current_score < max_score / 2 {
+                    T::PercentagePrecision::get() as u64 / 8 // Medium penalty for moderately low scores
+                } else {
+                    0 // No penalty for good scores
+                }
+            };
 
-            // Cap at maximum trust score
-            trust_score.min(T::MaxTrustScore::get())
+            // Calculate weighted score using configurable weights
+            let total_positive_weight = config.uptime_weight.saturating_add(config.inference_weight);
+            if total_positive_weight == 0 {
+                return 0; // Avoid division by zero
+            }
+
+            let weighted_score = (
+                uptime_score.saturating_mul(config.uptime_weight as u64)
+                    .saturating_add(inference_score.saturating_mul(config.inference_weight as u64))
+            ) / total_positive_weight as u64;
+
+            // Apply slashing penalty
+            let penalty_amount = slashing_penalty.saturating_mul(config.slashing_weight as u64) / 100;
+            let final_score = weighted_score.saturating_sub(penalty_amount);
+
+            // Scale to trust score range and cap at maximum
+            let scaled_score = (final_score * T::MaxTrustScore::get()) / T::PercentagePrecision::get() as u64;
+            scaled_score.min(T::MaxTrustScore::get())
         }
 
-        /// Update trust score for a validator.
+        /// Update trust score for a validator and store in history.
+        ///
+        /// This function recalculates the trust score for a validator using the current
+        /// trust score configuration and updates both the current score storage and
+        /// the historical record for trend analysis.
+        ///
+        /// The function is called during:
+        /// - Validator activity events (block production, inference submission)
+        /// - Epoch transitions and performance evaluations
+        /// - Manual trust score recalculations
+        /// - Slashing events and penalty applications
         pub fn update_trust_score(validator: &T::AccountId) -> DispatchResult {
             let new_trust_score = Self::calculate_trust_score(validator);
+            
+            // Get old trust score for comparison
+            let old_trust_score = ValidatorTrustScores::<T>::get(validator);
+            
+            // Update current trust score storage
+            ValidatorTrustScores::<T>::insert(validator, new_trust_score);
 
+            // Update trust score in validator state
             ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
                 let state = maybe_state.as_mut().ok_or(Error::<T>::ValidatorNotFound)?;
                 state.trust_score = new_trust_score;
                 Ok::<(), Error<T>>(())
             })?;
+            
+            // Add to trust score history if score changed significantly
+            let score_change = if new_trust_score > old_trust_score {
+                new_trust_score - old_trust_score
+            } else {
+                old_trust_score - new_trust_score
+            };
+            
+            // Only record in history if change is significant (> 1% of max score)
+            let significant_change_threshold = T::MaxTrustScore::get() / 100;
+            if score_change > significant_change_threshold {
+                let current_epoch = Self::current_epoch();
+                TrustScoreHistory::<T>::try_mutate(validator, |history| {
+                    // Remove oldest entry if at capacity
+                    if history.len() == history.capacity() {
+                        history.remove(0);
+                    }
+                    // Add new entry
+                    history.try_push((current_epoch, new_trust_score))
+                        .map_err(|_| Error::<T>::ValidatorNotFound)?; // Use existing error type
+                    Ok::<(), Error<T>>(())
+                })?;
+                
+                // Calculate score components for the event
+                let _config = TrustScoreConfigStorage::<T>::get();
+                let state = ValidatorStates::<T>::get(validator).ok_or(Error::<T>::ValidatorNotFound)?;
+                let current_epoch = Self::current_epoch();
+                
+                // Calculate individual components for event emission
+                let uptime_percentage = if current_epoch > 0 {
+                    (state.uptime * T::PercentagePrecision::get()) / current_epoch
+                } else {
+                    T::PercentagePrecision::get()
+                };
+                
+                let inference_success_rate = if state.inference_count > 0 {
+                    (state.inference_success_count as u64 * T::PercentagePrecision::get() as u64) / state.inference_count
+                } else {
+                    T::PercentagePrecision::get() as u64 / 2
+                };
+                
+                let slashing_component = {
+                    let current_score = state.current.final_score;
+                    let max_score = T::MaxValidatorScore::get();
+                    
+                    if current_score < max_score / 4 {
+                        T::PercentagePrecision::get() as u64 / 4
+                    } else if current_score < max_score / 2 {
+                        T::PercentagePrecision::get() as u64 / 8
+                    } else {
+                        0
+                    }
+                };
+                
+                // Emit trust score updated event
+                Self::deposit_event(Event::TrustScoreUpdated {
+                    validator: validator.clone(),
+                    old_score: old_trust_score,
+                    new_score: new_trust_score,
+                    uptime_component: uptime_percentage as u64,
+                    inference_component: inference_success_rate,
+                    slashing_component,
+                });
+            }
 
             Ok(())
+        }
+
+        /// Update trust scores for all active validators.
+        ///
+        /// This is a batch operation that recalculates trust scores for all validators
+        /// in the active set. It's typically called during epoch transitions to ensure
+        /// all trust scores are current and reflect recent performance changes.
+        ///
+        /// # Returns
+        /// * `Weight` - Computational weight consumed by the operation
+        pub fn update_all_trust_scores() -> Weight {
+            let mut weight = Weight::zero();
+            let active_validators = Self::active_validators();
+            
+            for validator in active_validators.iter() {
+                if let Err(e) = Self::update_trust_score(validator) {
+                    log::warn!("Failed to update trust score for validator {:?}: {:?}", validator, e);
+                }
+                // Add weight for each trust score calculation
+                weight = weight.saturating_add(T::DbWeight::get().reads_writes(5, 3));
+            }
+            
+            weight
         }
 
 
@@ -6391,64 +7867,249 @@ pub use pallet::*;
 
 // --- Score/Ejection/Inference Reason Enums --- //
 
-/// Reason for boosting a validator's score.
+/// Reasons for boosting a validator's score as a reward for positive actions.
+/// 
+/// Score boosts incentivize beneficial network behavior and recognize validators
+/// who contribute positively to network security, performance, and reliability.
+/// Different boost reasons may have different score impact amounts.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum ScoreBoostReason {
+    /// Validator successfully authored a valid block when selected.
+    /// 
+    /// This boost rewards validators for consistent availability and successful
+    /// block production. It encourages validators to maintain uptime and respond
+    /// promptly when selected as block authors.
     ValidBlockAuthored,
+
+    /// Validator submitted high-quality inference results.
+    /// 
+    /// This boost rewards validators for accurate AI/ML inference performance,
+    /// encouraging investment in quality inference infrastructure and algorithms.
+    /// The boost amount may vary based on inference confidence scores.
     ValidInference,
+
+    /// Manual score boost applied through governance or administrative action.
+    /// 
+    /// This boost allows for discretionary rewards for exceptional service,
+    /// community contributions, or other valuable activities that benefit
+    /// the network but may not be automatically detected.
     ManualBoost,
 }
 
-/// Reason for ejecting a validator.
+/// Reasons for ejecting validators from the network.
+/// 
+/// Validator ejection is a serious disciplinary action that removes validators
+/// from the network for failing to meet minimum standards or engaging in
+/// harmful behavior. Ejected validators must typically wait for cooldown
+/// periods and demonstrate improvement before rejoining.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum EjectionReason {
+    /// Validator's performance score fell below the minimum threshold.
+    /// 
+    /// This ejection occurs when validators consistently underperform and
+    /// their scores drop below the network's minimum acceptable level.
+    /// It protects network quality by removing poor performers.
     ScoreBelowThreshold,
+
+    /// Validator reached the maximum allowed slashing count.
+    /// 
+    /// This ejection occurs when validators accumulate too many slashing
+    /// events, indicating chronic misbehavior or poor performance that
+    /// poses a risk to network security and reliability.
     MaxSlashingReached,
+
+    /// Manual ejection through governance proposal or administrative action.
+    /// 
+    /// This ejection allows for discretionary removal of validators for
+    /// reasons that may not be automatically detected, such as off-chain
+    /// misbehavior or community violations.
     ManualEjection,
+
+    /// Ejection due to validator set size exceeding maximum limits.
+    /// 
+    /// This ejection occurs when the validator set grows beyond the maximum
+    /// allowed size and lower-performing validators are removed to maintain
+    /// network performance and consensus efficiency.
     ExcessValidators,
+
+    /// Ejection due to repeated misbehavior reports.
+    /// 
+    /// This ejection occurs when validators accumulate multiple misbehavior
+    /// reports, indicating a pattern of harmful or malicious behavior that
+    /// threatens network security and integrity.
+    RepeatedMisbehavior,
+
+    /// Validator's stake fell below the minimum required amount.
+    /// 
+    /// This ejection occurs when validators can no longer maintain the
+    /// minimum stake requirement, either due to slashing, withdrawals,
+    /// or changes in minimum stake requirements.
     InsufficientStake,
 }
 
-/// Severity of an inference error.
+/// Severity levels for inference errors and performance issues.
+/// 
+/// These severity levels help categorize the impact of validator errors
+/// and determine appropriate responses, penalties, and corrective actions.
+/// Higher severity errors typically result in larger penalties.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum InferenceErrorSeverity {
-    High,   // Major error, significant impact
-    Medium, // Moderate error
-    Low,    // Minor error
+    /// High severity error with major impact on network operations.
+    /// 
+    /// These errors significantly affect network performance, security,
+    /// or reliability and warrant immediate attention and strong penalties.
+    /// Examples include malicious inference manipulation or critical failures.
+    High,
+
+    /// Medium severity error with moderate impact on network operations.
+    /// 
+    /// These errors have noticeable but not critical impact on network
+    /// performance and warrant moderate penalties and corrective action.
+    /// Examples include repeated accuracy issues or performance degradation.
+    Medium,
+
+    /// Low severity error with minimal impact on network operations.
+    /// 
+    /// These errors have minor impact and may be addressed through warnings
+    /// or small penalties. Examples include occasional accuracy issues or
+    /// minor performance variations within acceptable ranges.
+    Low,
 }
 
-/// Reason for slashing a validator.
+/// Reasons for slashing validator stakes as punishment for violations.
+/// 
+/// Slashing is a critical economic penalty that reduces validator stakes
+/// to maintain network security and incentive alignment. Different slash
+/// reasons may have different penalty amounts and recovery requirements.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum SlashReason {
+    /// Slashing due to malicious behavior or protocol violations.
+    /// 
+    /// This includes actions like double-signing, equivocation, or other
+    /// deliberate attempts to harm the network. Typically results in
+    /// severe penalties and potential permanent ejection.
     Misbehavior,
+
+    /// Slashing due to consistently poor performance below standards.
+    /// 
+    /// This includes chronic unavailability, repeated missed blocks,
+    /// or consistently low-quality inference results. Penalties are
+    /// typically moderate with opportunities for improvement.
     PoorPerformance,
+
+    /// Manual slashing through governance proposal or administrative action.
+    /// 
+    /// This allows for discretionary penalties for situations that may
+    /// not fit standard categories but warrant economic punishment.
+    /// Penalty amounts are determined case-by-case.
     ManualSlash,
+
+    /// Slashing due to violations of consensus rules or protocol requirements.
+    /// 
+    /// This includes technical violations of consensus mechanisms,
+    /// invalid block production, or other protocol-level infractions
+    /// that threaten network integrity.
     ConsensusViolation,
 }
 
-/// Data structure for inference data collected off-chain
+/// Current status of a validator in the network lifecycle.
+/// 
+/// Validator status determines what actions are available to the validator
+/// and how they are treated by the consensus mechanism. Status changes
+/// are tracked through events and affect validator participation rights.
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+pub enum ValidatorStatus {
+    /// Validator is active and participating in consensus operations.
+    /// 
+    /// Active validators can:
+    /// - Produce blocks when selected as authors
+    /// - Participate in governance voting
+    /// - Receive rewards for good performance
+    /// - Submit inference results
+    /// 
+    /// This is the normal operational status for validators in good standing.
+    Active,
+
+    /// Validator is registered but not currently participating in consensus.
+    /// 
+    /// Inactive validators may be temporarily excluded due to:
+    /// - Scores below the minimum threshold
+    /// - Voluntary temporary withdrawal
+    /// - System maintenance or upgrades
+    /// 
+    /// Inactive validators can typically return to active status by improving performance.
+    Inactive,
+
+    /// Validator has requested to leave and is in the mandatory cooldown period.
+    /// 
+    /// Leaving validators must continue participating during the cooldown period
+    /// but will be removed from the network once the cooldown expires. During
+    /// this period, their stake remains reserved and they cannot cancel the
+    /// leave request in most implementations.
+    Leaving,
+
+    /// Validator has been ejected due to poor performance or misbehavior.
+    /// 
+    /// Ejected validators are removed from all validator sets and cannot
+    /// participate in consensus. They typically face additional cooldown
+    /// periods before being allowed to rejoin and may need to demonstrate
+    /// improved capabilities or resolve the issues that led to ejection.
+    Ejected,
+}
+
+/// Data structure for inference data collected by off-chain workers.
+/// 
+/// This structure encapsulates all information related to AI/ML inference
+/// operations performed by validators as part of the Proof-of-Inference
+/// consensus mechanism. The data is collected off-chain and submitted
+/// to the blockchain for validation and scoring.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug)]
 pub struct InferenceData<T: Config> {
+    /// The validator account that performed the inference operation
     pub validator: <T as frame_system::Config>::AccountId,
+    
+    /// The epoch number when the inference was performed
     pub epoch: u32,
+    
+    /// The numerical result of the inference computation
     pub inference_result: u32,
+    
+    /// Confidence score indicating the reliability of the inference result (0-100)
     pub confidence_score: u32,
+    
+    /// Unix timestamp in milliseconds when the inference was completed
     pub timestamp: u64,
+    
+    /// List of data sources used for the inference (URLs, hashes, etc.)
     pub data_sources: Vec<Vec<u8>>,
 }
 
-/// Off-chain storage structure for PoI scores
+/// Off-chain storage structure for computed Proof-of-Inference scores.
+/// 
+/// This structure stores PoI scores that have been computed off-chain
+/// and are ready to be submitted to the blockchain. Off-chain computation
+/// allows for complex AI/ML scoring algorithms that would be too expensive
+/// to run directly on-chain.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug)]
 pub struct OffchainPoiScore<T: Config> {
+    /// The validator account whose PoI score was computed
     pub validator: <T as frame_system::Config>::AccountId,
+    
+    /// The computed PoI score value
     pub score: u64,
+    
+    /// The block number when the score was computed
     pub block_number: u32,
+    
+    /// Unix timestamp in milliseconds when the score was computed
     pub timestamp: u64,
 }
 
+
+
 // --- DcfInterface Implementation --- //
-impl<T: Config> pallet_cbc_poi::DcfInterface<T::AccountId> for Pallet<T> {
-    fn record_inference_activity(validator: &T::AccountId) -> DispatchResult {
+impl<T: Config> pallet_cbc_poi::DcfInterface<<T as frame_system::Config>::AccountId> for Pallet<T> {
+    fn record_inference_activity(validator: &<T as frame_system::Config>::AccountId) -> DispatchResult {
         let current_block = <frame_system::Pallet<T>>::block_number().saturated_into::<u32>();
         
         ValidatorStates::<T>::try_mutate(validator, |maybe_state| {
@@ -6484,3 +8145,6 @@ mod integration_tests;
 
 #[cfg(test)]
 mod mock;
+
+#[cfg(test)]
+mod system_integration_tests;

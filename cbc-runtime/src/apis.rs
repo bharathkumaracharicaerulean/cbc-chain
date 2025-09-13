@@ -18,7 +18,7 @@ use sp_version::RuntimeVersion;
 
 // Local Imports
 use super::{
-	AccountId, Balance, Block, Executive, InherentDataExt, Nonce, Runtime,
+	AccountId, Balance, Block, BlockNumber, Executive, InherentDataExt, Nonce, Runtime,
 	RuntimeCall, RuntimeGenesisConfig, SessionKeys, System, TransactionPayment, VERSION,
 };
 
@@ -184,7 +184,7 @@ impl_runtime_apis! {
 	}
 
 	// DCF API
-	impl pallet_cbc_dcf::DcfApi<Block, AccountId> for Runtime {
+	impl pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, BlockNumber> for Runtime {
 		fn get_validator_scores() -> Vec<(AccountId, u64)> {
 			let validators = pallet_cbc_dcf::Pallet::<Runtime>::validator_set();
 			validators
@@ -256,8 +256,28 @@ impl_runtime_apis! {
 			pallet_cbc_dcf::Pallet::<Runtime>::validate_block_author(block_number, author)
 		}
 
-		fn get_validator_profile(validator: AccountId) -> Option<(u64, u64, u64, u32, u32, u32, u32)> {
-			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_profile(validator)
+		fn get_validator_profile(validator: AccountId) -> Option<pallet_cbc_dcf::ValidatorProfile<AccountId, Balance, BlockNumber>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_profile_new(validator)
+		}
+
+		fn get_validator_score_breakdown(validator: AccountId) -> Option<pallet_cbc_dcf::ScoreBreakdown> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_score_breakdown(validator)
+		}
+
+		fn get_validator_uptime(validator: AccountId) -> Option<pallet_cbc_dcf::UptimeStats> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_uptime_stats(validator)
+		}
+
+		fn get_slashing_history(validator: AccountId) -> Vec<pallet_cbc_dcf::SlashingRecord<Balance, BlockNumber>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_slashing_history(validator)
+		}
+
+		fn get_system_constants() -> pallet_cbc_dcf::SystemConstants<Balance, BlockNumber> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_system_constants()
+		}
+
+		fn get_validator_cooldown_status(validator: AccountId) -> Option<BlockNumber> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_cooldown_status(validator)
 		}
 
 		fn get_inference_result(validator: AccountId) -> Option<u64> {
@@ -390,6 +410,10 @@ impl_runtime_apis! {
 			}
 
 			Ok(())
+		}
+
+		fn report_author_mismatch(block_number: u32, expected: Option<AccountId>, actual: AccountId) -> Result<(), sp_runtime::DispatchError> {
+			pallet_cbc_dcf::Pallet::<Runtime>::report_author_mismatch(block_number, expected, actual)
 		}
 	}
 

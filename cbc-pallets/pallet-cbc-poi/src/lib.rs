@@ -197,6 +197,10 @@ pub mod pallet {
         ChallengeWindowExpired,
         /// The inference is too old to be challenged.
         InferenceTooOld,
+        /// Cannot challenge own inference.
+        CannotChallengeSelf,
+        /// Challenge already exists for this validator.
+        ChallengeAlreadyExists,
     }
 
     /// Dispatchable functions (extrinsics) for the PoI pallet.

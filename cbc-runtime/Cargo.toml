@@ -43,6 +43,7 @@ sp-block-builder.workspace = true                                               
 sp-core = { features = ["serde"], workspace = true }                             # Core Substrate types
 sp-genesis-builder.workspace = true                                              # Genesis block builder
 sp-inherents.workspace = true                                                    # Support for inherents (e.g., timestamp)
+sp-io.workspace = true                                                           # I/O primitives for testing
 sp-keyring.workspace = true                                                      # Development keyring support
 sp-offchain.workspace = true                                                     # Offchain workers
 sp-runtime = { features = ["serde"], workspace = true }                          # Core runtime traits

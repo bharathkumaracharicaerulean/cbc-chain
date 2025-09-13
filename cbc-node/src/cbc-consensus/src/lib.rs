@@ -25,6 +25,18 @@ pub mod error;
 pub mod metrics;
 pub mod finality;
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod metrics_test;
+
+#[cfg(test)]
+mod validator_set_test;
+
+#[cfg(test)]
+mod epoch_manager_test;
+
 // Re-export commonly used types from dcf
 pub use dcf::{
     RealBlockImport,
@@ -47,9 +59,7 @@ pub use error::{
     Result,
 };
 
-// Re-export commonly used types from other modules
 pub use proposer_factory::ProposerFactory;
 pub use finality::FinalityEngine;
-pub use metrics::ConsensusMetrics;
 
 

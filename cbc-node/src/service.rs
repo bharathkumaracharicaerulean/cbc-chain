@@ -343,6 +343,23 @@ where
         top_validators_display_count: 5,
         health_check_sample_size: 5,
     };
+
+    // Initialize Prometheus metrics for consensus monitoring
+    let consensus_metrics = if let Some(registry) = config.prometheus_registry() {
+        match cbc_consensus::metrics::ConsensusMetrics::new(registry) {
+            Ok(metrics) => {
+                log::info!("CBC: Consensus metrics initialized successfully");
+                Some(metrics)
+            }
+            Err(e) => {
+                log::error!("CBC: Failed to initialize consensus metrics: {:?}", e);
+                None
+            }
+        }
+    } else {
+        log::warn!("CBC: No Prometheus registry available, metrics disabled");
+        None
+    };
     
     // This will actually add blocks to the chain state
     let dcf_block_import = cbc_consensus::RealBlockImport::new(client.clone());
@@ -350,13 +367,22 @@ where
     
     // Set up  PoS+PoI block production with DCF consensus
     if config.role.is_authority() {
-       
-        let mut dcf_consensus = cbc_consensus::DcfConsensus::<Block, FullClient, sp_core::sr25519::Pair, _>::new(
-            client.clone(),
-            transaction_pool.clone(),
-            dcf_block_import_arc.clone(), // Use real import queue
-            consensus_params.clone(),
-        );
+        let mut dcf_consensus = if let Some(metrics) = consensus_metrics.clone() {
+            cbc_consensus::DcfConsensus::<Block, FullClient, sp_core::sr25519::Pair, _>::new_with_metrics(
+                client.clone(),
+                transaction_pool.clone(),
+                dcf_block_import_arc.clone(), // Use real import queue
+                consensus_params.clone(),
+                metrics,
+            )
+        } else {
+            cbc_consensus::DcfConsensus::<Block, FullClient, sp_core::sr25519::Pair, _>::new(
+                client.clone(),
+                transaction_pool.clone(),
+                dcf_block_import_arc.clone(), // Use real import queue
+                consensus_params.clone(),
+            )
+        };
         
         task_manager.spawn_essential_handle().spawn(
             "cbc-pos-poi-consensus",
@@ -366,6 +392,27 @@ where
                 // Run the consensus engine which will produce real blocks
                 dcf_consensus.run().await;
                 log::error!("CBC: PoS+PoI consensus engine unexpectedly stopped");
+            },
+        );
+    }
+
+    // Start metrics update task if metrics are available
+    if let Some(metrics) = consensus_metrics {
+        let metrics_client = client.clone();
+        task_manager.spawn_handle().spawn(
+            "consensus-metrics-updater",
+            None,
+            async move {
+                log::info!("CBC: Starting consensus metrics updater");
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+                
+                loop {
+                    interval.tick().await;
+                    
+                    if let Err(e) = metrics.update_from_runtime(&metrics_client) {
+                        log::warn!("CBC: Failed to update consensus metrics: {}", e);
+                    }
+                }
             },
         );
     }

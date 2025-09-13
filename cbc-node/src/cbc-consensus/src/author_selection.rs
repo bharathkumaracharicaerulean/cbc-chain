@@ -3,6 +3,7 @@
 use crate::error::{ConsensusError, Result};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
+use sp_runtime::traits::NumberFor;
 use sp_core::sr25519::Public;
 use cbc_runtime::AccountId;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
@@ -13,7 +14,7 @@ pub fn get_expected_author<B, C>(client: Arc<C>, block_number: u32) -> Result<Pu
 where
     B: sp_runtime::traits::Block,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
 {
     let api = client.runtime_api();
     let best_hash = client.info().best_hash;

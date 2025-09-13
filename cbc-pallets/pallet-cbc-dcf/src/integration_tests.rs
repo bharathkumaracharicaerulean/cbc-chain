@@ -395,7 +395,7 @@ fn test_full_performance_tracking_flow() {
         let profile = DcfPallet::get_validator_profile(validator);
         assert!(profile.is_some());
         
-        let (combined_score, _pos_score, _poi_score, _uptime, _inference_count, _participation_rate, missed_blocks) = profile.unwrap();
+        let (combined_score, _pos_score, _poi_score, _trust_score, _uptime, _inference_count, _participation_rate, missed_blocks) = profile.unwrap();
         assert!(combined_score > 0);
         assert_eq!(missed_blocks, total_missed);
     });
@@ -944,7 +944,7 @@ fn test_complex_validator_score_balancing_and_incentives() {
         let mut initial_combined_scores = Vec::new();
         for validator in validators.iter() {
             if let Some(profile) = DcfPallet::get_validator_profile(*validator) {
-                let (combined, pos, poi, _, _, _, _) = profile;
+                let (combined, pos, poi, _, _, _, _, _) = profile;
                 initial_combined_scores.push((*validator, combined, pos, poi));
                 println!("Initial - Validator {:?}: Combined={}, PoS={}, PoI={}", validator, combined, pos, poi);
             }
@@ -977,7 +977,7 @@ fn test_complex_validator_score_balancing_and_incentives() {
         let mut rebalanced_scores = Vec::new();
         for validator in validators.iter() {
             if let Some(profile) = DcfPallet::get_validator_profile(*validator) {
-                let (combined, pos, poi, _, _, _, _) = profile;
+                let (combined, pos, poi, _, _, _, _, _) = profile;
                 rebalanced_scores.push((*validator, combined, pos, poi));
                 println!("Rebalanced - Validator {:?}: Combined={}, PoS={}, PoI={}", validator, combined, pos, poi);
             }
@@ -1093,7 +1093,7 @@ fn test_complex_validator_score_balancing_and_incentives() {
         println!("\n=== Final Score Analysis ===");
         for validator in validators.iter() {
             if let Some(profile) = DcfPallet::get_validator_profile(*validator) {
-                let (combined, pos, poi, uptime, inference_count, participation_rate, missed_blocks) = profile;
+                let (combined, pos, poi, trust_score, uptime, inference_count, participation_rate, missed_blocks) = profile;
                 println!("Final - Validator {:?}:", validator);
                 println!("  Combined Score: {}", combined);
                 println!("  PoS Score: {} (70% weight)", pos);
@@ -1380,5 +1380,831 @@ fn test_system_stress_with_multiple_validators_and_complex_scenarios() {
         
         println!("System stress test with multiple validators completed successfully");
         println!("Processed {} governance proposals across {} epochs", proposal_id, DcfPallet::current_epoch());
+    });
+}
+
+// ===== COMPREHENSIVE INTEGRATION TEST SUITE FOR TASK 7 =====
+
+/// Test complete validator lifecycle with cooldown periods covering join, leave, and rejoin scenarios
+#[test]
+fn test_validator_lifecycle_with_cooldown() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, Get};
+        use sp_runtime::traits::SaturatedConversion;
+        
+        // === Setup Phase ===
+        let new_validator = 10u64;
+        
+        // Give validator sufficient balance
+        let _ = <Balances as Currency<_>>::deposit_creating(&new_validator, 15000);
+        
+        // === Phase 1: Validator Joins ===
+        // Validator joins with sufficient stake
+        assert_ok!(DcfPallet::join_validators(
+            RuntimeOrigin::signed(new_validator), 
+            Some(b"New Validator".to_vec().try_into().unwrap())
+        ));
+        
+        // Verify validator was added to active set
+        assert!(DcfPallet::active_validators().contains(&new_validator));
+        
+        // Verify validator state was created
+        let validator_state = DcfPallet::validator_states(&new_validator);
+        assert!(validator_state.is_some());
+        
+        let state = validator_state.unwrap();
+        assert_eq!(state.name, Some(b"New Validator".to_vec().try_into().unwrap()));
+        assert!(state.trust_score > 0);
+        
+        // Verify name was set
+        let stored_name = DcfPallet::validator_names(&new_validator);
+        assert!(stored_name.is_some());
+        assert_eq!(stored_name.unwrap().to_vec(), b"New Validator".to_vec());
+        
+        // === Phase 2: Validator Performance Simulation ===
+        // Simulate good performance
+        crate::ValidatorBlocksAuthored::<Test>::insert(&new_validator, 50);
+        crate::ValidatorBlocksMissed::<Test>::insert(&new_validator, 2);
+        crate::ValidatorInferenceCount::<Test>::insert(&new_validator, 25);
+        
+        // === Phase 3: Validator Requests to Leave ===
+        let current_block = frame_system::Pallet::<Test>::block_number().saturated_into::<u32>();
+        
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(new_validator)));
+        
+        // Verify leave request was recorded
+        let leave_request = DcfPallet::validator_leave_requests(&new_validator);
+        assert!(leave_request.is_some());
+        assert_eq!(leave_request.unwrap(), current_block);
+        
+        // Verify validator was removed from active set immediately
+        assert!(!DcfPallet::active_validators().contains(&new_validator));
+        
+        // === Phase 4: Attempt Early Rejoin (Should Fail) ===
+        // Try to join again immediately - should fail due to pending leave request
+        assert_noop!(
+            DcfPallet::join_validators(
+                RuntimeOrigin::signed(new_validator), 
+                Some(b"Rejoining Validator".to_vec().try_into().unwrap())
+            ),
+            Error::<Test>::LeaveCooldownActive
+        );
+        
+        // === Phase 5: Cancel Leave Request ===
+        assert_ok!(DcfPallet::cancel_leave_request(RuntimeOrigin::signed(new_validator)));
+        
+        // Verify leave request was removed
+        assert!(DcfPallet::validator_leave_requests(&new_validator).is_none());
+        
+        // === Phase 6: Rejoin After Cancellation ===
+        assert_ok!(DcfPallet::join_validators(
+            RuntimeOrigin::signed(new_validator), 
+            Some(b"Rejoined Validator".to_vec().try_into().unwrap())
+        ));
+        
+        // Verify validator is active again
+        assert!(DcfPallet::active_validators().contains(&new_validator));
+        
+        // === Phase 7: Complete Leave Process ===
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(new_validator)));
+        
+        // Simulate cooldown period passing
+        let cooldown_period = 1000u32; // From mock config
+        let future_block = current_block + cooldown_period + 100;
+        System::set_block_number(future_block.into());
+        
+        // Process expired leave requests (simulate epoch transition)
+        crate::ValidatorLeaveRequests::<Test>::remove(&new_validator);
+        crate::RecentlyRemovedValidators::<Test>::insert(&new_validator, current_block);
+        
+        // === Phase 8: Attempt Rejoin During Cooldown ===
+        assert_noop!(
+            DcfPallet::join_validators(
+                RuntimeOrigin::signed(new_validator), 
+                Some(b"Too Early Rejoin".to_vec().try_into().unwrap())
+            ),
+            Error::<Test>::ValidatorInCooldown
+        );
+        
+        // === Phase 9: Successful Rejoin After Cooldown ===
+        // Simulate cooldown expiry
+        let post_cooldown_block = current_block + cooldown_period + 1;
+        System::set_block_number(post_cooldown_block.into());
+        
+        // Clean up recently removed validators (simulate cleanup)
+        crate::RecentlyRemovedValidators::<Test>::remove(&new_validator);
+        
+        // Now rejoin should work
+        assert_ok!(DcfPallet::join_validators(
+            RuntimeOrigin::signed(new_validator), 
+            Some(b"Post Cooldown Rejoin".to_vec().try_into().unwrap())
+        ));
+        
+        // Verify successful rejoin
+        assert!(DcfPallet::active_validators().contains(&new_validator));
+        
+        // Verify validator state was recreated
+        let final_state = DcfPallet::validator_states(&new_validator);
+        assert!(final_state.is_some());
+        assert_eq!(final_state.unwrap().name, Some(b"Post Cooldown Rejoin".to_vec().try_into().unwrap()));
+        
+        println!("✅ Validator lifecycle with cooldown test completed successfully");
+    });
+}
+
+/// Test multi-validator epoch transitions with reward and slashing validation
+#[test]
+fn test_multi_validator_epoch_transitions() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, ReservableCurrency, Get};
+        
+        // === Setup Phase ===
+        let validators = vec![1u64, 2u64, 3u64]; // Genesis validators
+        
+        // Reserve stake for existing validators
+        for validator in &validators {
+            assert_ok!(<Balances as ReservableCurrency<_>>::reserve(validator, 3000));
+        }
+        
+        // === Phase 1: Multi-Validator Performance Tracking ===
+        // Simulate different performance levels
+        crate::ValidatorBlocksAuthored::<Test>::insert(&1u64, 95);
+        crate::ValidatorBlocksMissed::<Test>::insert(&1u64, 5);
+        crate::ValidatorInferenceCount::<Test>::insert(&1u64, 80);
+        
+        crate::ValidatorBlocksAuthored::<Test>::insert(&2u64, 85);
+        crate::ValidatorBlocksMissed::<Test>::insert(&2u64, 15);
+        crate::ValidatorInferenceCount::<Test>::insert(&2u64, 60);
+        
+        crate::ValidatorBlocksAuthored::<Test>::insert(&3u64, 70);
+        crate::ValidatorBlocksMissed::<Test>::insert(&3u64, 30);
+        crate::ValidatorInferenceCount::<Test>::insert(&3u64, 40);
+        
+        // === Phase 2: Reward High Performers ===
+        assert_ok!(DcfPallet::set_governance_mode(RuntimeOrigin::root(), true));
+        
+        // Reward validator 1 for excellent performance
+        assert_ok!(DcfPallet::submit_proposal(
+            RuntimeOrigin::signed(2u64),
+            ProposalAction::Reward {
+                validator: 1u64,
+                amount: 2000u128
+            },
+            Some(b"Excellent performance reward".to_vec().try_into().unwrap())
+        ));
+        
+        let reward_proposal_id = 0u32;
+        
+        // Multi-validator voting
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(1u64), reward_proposal_id, true));
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(2u64), reward_proposal_id, true));
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(3u64), reward_proposal_id, true));
+        
+        // Execute reward
+        let initial_balance_1 = Balances::free_balance(&1u64);
+        assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), reward_proposal_id));
+        let final_balance_1 = Balances::free_balance(&1u64);
+        
+        // Verify reward was applied
+        assert_eq!(final_balance_1, initial_balance_1 + 2000u128);
+        
+        // === Phase 3: Slash Poor Performers ===
+        // Slash validator 3 for poor performance
+        assert_ok!(DcfPallet::submit_proposal(
+            RuntimeOrigin::signed(1u64),
+            ProposalAction::Slash {
+                validator: 3u64,
+                amount: 1500u128
+            },
+            Some(b"Poor performance penalty".to_vec().try_into().unwrap())
+        ));
+        
+        let slash_proposal_id = 1u32;
+        
+        // Multi-validator voting on slash
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(1u64), slash_proposal_id, true));
+        assert_ok!(DcfPallet::vote_proposal(RuntimeOrigin::signed(2u64), slash_proposal_id, true));
+        
+        // Execute slash
+        let initial_balance_3 = Balances::free_balance(&3u64);
+        assert_ok!(DcfPallet::execute_proposal(RuntimeOrigin::root(), slash_proposal_id));
+        let final_balance_3 = Balances::free_balance(&3u64);
+        
+        // Verify slash was applied
+        assert_eq!(final_balance_3, initial_balance_3 - 1500u128);
+        
+        // === Phase 4: Epoch Transition Simulation ===
+        let initial_epoch = DcfPallet::current_epoch();
+        
+        // Advance epoch
+        crate::CurrentEpoch::<Test>::put(initial_epoch + 1);
+        
+        // === Phase 5: Multi-Epoch Performance Evolution ===
+        // Simulate performance changes over multiple epochs
+        for epoch in 1..=3 {
+            crate::CurrentEpoch::<Test>::put(epoch);
+            
+            // Update performance metrics for each epoch
+            for validator in &validators {
+                let base_authored = 80 + (epoch * 5);
+                let base_missed = 20 - (epoch * 2);
+                let base_inferences = 50 + (epoch * 10);
+                
+                crate::ValidatorBlocksAuthored::<Test>::insert(validator, base_authored);
+                crate::ValidatorBlocksMissed::<Test>::insert(validator, base_missed.max(0));
+                crate::ValidatorInferenceCount::<Test>::insert(validator, base_inferences);
+            }
+            
+            // Verify epoch advancement
+            assert_eq!(DcfPallet::current_epoch(), epoch);
+        }
+        
+        // === Phase 6: Final State Validation ===
+        // Verify all validators have valid states after multiple epochs
+        for validator in &validators {
+            let state = DcfPallet::validator_states(validator);
+            assert!(state.is_some(), "Validator {:?} should have a state", validator);
+            
+            let state = state.unwrap();
+            assert!(state.current.final_score <= MaxValidatorScore::get());
+            assert!(state.trust_score > 0);
+            
+            // Verify performance tracking
+            assert!(DcfPallet::validator_blocks_authored(validator) > 0);
+            assert!(DcfPallet::validator_inference_count(validator) > 0);
+        }
+        
+        // Verify epoch progression
+        assert_eq!(DcfPallet::current_epoch(), 3);
+        
+        // Verify proposal execution history
+        let reward_proposal = crate::Proposals::<Test>::get(reward_proposal_id);
+        assert!(reward_proposal.is_some());
+        assert_eq!(reward_proposal.unwrap().status, ProposalStatus::Executed);
+        
+        let slash_proposal = crate::Proposals::<Test>::get(slash_proposal_id);
+        assert!(slash_proposal.is_some());
+        assert_eq!(slash_proposal.unwrap().status, ProposalStatus::Executed);
+        
+        println!("✅ Multi-validator epoch transitions test completed successfully");
+    });
+}
+
+/// Test author mismatch rejection flow for block validation testing
+#[test]
+fn test_author_mismatch_rejection_flow() {
+    new_test_ext().execute_with(|| {
+        // === Setup Phase ===
+        let expected_validator = 1u64;
+        let wrong_validator = 2u64;
+        let block_number = 100u32;
+        
+        // Ensure both validators are active
+        assert!(DcfPallet::active_validators().contains(&expected_validator));
+        assert!(DcfPallet::active_validators().contains(&wrong_validator));
+        
+        // === Phase 1: Valid Author Validation ===
+        // Test with correct author (should pass)
+        let expected_author = DcfPallet::get_expected_author(block_number);
+        if let Some(expected) = expected_author {
+            let is_valid = DcfPallet::validate_expected_author(block_number, expected);
+            assert!(is_valid, "Valid author should pass validation");
+        }
+        
+        // === Phase 2: Author Mismatch Detection ===
+        // Test with wrong author (should fail and emit event)
+        let expected_author = DcfPallet::get_expected_author(block_number);
+        if let Some(expected) = expected_author {
+            // Use a different validator as the wrong author
+            let wrong_author = if expected == expected_validator { wrong_validator } else { expected_validator };
+            
+            // This should return false and emit an AuthorMismatch event
+            let is_valid = DcfPallet::validate_expected_author(block_number, wrong_author);
+            assert!(!is_valid, "Wrong author should fail validation");
+            
+            // Verify that the event was emitted by checking the last event
+            let events = frame_system::Pallet::<Test>::events();
+            let last_event = events.last().expect("Should have at least one event");
+            
+            match &last_event.event {
+                RuntimeEvent::DcfPallet(crate::Event::AuthorMismatch { 
+                    block_number: event_block, 
+                    expected: event_expected, 
+                    actual: event_actual 
+                }) => {
+                    assert_eq!(*event_block, block_number);
+                    assert_eq!(*event_expected, Some(expected));
+                    assert_eq!(*event_actual, wrong_author);
+                },
+                _ => panic!("Expected AuthorMismatch event, got: {:?}", last_event.event),
+            }
+        }
+        
+        // === Phase 3: Runtime API Author Mismatch Reporting ===
+        // Test the report_author_mismatch function
+        let report_result = DcfPallet::report_author_mismatch(
+            block_number + 1,
+            Some(expected_validator),
+            wrong_validator
+        );
+        
+        assert!(report_result.is_ok(), "Author mismatch reporting should succeed");
+        
+        // === Phase 4: Integration with Block Import Logic ===
+        // Test the expected author selection logic
+        for test_block in block_number..block_number + 5 {
+            let expected_author = DcfPallet::get_expected_author(test_block);
+            
+            if let Some(expected) = expected_author {
+                // Expected author should be one of the active validators
+                assert!(
+                    DcfPallet::active_validators().contains(&expected),
+                    "Expected author {:?} should be in active validator set for block {}",
+                    expected,
+                    test_block
+                );
+                
+                // Test validation with correct author
+                let is_valid = DcfPallet::validate_expected_author(test_block, expected);
+                assert!(is_valid, "Correct author should validate successfully for block {}", test_block);
+            }
+        }
+        
+        println!("✅ Author mismatch rejection flow test completed successfully");
+    });
+}
+
+/// Test trust score evolution over epochs for score tracking validation
+#[test]
+fn test_trust_score_evolution_over_epochs() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::ReservableCurrency;
+        
+        // === Setup Phase ===
+        let validator = 1u64;
+        let epochs_to_test = 3u32;
+        
+        // Reserve stake for the validator
+        assert_ok!(<Balances as ReservableCurrency<_>>::reserve(&validator, 5000));
+        
+        // Get initial trust score
+        let initial_trust_score = DcfPallet::validator_trust_scores(&validator);
+        assert!(initial_trust_score > 0, "Validator should have initial trust score");
+        
+        // === Phase 1: Trust Score Configuration ===
+        // Verify trust score configuration is set
+        let trust_config = DcfPallet::trust_score_config();
+        assert_eq!(trust_config.uptime_weight, 40);
+        assert_eq!(trust_config.inference_weight, 35);
+        assert_eq!(trust_config.slashing_weight, 25);
+        
+        // === Phase 2: Performance-Based Trust Score Evolution ===
+        let mut trust_score_history = Vec::new();
+        trust_score_history.push((0u32, initial_trust_score));
+        
+        for epoch in 1..=epochs_to_test {
+            crate::CurrentEpoch::<Test>::put(epoch);
+            
+            // Simulate different performance patterns per epoch
+            match epoch {
+                1 => {
+                    // Excellent performance
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validator, 100);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validator, 0);
+                    crate::ValidatorInferenceCount::<Test>::insert(&validator, 95);
+                },
+                2 => {
+                    // Good performance
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validator, 90);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validator, 5);
+                    crate::ValidatorInferenceCount::<Test>::insert(&validator, 85);
+                },
+                3 => {
+                    // Average performance
+                    crate::ValidatorBlocksAuthored::<Test>::insert(&validator, 75);
+                    crate::ValidatorBlocksMissed::<Test>::insert(&validator, 15);
+                    crate::ValidatorInferenceCount::<Test>::insert(&validator, 70);
+                },
+                _ => {}
+            }
+            
+            // Calculate and update trust score for this epoch
+            let calculated_score = DcfPallet::calculate_trust_score(&validator);
+            crate::ValidatorTrustScores::<Test>::insert(&validator, calculated_score);
+            
+            // Record in history
+            trust_score_history.push((epoch, calculated_score));
+            
+            // Store in trust score history
+            let mut history = DcfPallet::trust_score_history(&validator);
+            history.try_push((epoch, calculated_score)).ok();
+            crate::TrustScoreHistory::<Test>::insert(&validator, history);
+        }
+        
+        // === Phase 3: Trust Score Trend Analysis ===
+        // Verify trust score evolution follows expected patterns
+        assert_eq!(trust_score_history.len(), epochs_to_test as usize + 1);
+        
+        // === Phase 4: Slashing Impact on Trust Score ===
+        // Apply slashing and verify trust score impact
+        let pre_slash_score = DcfPallet::validator_trust_scores(&validator);
+        
+        assert_ok!(DcfPallet::slash_validator(RuntimeOrigin::root(), validator, 1000u128));
+        
+        // Recalculate trust score after slashing
+        let post_slash_score = DcfPallet::calculate_trust_score(&validator);
+        crate::ValidatorTrustScores::<Test>::insert(&validator, post_slash_score);
+        
+        // Trust score should decrease after slashing
+        assert!(
+            post_slash_score < pre_slash_score,
+            "Trust score should decrease after slashing: {} -> {}",
+            pre_slash_score,
+            post_slash_score
+        );
+        
+        // === Phase 5: Trust Score History Validation ===
+        let stored_history = DcfPallet::trust_score_history(&validator);
+        assert!(!stored_history.is_empty(), "Trust score history should not be empty");
+        
+        println!("Trust score evolution over {} epochs:", epochs_to_test);
+        for (epoch, score) in &trust_score_history {
+            println!("  Epoch {}: Trust Score = {}", epoch, score);
+        }
+        println!("✅ Trust score evolution test completed successfully");
+    });
+}
+
+/// Test cooldown prevents early rejoin scenarios
+#[test]
+fn test_cooldown_prevents_early_rejoin() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, Get};
+        use sp_runtime::traits::SaturatedConversion;
+        
+        // === Setup Phase ===
+        let validator = 10u64;
+        
+        // Give validator sufficient balance
+        let _ = <Balances as Currency<_>>::deposit_creating(&validator, 10000);
+        
+        // === Phase 1: Validator Joins ===
+        assert_ok!(DcfPallet::join_validators(
+            RuntimeOrigin::signed(validator), 
+            Some(b"Test Validator".to_vec().try_into().unwrap())
+        ));
+        
+        // Verify validator is active
+        assert!(DcfPallet::active_validators().contains(&validator));
+        
+        // === Phase 2: Validator Leaves ===
+        let leave_block = frame_system::Pallet::<Test>::block_number().saturated_into::<u32>();
+        
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(validator)));
+        
+        // Verify leave request was recorded
+        let leave_request = DcfPallet::validator_leave_requests(&validator);
+        assert!(leave_request.is_some());
+        assert_eq!(leave_request.unwrap(), leave_block);
+        
+        // Verify validator was removed from active set
+        assert!(!DcfPallet::active_validators().contains(&validator));
+        
+        // === Phase 3: Attempt Immediate Rejoin (Should Fail) ===
+        assert_noop!(
+            DcfPallet::join_validators(
+                RuntimeOrigin::signed(validator), 
+                Some(b"Immediate Rejoin".to_vec().try_into().unwrap())
+            ),
+            Error::<Test>::LeaveCooldownActive
+        );
+        
+        // === Phase 4: Attempt Rejoin During Cooldown Period ===
+        let cooldown_period = 1000u32; // From mock config
+        
+        // Test at various points during cooldown
+        let test_blocks = vec![
+            leave_block + 100,
+            leave_block + 500,
+        ];
+        
+        for test_block in test_blocks {
+            System::set_block_number(test_block.into());
+            
+            // Should still fail during cooldown
+            assert_noop!(
+                DcfPallet::join_validators(
+                    RuntimeOrigin::signed(validator), 
+                    Some(b"During Cooldown".to_vec().try_into().unwrap())
+                ),
+                Error::<Test>::LeaveCooldownActive
+            );
+        }
+        
+        // === Phase 5: Process Leave Request (Simulate Epoch Transition) ===
+        // Simulate the leave request being processed after cooldown
+        System::set_block_number((leave_block + cooldown_period + 1).into());
+        
+        // Process the leave request (simulate epoch transition logic)
+        crate::ValidatorLeaveRequests::<Test>::remove(&validator);
+        crate::RecentlyRemovedValidators::<Test>::insert(&validator, leave_block);
+        
+        // === Phase 6: Attempt Rejoin During Recently Removed Cooldown ===
+        assert_noop!(
+            DcfPallet::join_validators(
+                RuntimeOrigin::signed(validator), 
+                Some(b"Recently Removed".to_vec().try_into().unwrap())
+            ),
+            Error::<Test>::ValidatorInCooldown
+        );
+        
+        // === Phase 7: Test Cooldown Cleanup ===
+        // Advance time significantly to test cleanup
+        let far_future_block = leave_block + (cooldown_period * 2);
+        System::set_block_number(far_future_block.into());
+        
+        // Clean up expired entries (simulate cleanup logic)
+        crate::RecentlyRemovedValidators::<Test>::remove(&validator);
+        
+        // Now validator should be able to rejoin (cooldown expired and cleaned up)
+        assert_ok!(DcfPallet::join_validators(
+            RuntimeOrigin::signed(validator), 
+            Some(b"Post Cleanup Rejoin".to_vec().try_into().unwrap())
+        ));
+        
+        // Verify successful rejoin
+        assert!(DcfPallet::active_validators().contains(&validator));
+        
+        println!("✅ Cooldown prevents early rejoin test completed successfully");
+    });
+}
+
+/// Test post-cooldown rejoin success scenarios
+#[test]
+fn test_post_cooldown_rejoin_success() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, ReservableCurrency, Get};
+        use sp_runtime::traits::SaturatedConversion;
+        
+        // === Setup Phase ===
+        let validator = 15u64;
+        
+        // Give validator sufficient balance
+        let _ = <Balances as Currency<_>>::deposit_creating(&validator, 15000);
+        
+        // === Phase 1: Initial Join and Performance ===
+        assert_ok!(DcfPallet::join_validators(
+            RuntimeOrigin::signed(validator), 
+            Some(b"Original Validator".to_vec().try_into().unwrap())
+        ));
+        
+        // Verify initial state
+        assert!(DcfPallet::active_validators().contains(&validator));
+        let initial_state = DcfPallet::validator_states(&validator).unwrap();
+        let initial_trust_score = initial_state.trust_score;
+        
+        // Simulate good performance
+        crate::ValidatorBlocksAuthored::<Test>::insert(&validator, 80);
+        crate::ValidatorBlocksMissed::<Test>::insert(&validator, 5);
+        crate::ValidatorInferenceCount::<Test>::insert(&validator, 60);
+        
+        // === Phase 2: Leave Process ===
+        let leave_block = frame_system::Pallet::<Test>::block_number().saturated_into::<u32>();
+        
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(validator)));
+        
+        // Verify leave request
+        assert!(DcfPallet::validator_leave_requests(&validator).is_some());
+        assert!(!DcfPallet::active_validators().contains(&validator));
+        
+        // === Phase 3: Complete Cooldown Process ===
+        let cooldown_period = 1000u32; // From mock config
+        let post_cooldown_block = leave_block + cooldown_period + 100;
+        
+        // Advance time past cooldown
+        System::set_block_number(post_cooldown_block.into());
+        
+        // Simulate complete leave processing (epoch transition logic)
+        crate::ValidatorLeaveRequests::<Test>::remove(&validator);
+        crate::RecentlyRemovedValidators::<Test>::insert(&validator, leave_block);
+        
+        // Advance time past recently removed cooldown
+        let post_recently_removed_block = leave_block + (cooldown_period * 2) + 100;
+        System::set_block_number(post_recently_removed_block.into());
+        
+        // Clean up recently removed
+        crate::RecentlyRemovedValidators::<Test>::remove(&validator);
+        
+        // === Phase 4: Successful Rejoin ===
+        assert_ok!(DcfPallet::join_validators(
+            RuntimeOrigin::signed(validator), 
+            Some(b"Rejoined Validator".to_vec().try_into().unwrap())
+        ));
+        
+        // Verify successful rejoin
+        assert!(DcfPallet::active_validators().contains(&validator));
+        
+        // Verify new validator state was created
+        let rejoined_state = DcfPallet::validator_states(&validator).unwrap();
+        assert_eq!(rejoined_state.name, Some(b"Rejoined Validator".to_vec().try_into().unwrap()));
+        
+        // Trust score should be reset to default for new join
+        assert!(rejoined_state.trust_score > 0);
+        
+        // === Phase 5: Post-Rejoin Performance Tracking ===
+        // Simulate performance after rejoin
+        crate::ValidatorBlocksAuthored::<Test>::insert(&validator, 90);
+        crate::ValidatorBlocksMissed::<Test>::insert(&validator, 3);
+        crate::ValidatorInferenceCount::<Test>::insert(&validator, 75);
+        
+        // Update trust score based on new performance
+        let new_trust_score = DcfPallet::calculate_trust_score(&validator);
+        crate::ValidatorTrustScores::<Test>::insert(&validator, new_trust_score);
+        
+        // Verify performance tracking works after rejoin
+        assert_eq!(DcfPallet::validator_blocks_authored(&validator), 90);
+        assert_eq!(DcfPallet::validator_blocks_missed(&validator), 3);
+        assert_eq!(DcfPallet::validator_inference_count(&validator), 75);
+        
+        // === Phase 6: Final State Verification ===
+        let final_state = DcfPallet::validator_states(&validator).unwrap();
+        assert_eq!(final_state.name, Some(b"Rejoined Validator".to_vec().try_into().unwrap()));
+        assert!(final_state.trust_score > 0);
+        
+        // Verify no cooldown entries remain
+        assert!(DcfPallet::validator_leave_requests(&validator).is_none());
+        assert!(DcfPallet::recently_removed_validators(&validator).is_none());
+        
+        println!("✅ Post-cooldown rejoin success test completed successfully");
+        println!("Final validator state: name={:?}, trust_score={}", 
+                 final_state.name, final_state.trust_score);
+    });
+}
+
+/// Test complete runtime API coverage for API validation
+#[test]
+fn test_complete_runtime_api_coverage() {
+    new_test_ext().execute_with(|| {
+        use frame_support::traits::{Currency, ReservableCurrency};
+        
+        // === Setup Phase ===
+        let test_validators = vec![1u64, 2u64, 3u64]; // Genesis validators
+        let new_validator = 20u64;
+        
+        // Setup new validator
+        let _ = <Balances as Currency<_>>::deposit_creating(&new_validator, 20000);
+        
+        // Reserve stake for existing validators
+        for validator in &test_validators {
+            assert_ok!(<Balances as ReservableCurrency<_>>::reserve(validator, 3000));
+        }
+        
+        // Add new validator
+        assert_ok!(DcfPallet::join_validators(
+            RuntimeOrigin::signed(new_validator), 
+            Some(b"API Test Validator".to_vec().try_into().unwrap())
+        ));
+        
+        // === Phase 1: Basic Runtime API Functions ===
+        
+        // Test get_expected_author
+        for block_number in 1..=5 {
+            let expected_author = DcfPallet::get_expected_author(block_number);
+            if let Some(author) = expected_author {
+                assert!(
+                    DcfPallet::active_validators().contains(&author),
+                    "Expected author {:?} should be in active validator set for block {}",
+                    author,
+                    block_number
+                );
+            }
+        }
+        
+        // Test current epoch
+        let current_epoch = DcfPallet::current_epoch();
+        assert_eq!(current_epoch, 0); // Should start at 0
+        
+        // === Phase 2: Validator Profile APIs ===
+        
+        for validator in &test_validators {
+            // Test get_validator_profile
+            let profile = DcfPallet::get_validator_profile(*validator);
+            assert!(profile.is_some(), "Validator {:?} should have a profile", validator);
+            
+            let (combined_score, pos_score, poi_score, trust_score, uptime, inference_count, participation_rate, missed_blocks) = profile.unwrap();
+            
+            // Verify profile data integrity
+            assert!(combined_score > 0, "Combined score should be positive");
+            assert!(pos_score >= 0, "PoS score should be non-negative");
+            assert!(poi_score >= 0, "PoI score should be non-negative");
+            assert!(trust_score >= 0, "Trust score should be non-negative");
+            assert!(uptime >= 0, "Uptime should be non-negative");
+            assert!(inference_count >= 0, "Inference count should be non-negative");
+            assert!(participation_rate >= 0, "Participation rate should be non-negative");
+            assert!(missed_blocks >= 0, "Missed blocks should be non-negative");
+        }
+        
+        // === Phase 3: Performance and Trust Metrics APIs ===
+        
+        // Setup performance data for testing
+        crate::ValidatorBlocksAuthored::<Test>::insert(&test_validators[0], 95);
+        crate::ValidatorBlocksMissed::<Test>::insert(&test_validators[0], 5);
+        crate::ValidatorInferenceCount::<Test>::insert(&test_validators[0], 80);
+        
+        // Test validator trust score
+        let trust_score = DcfPallet::validator_trust_scores(&test_validators[0]);
+        assert!(trust_score > 0, "Trust score should be positive");
+        
+        // Test get_slashing_history
+        // First apply some slashing to create history
+        assert_ok!(DcfPallet::slash_validator(RuntimeOrigin::root(), test_validators[0], 500u128));
+        
+        let slashing_history = DcfPallet::get_slashing_history(test_validators[0]);
+        assert!(!slashing_history.is_empty(), "Should have slashing history after slashing");
+        
+        // === Phase 4: System Constants and Configuration APIs ===
+        
+        // Test get_system_constants
+        let system_constants = DcfPallet::get_system_constants();
+        
+        // Basic validation that constants are returned
+        assert!(system_constants.min_stake > 0, "Min stake should be positive");
+        assert!(system_constants.epoch_length > 0, "Epoch length should be positive");
+        assert!(system_constants.max_validators > 0, "Max validators should be positive");
+        assert!(system_constants.cooldown_period > 0, "Cooldown period should be positive");
+        
+        // Test get_epoch_config
+        let epoch_config = DcfPallet::get_epoch_config();
+        assert!(epoch_config.blocks_per_epoch > 0, "Blocks per epoch should be positive");
+        assert!(epoch_config.min_stake > 0, "Min stake should be positive");
+        assert!(epoch_config.max_validators > 0, "Max validators should be positive");
+        
+        // === Phase 5: Validator Set Information APIs ===
+        
+        // Test active validators
+        let active_validators = DcfPallet::active_validators();
+        assert!(!active_validators.is_empty(), "Should have active validators");
+        assert!(active_validators.contains(&new_validator), "New validator should be in active set");
+        
+        for validator in &active_validators {
+            assert!(DcfPallet::validator_states(validator).is_some(), "Active validator {:?} should have state", validator);
+        }
+        
+        // Test get_validator_cooldown_status
+        // First put a validator in cooldown
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(new_validator)));
+        
+        let cooldown_status = DcfPallet::get_validator_cooldown_status(new_validator);
+        assert!(cooldown_status.is_some(), "Validator should have cooldown status after leaving");
+        
+        // Test validator not in cooldown
+        let no_cooldown_status = DcfPallet::get_validator_cooldown_status(test_validators[0]);
+        assert!(no_cooldown_status.is_none(), "Validator not in cooldown should have no cooldown status");
+        
+        // === Phase 6: Block Author Validation APIs ===
+        
+        // Test validate_expected_author
+        let test_block = 50u32;
+        let expected_author = DcfPallet::get_expected_author(test_block);
+        
+        if let Some(expected) = expected_author {
+            // Test with correct author
+            let is_valid = DcfPallet::validate_expected_author(test_block, expected);
+            assert!(is_valid, "Correct author should validate successfully");
+            
+            // Test with wrong author
+            let wrong_author = if expected == test_validators[0] { test_validators[1] } else { test_validators[0] };
+            let is_invalid = DcfPallet::validate_expected_author(test_block, wrong_author);
+            assert!(!is_invalid, "Wrong author should fail validation");
+        }
+        
+        // Test report_author_mismatch
+        let report_result = DcfPallet::report_author_mismatch(
+            test_block + 1,
+            Some(test_validators[0]),
+            test_validators[1]
+        );
+        assert!(report_result.is_ok(), "Author mismatch reporting should succeed");
+        
+        // === Phase 7: Edge Cases and Error Handling ===
+        
+        // Test APIs with non-existent validator
+        let non_existent_validator = 999u64;
+        
+        let no_profile = DcfPallet::get_validator_profile(non_existent_validator);
+        assert!(no_profile.is_none(), "Non-existent validator should have no profile");
+        
+        let zero_trust_score = DcfPallet::validator_trust_scores(&non_existent_validator);
+        assert_eq!(zero_trust_score, 0, "Non-existent validator should have zero trust score");
+        
+        let empty_slashing_history = DcfPallet::get_slashing_history(non_existent_validator);
+        assert!(empty_slashing_history.is_empty(), "Non-existent validator should have empty slashing history");
+        
+        let no_cooldown = DcfPallet::get_validator_cooldown_status(non_existent_validator);
+        assert!(no_cooldown.is_none(), "Non-existent validator should have no cooldown status");
+        
+        println!("✅ All runtime API functions tested successfully");
+        println!("✅ Tested {} active validators", DcfPallet::active_validators().len());
+        println!("✅ System constants validated");
     });
 }

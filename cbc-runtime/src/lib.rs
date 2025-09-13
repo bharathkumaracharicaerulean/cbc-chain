@@ -35,6 +35,16 @@ pub use sp_runtime::BuildStorage; // Utility for building storage during tests o
 
 pub mod genesis_config_presets; // Preset configurations for the genesis block.
 
+// Test and benchmarking modules
+#[cfg(test)]
+pub mod mock; // Mock runtime for testing
+
+#[cfg(test)]
+pub mod tests; // Runtime integration tests
+
+#[cfg(feature = "runtime-benchmarks")]
+pub mod benchmark_tests; // Benchmarking tests
+
 /// Opaque types are used to abstract away the specifics of runtime data structures.
 /// These types are used by the CLI and other tools to interact with the runtime without
 /// needing to know the exact implementation details.

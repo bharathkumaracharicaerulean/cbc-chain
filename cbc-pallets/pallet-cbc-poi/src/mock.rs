@@ -82,6 +82,14 @@ impl pallet_cbc_poi::Config for Test {
     type PosInterface = DummyPosInterface;
 }
 
+// Mock DcfInterface implementation
+pub struct MockDcfInterface;
+impl pallet_cbc_poi::DcfInterface<u64> for MockDcfInterface {
+    fn record_inference_activity(_validator: &u64) -> frame_support::dispatch::DispatchResult {
+        Ok(())
+    }
+}
+
 // Helper function to build genesis storage for tests.
 // Returns a TestExternalities instance for executing tests in an isolated environment.
 pub fn new_test_ext() -> sp_io::TestExternalities {

@@ -1,28 +1,31 @@
-//! Mock runtime for DCF pallet tests
+//! Mock runtime for CBC consensus tests
 
 use super::*;
 use frame_support::{
     parameter_types,
-    traits::{ConstU32, ConstU64, ConstU128, ConstU8},
+    traits::{ConstU32, ConstU64, ConstU128},
     weights::Weight,
 };
 use sp_runtime::{
     traits::{BlakeTwo256, IdentityLookup},
-    BuildStorage,
+    BuildStorage, Perbill,
 };
+use sp_core::{H256, sr25519::{Pair, Public}};
+use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
+use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use std::sync::Arc;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
-// Configure a mock runtime to test the pallet.
+// Configure a mock runtime to test the consensus module
 frame_support::construct_runtime!(
     pub enum Test
     {
         System: frame_system,
         Balances: pallet_balances,
         Timestamp: pallet_timestamp,
-        DcfPallet: crate,
-        PalletCbcPos: pallet_cbc_pos,
-        PalletCbcPoi: pallet_cbc_poi,
+        Aura: pallet_aura,
+        DcfPallet: pallet_cbc_dcf,
     }
 );
 
@@ -34,7 +37,7 @@ impl frame_system::Config for Test {
     type RuntimeOrigin = RuntimeOrigin;
     type RuntimeCall = RuntimeCall;
     type Nonce = u64;
-    type Hash = sp_core::H256;
+    type Hash = H256;
     type Hashing = BlakeTwo256;
     type AccountId = u64;
     type Lookup = IdentityLookup<Self::AccountId>;
@@ -84,42 +87,18 @@ impl pallet_timestamp::Config for Test {
 }
 
 parameter_types! {
-    pub const MinStake: u128 = 1000;
-    pub const MaxValidators: u32 = 100;
-    pub const MaxSlashingCount: u32 = 3;
-    pub const MinValidatorScore: u32 = 50;
-    pub const ValidatorScoreDecay: u32 = 10;
-    pub const MinInferenceConfidence: u32 = 80;
-    pub const MaxInferenceAge: u32 = 10;
-    pub const ChallengeWindow: u32 = 5;
-    pub const InferenceReward: u128 = 1000;
-    pub const ChallengeReward: u128 = 500;
+    pub const MaxAuthorities: u32 = 32;
 }
 
-impl pallet_cbc_pos::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type Balance = u128;
-    type MinStake = MinStake;
-    type MaxValidators = MaxValidators;
-    type MaxSlashingCount = MaxSlashingCount;
-    type MinValidatorScore = MinValidatorScore;
-    type MinActiveValidators = MinActiveValidators;
-    type ValidatorScoreDecay = ValidatorScoreDecay;
-    type WeightInfo = ();
+impl pallet_aura::Config for Test {
+    type AuthorityId = AuraId;
+    type DisabledValidators = ();
+    type MaxAuthorities = MaxAuthorities;
+    type AllowMultipleBlocksPerSlot = ConstBool<false>;
+    type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Test>;
 }
 
-impl pallet_cbc_poi::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type MinInferenceConfidence = MinInferenceConfidence;
-    type MaxInferenceAge = MaxInferenceAge;
-    type ChallengeWindow = ChallengeWindow;
-    type InferenceReward = InferenceReward;
-    type ChallengeReward = ChallengeReward;
-    type PosInterface = MockPosInterface;
-    type DcfInterface = crate::Pallet<Test>;
-    type WeightInfo = ();
-}
-
+// Mock DCF pallet configuration
 parameter_types! {
     pub const DcfMaxValidators: u32 = 100;
     pub const MaxEpochHistory: u32 = 24;
@@ -140,88 +119,29 @@ parameter_types! {
     pub const DcfMinStake: u128 = 1000;
 }
 
-// Mock PosInterface implementation
-pub struct MockPosInterface;
-impl pallet_cbc_poi::PosInterface<u64> for MockPosInterface {
-    fn boost_score(_validator: &u64, _weight: u32) -> DispatchResult {
-        Ok(())
-    }
-    fn slash_score(_validator: &u64, _weight: u32) -> DispatchResult {
-        Ok(())
-    }
-}
-
-// Mock DcfInterface implementation for PoI pallet
-pub struct MockDcfInterface;
-impl pallet_cbc_poi::DcfInterface<u64> for MockDcfInterface {
-    fn record_inference_activity(_validator: &u64) -> DispatchResult {
-        Ok(())
-    }
-}
-
-// Mock weight info
+// Mock weight info for DCF pallet
 pub struct MockWeightInfo;
-impl WeightInfo for MockWeightInfo {
-    fn on_initialize() -> Weight {
-        Weight::from_parts(10_000, 0)
-    }
-    fn offchain_worker() -> Weight {
-        Weight::from_parts(10_000, 0)
-    }
-    fn update_validator_stake_score() -> Weight {
-        Weight::from_parts(10_000, 0)
-    }
-    fn update_validator_inference_score() -> Weight {
-        Weight::from_parts(10_000, 0)
-    }
-    fn update_consensus_weights() -> Weight {
-        Weight::from_parts(10_000, 0)
-    }
-    fn set_governance_mode() -> Weight {
-        Weight::from_parts(10_000, 0)
-    }
-    fn sudo_advance_epoch() -> Weight {
-        Weight::from_parts(50_000, 0)
-    }
-    fn submit_proposal() -> Weight {
-        Weight::from_parts(20_000, 0)
-    }
-    fn vote_proposal() -> Weight {
-        Weight::from_parts(15_000, 0)
-    }
-    fn execute_proposal() -> Weight {
-        Weight::from_parts(30_000, 0)
-    }
-    fn join_validator_set() -> Weight {
-        Weight::from_parts(25_000, 0)
-    }
-    fn leave_validator_set() -> Weight {
-        Weight::from_parts(25_000, 0)
-    }
-    fn set_validator_name() -> Weight {
-        Weight::from_parts(15_000, 0)
-    }
-    fn apply_offchain_poi_scores() -> Weight {
-        Weight::from_parts(40_000, 0)
-    }
-    fn on_initialize_with_validators(v: u32) -> Weight {
-        Weight::from_parts(10_000u64.saturating_mul(v as u64), 0)
-    }
-    fn apply_score_decay_multiple(v: u32) -> Weight {
-        Weight::from_parts(5_000u64.saturating_mul(v as u64), 0)
-    }
-    fn validator_set_operations(v: u32) -> Weight {
-        Weight::from_parts(3_000u64.saturating_mul(v as u64), 0)
-    }
-    fn runtime_api_calls(v: u32) -> Weight {
-        Weight::from_parts(2_000u64.saturating_mul(v as u64), 0)
-    }
-    fn epoch_transition_multiple(v: u32) -> Weight {
-        Weight::from_parts(15_000u64.saturating_mul(v as u64), 0)
-    }
-    fn governance_with_multiple_voters(v: u32) -> Weight {
-        Weight::from_parts(8_000u64.saturating_mul(v as u64), 0)
-    }
+impl pallet_cbc_dcf::WeightInfo for MockWeightInfo {
+    fn on_initialize() -> Weight { Weight::from_parts(10_000, 0) }
+    fn offchain_worker() -> Weight { Weight::from_parts(10_000, 0) }
+    fn update_validator_stake_score() -> Weight { Weight::from_parts(10_000, 0) }
+    fn update_validator_inference_score() -> Weight { Weight::from_parts(10_000, 0) }
+    fn update_consensus_weights() -> Weight { Weight::from_parts(10_000, 0) }
+    fn set_governance_mode() -> Weight { Weight::from_parts(10_000, 0) }
+    fn sudo_advance_epoch() -> Weight { Weight::from_parts(50_000, 0) }
+    fn submit_proposal() -> Weight { Weight::from_parts(20_000, 0) }
+    fn vote_proposal() -> Weight { Weight::from_parts(15_000, 0) }
+    fn execute_proposal() -> Weight { Weight::from_parts(30_000, 0) }
+    fn join_validator_set() -> Weight { Weight::from_parts(25_000, 0) }
+    fn leave_validator_set() -> Weight { Weight::from_parts(25_000, 0) }
+    fn set_validator_name() -> Weight { Weight::from_parts(15_000, 0) }
+    fn apply_offchain_poi_scores() -> Weight { Weight::from_parts(40_000, 0) }
+    fn on_initialize_with_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
+    fn apply_score_decay_multiple(_v: u32) -> Weight { Weight::from_parts(5_000, 0) }
+    fn validator_set_operations(_v: u32) -> Weight { Weight::from_parts(3_000, 0) }
+    fn runtime_api_calls(_v: u32) -> Weight { Weight::from_parts(2_000, 0) }
+    fn epoch_transition_multiple(_v: u32) -> Weight { Weight::from_parts(15_000, 0) }
+    fn governance_with_multiple_voters(_v: u32) -> Weight { Weight::from_parts(8_000, 0) }
     fn join_validators() -> Weight { Weight::from_parts(10_000, 0) }
     fn leave_validators() -> Weight { Weight::from_parts(10_000, 0) }
     fn slash_validator() -> Weight { Weight::from_parts(10_000, 0) }
@@ -246,7 +166,7 @@ impl WeightInfo for MockWeightInfo {
     fn propose_reward_multiple_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
 }
 
-impl Config for Test {
+impl pallet_cbc_dcf::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type MaxValidators = DcfMaxValidators;
     type MaxEpochHistory = MaxEpochHistory;
@@ -269,15 +189,13 @@ impl Config for Test {
     type Currency = Balances;
     type WeightInfo = MockWeightInfo;
 
-    // Constants for hardcoded values
+    // Additional required parameters
     type MaxValidatorHistorySize = ConstU32<10>;
     type MaxValidatorNameSize = ConstU32<32>;
     type MaxRuntimeApiBoundedVecSize = ConstU32<100>;
     type MaxProposalActionBoundedVecSize = ConstU32<100>;
     type AuthorNotActiveErrorCode = ConstU8<1>;
     type AuthorMismatchErrorCode = ConstU8<2>;
-    
-    // Missing configuration parameters
     type MaxInactiveEpochs = ConstU32<5>;
     type ScoreDecayInterval = ConstU32<10>;
     type ParticipationUpdateInterval = ConstU32<100>;
@@ -288,22 +206,14 @@ impl Config for Test {
     type LeaveCooldown = ConstU32<1000>;
     type EpochLength = ConstU32<2400>;
     type PercentagePrecision = ConstU32<10000>;
-
-    // Trust score weights
     type TrustScoreUptimeWeight = ConstU64<4000>;
     type TrustScoreInferenceWeight = ConstU64<4000>;
     type TrustScoreSlashingWeight = ConstU64<2000>;
     type MaxTrustScore = ConstU64<10000>;
-
-    // Misbehavior reporting
     type MaxEvidenceLength = ConstU32<1000>;
     type MisbehaviorSlashThreshold = ConstU32<3>;
-    
-    // Off-chain worker configuration
     type OffchainWorkerTimeout = ConstU64<5000>;
     type EstimatedBlockTime = ConstU64<6000>;
-    
-    // Performance thresholds
     type MinPerformanceScore = ConstU64<30>;
     type HighPerformanceScore = ConstU64<80>;
     type MinParticipationRate = ConstU32<50>;
@@ -313,31 +223,20 @@ impl Config for Test {
     type HealthyValidatorScore = ConstU64<50>;
     type HealthyParticipationRate = ConstU32<80>;
     type HealthyMissedBlocksMax = ConstU32<5>;
-    
-    // Score calculation thresholds
     type ScoreChangeThreshold = ConstU64<1000>;
     type ScoreChangePercentage = ConstU32<10>;
     type ScoreImprovementThreshold = ConstU64<1000>;
     type ScoreImprovementPercentage = ConstU32<10>;
-    
-    // Contribution balance thresholds
     type MaxPosContribution = ConstU32<90>;
     type MaxPoiContribution = ConstU32<90>;
     type ImbalanceWarningThreshold = ConstU32<85>;
-    
-    // Block processing intervals
     type LeaveRequestCheckInterval = ConstU32<10>;
     type MetricsUpdateInterval = ConstU32<10>;
     type ScoreRefreshInterval = ConstU32<50>;
     type DetailedLoggingInterval = ConstU32<100>;
     type ImbalanceCheckInterval = ConstU32<500>;
-    
-    // Validator set limits
     type TopValidatorsDisplayCount = ConstU32<5>;
     type HealthCheckSampleSize = ConstU32<5>;
-    
-
-    // Additional missing parameters
     type InferenceConfidenceThresholdLow = ConstU32<70>;
     type InferenceConfidenceThresholdHigh = ConstU32<90>;
     type MaxSlashPenalty = ConstU64<50>;
@@ -357,18 +256,14 @@ impl Config for Test {
     type FullPercentage = ConstU32<100>;
     type HighPerformancePercentage = ConstU32<80>;
     type TopPerformerPercentage = ConstU32<20>;
-
-    // Reward distribution percentages
     type BaseRewardPercentage = ConstU32<60>;
     type PerformanceRewardPercentage = ConstU32<25>;
     type TopPerformerRewardPercentage = ConstU32<15>;
-
-    // Trust score configuration (already defined above, removing duplicates)
 }
 
+use frame_support::traits::ConstBool;
 
-
-// Build genesis storage according to the mock runtime.
+// Helper functions for testing
 pub fn new_test_ext() -> sp_io::TestExternalities {
     let mut storage = frame_system::GenesisConfig::<Test>::default()
         .build_storage()
@@ -386,54 +281,118 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     .assimilate_storage(&mut storage)
     .unwrap();
 
-    crate::GenesisConfig::<Test> {
-        validators: vec![1, 2, 3],
-        validator_scores: vec![6000, 7000, 8000],
-        validator_stakes: vec![1000, 1000, 1000],
-        validator_names: vec![],
-        current_epoch: 0,
-        epoch_config: EpochConfig {
-            blocks_per_epoch: 10,
-            min_stake: 1000,
-            max_validators: 100,
-        },
-        strict_validation: false,
-    }
-    .assimilate_storage(&mut storage)
-    .unwrap();
-
-    storage.into()
+    let mut ext = sp_io::TestExternalities::from(storage);
+    
+    // Setup keystore for consensus testing
+    let keystore = MemoryKeystore::new();
+    ext.register_extension(KeystoreExt(Arc::new(keystore)));
+    
+    ext
 }
 
-pub fn new_test_ext_with_genesis(genesis_config: crate::GenesisConfig<Test>) -> sp_io::TestExternalities {
-    let mut storage = frame_system::GenesisConfig::<Test>::default()
-        .build_storage()
-        .unwrap();
+pub fn new_test_ext_with_authorities(authorities: Vec<AuraId>) -> sp_io::TestExternalities {
+    let mut ext = new_test_ext();
+    
+    ext.execute_with(|| {
+        // Initialize Aura with authorities
+        pallet_aura::Authorities::<Test>::put(&authorities);
+    });
+    
+    ext
+}
 
-    // Initialize balances for all potential test accounts (including genesis validators)
-    let mut balances = vec![
-        (1, 10000), (2, 10000), (3, 10000), (4, 10000), (5, 10000),
-    ];
+// Helper to create test authorities
+pub fn create_test_authorities(count: u32) -> Vec<AuraId> {
+    (0..count)
+        .map(|i| {
+            let pair = Pair::from_seed(&[i as u8; 32]);
+            AuraId::from(pair.public())
+        })
+        .collect()
+}
 
-    // Add balances for genesis validators
-    for (i, validator) in genesis_config.validators.iter().enumerate() {
-        let balance = if i < genesis_config.validator_stakes.len() {
-            genesis_config.validator_stakes[i] * 2
-        } else {
-            2000 // Default balance
+// Helper to create test validator set
+pub fn create_test_validator_set(count: u32) -> Vec<u64> {
+    (1..=count).collect()
+}
+
+// Mock consensus configuration
+pub struct MockConsensusConfig {
+    pub slot_duration: u64,
+    pub epoch_length: u32,
+    pub authorities: Vec<AuraId>,
+    pub validators: Vec<u64>,
+}
+
+impl Default for MockConsensusConfig {
+    fn default() -> Self {
+        Self {
+            slot_duration: 6000, // 6 seconds
+            epoch_length: 2400,  // 4 hours at 6s per block
+            authorities: create_test_authorities(4),
+            validators: create_test_validator_set(4),
+        }
+    }
+}
+
+// Helper to setup consensus test environment
+pub fn setup_consensus_test(config: MockConsensusConfig) -> sp_io::TestExternalities {
+    let mut ext = new_test_ext_with_authorities(config.authorities);
+    
+    ext.execute_with(|| {
+        // Setup DCF pallet with test validators
+        let genesis_config = pallet_cbc_dcf::GenesisConfig::<Test> {
+            validators: config.validators.clone(),
+            validator_scores: vec![6000; config.validators.len()],
+            validator_stakes: vec![1000; config.validators.len()],
+            validator_names: vec![],
+            current_epoch: 0,
+            epoch_config: pallet_cbc_dcf::EpochConfig {
+                blocks_per_epoch: config.epoch_length,
+                min_stake: 1000,
+                max_validators: 100,
+            },
+            strict_validation: false,
         };
-        balances.push((*validator, balance));
-    }
-
-    pallet_balances::GenesisConfig::<Test> {
-        balances,
-        dev_accounts: None,
-    }
-    .assimilate_storage(&mut storage)
-    .unwrap();
-
-    // Use the provided genesis config
-    genesis_config.assimilate_storage(&mut storage).unwrap();
-
-    storage.into()
+        
+        // Manually initialize DCF storage
+        for (i, validator) in config.validators.iter().enumerate() {
+            let validator_state = pallet_cbc_dcf::ValidatorState {
+                last_active_epoch: 0,
+                current: pallet_cbc_dcf::EpochStats {
+                    epoch: 0,
+                    stake_score: 1000,
+                    inference_score: 800,
+                    final_score: 900,
+                    authored_blocks: 0,
+                    missed_blocks: 0,
+                },
+                history: frame_support::BoundedVec::default(),
+                uptime: 0,
+                inference_success_count: 0,
+                participation_rate: 100,
+                inference_count: 0,
+                last_active_block: 0,
+                name: None,
+                trust_score: 0,
+            };
+            
+            pallet_cbc_dcf::ValidatorStates::<Test>::insert(validator, validator_state);
+            pallet_cbc_dcf::ValidatorStake::<Test>::insert(validator, 1000u128);
+        }
+        
+        let bounded_validators = frame_support::BoundedVec::try_from(config.validators.clone())
+            .expect("Too many validators for test");
+        pallet_cbc_dcf::ValidatorSet::<Test>::put(bounded_validators.clone());
+        pallet_cbc_dcf::ActiveValidators::<Test>::put(bounded_validators);
+        
+        pallet_cbc_dcf::CurrentEpoch::<Test>::put(0);
+        pallet_cbc_dcf::EpochConfigStorage::<Test>::put(pallet_cbc_dcf::EpochConfig {
+            blocks_per_epoch: config.epoch_length,
+            min_stake: 1000,
+            max_validators: 100,
+        });
+    });
+    
+    ext
 }

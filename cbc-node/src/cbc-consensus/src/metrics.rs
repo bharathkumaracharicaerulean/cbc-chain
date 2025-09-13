@@ -4,6 +4,9 @@
 //! including validator economics, rewards, and slashing data.
 
 use sp_runtime::traits::Block as BlockTrait;
+use sp_api::ProvideRuntimeApi;
+use sp_blockchain::HeaderBackend;
+
 use std::collections::HashMap;
 use std::time::Instant;
 use std::sync::Arc;
@@ -12,6 +15,8 @@ use prometheus::{
     Registry, Counter, Gauge, Histogram, HistogramOpts, Opts,
     register_counter_with_registry, register_gauge_with_registry, register_histogram_with_registry,
 };
+use pallet_cbc_dcf::DcfApi;
+// Remove unused imports - we'll use the runtime types directly in the trait bound
 
 /// Validator economics metrics for Prometheus
 #[derive(Clone)]
@@ -132,8 +137,108 @@ impl ValidatorEconomicsMetrics {
     }
 }
 
-/// Metrics for tracking consensus performance
-pub struct ConsensusMetrics<B: BlockTrait> {
+/// Enhanced ConsensusMetrics struct for comprehensive monitoring
+#[derive(Clone)]
+pub struct ConsensusMetrics {
+    /// Number of active validators
+    pub active_validators: Gauge,
+    /// Total reserved stake across all validators
+    pub total_reserved_stake: Gauge,
+    /// Current epoch number
+    pub current_epoch: Gauge,
+    /// Total rewards distributed to validators
+    pub total_rewards_distributed: Counter,
+    /// Total amount slashed from validators
+    pub total_slashed_amount: Counter,
+}
+
+impl ConsensusMetrics {
+    /// Create new ConsensusMetrics with Prometheus registry
+    pub fn new(registry: &Registry) -> Result<Self, prometheus::Error> {
+        Ok(Self {
+            active_validators: register_gauge_with_registry!(
+                Opts::new("cbc_consensus_active_validators", "Number of active validators in the consensus"),
+                registry
+            )?,
+            total_reserved_stake: register_gauge_with_registry!(
+                Opts::new("cbc_consensus_total_reserved_stake", "Total reserved stake across all validators"),
+                registry
+            )?,
+            current_epoch: register_gauge_with_registry!(
+                Opts::new("cbc_consensus_current_epoch", "Current epoch number"),
+                registry
+            )?,
+            total_rewards_distributed: register_counter_with_registry!(
+                Opts::new("cbc_consensus_total_rewards_distributed", "Total rewards distributed to validators"),
+                registry
+            )?,
+            total_slashed_amount: register_counter_with_registry!(
+                Opts::new("cbc_consensus_total_slashed_amount", "Total amount slashed from validators"),
+                registry
+            )?,
+        })
+    }
+
+    /// Update metrics from runtime state
+    pub fn update_from_runtime<B, C>(&self, client: &Arc<C>) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    where
+        B: BlockTrait,
+        C: ProvideRuntimeApi<B> + HeaderBackend<B>,
+        C::Api: DcfApi<B, sp_runtime::AccountId32, u128, u32>,
+    {
+        let best_hash = client.info().best_hash;
+        let api = client.runtime_api();
+
+        // Update active validators count
+        let active_validators = api.get_active_validators(best_hash)
+            .map_err(|e| format!("Failed to get active validators: {:?}", e))?;
+        self.active_validators.set(active_validators.len() as f64);
+
+        // Update current epoch
+        let current_epoch = api.get_current_epoch(best_hash)
+            .map_err(|e| format!("Failed to get current epoch: {:?}", e))?;
+        self.current_epoch.set(current_epoch as f64);
+
+        // Calculate total reserved stake
+        let mut total_stake: u128 = 0;
+        for validator in &active_validators {
+            let stake = api.get_validator_stake(best_hash, validator.clone())
+                .map_err(|e| format!("Failed to get validator stake: {:?}", e))?;
+            total_stake = total_stake.saturating_add(stake);
+        }
+        self.total_reserved_stake.set(total_stake as f64);
+
+        Ok(())
+    }
+
+    /// Record reward distribution
+    pub fn record_reward_distribution(&self, amount: u128) {
+        self.total_rewards_distributed.inc_by(amount as f64);
+    }
+
+    /// Record slashing event
+    pub fn record_slashing(&self, amount: u128) {
+        self.total_slashed_amount.inc_by(amount as f64);
+    }
+
+    /// Update active validators count manually
+    pub fn update_active_validators(&self, count: u64) {
+        self.active_validators.set(count as f64);
+    }
+
+    /// Update total reserved stake manually
+    pub fn update_total_reserved_stake(&self, stake: u128) {
+        self.total_reserved_stake.set(stake as f64);
+    }
+
+    /// Update current epoch manually
+    pub fn update_current_epoch(&self, epoch: u32) {
+        self.current_epoch.set(epoch as f64);
+    }
+}
+
+/// Legacy metrics for tracking consensus performance (kept for backward compatibility)
+pub struct LegacyConsensusMetrics<B: BlockTrait> {
     /// Total number of blocks produced
     pub total_blocks: u32,
     /// Total number of transactions processed
@@ -150,7 +255,7 @@ pub struct ConsensusMetrics<B: BlockTrait> {
     pub epoch_rewards: Arc<RwLock<u128>>,
 }
 
-impl<B: BlockTrait> ConsensusMetrics<B> {
+impl<B: BlockTrait> LegacyConsensusMetrics<B> {
     /// Create a new metrics tracker
     pub fn new() -> Self {
         Self {

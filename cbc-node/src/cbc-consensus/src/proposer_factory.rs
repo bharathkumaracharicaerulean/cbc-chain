@@ -5,6 +5,7 @@
 use crate::error::{ConsensusError, Result};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
+use sp_runtime::traits::NumberFor;
 use sp_core::sr25519::Public;
 use cbc_runtime::AccountId;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
@@ -23,7 +24,7 @@ pub struct ProposerFactory<B: BlockTrait, C, TP>
 where
     B: sp_runtime::traits::Block,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
     TP: TransactionPool<Block = B> + 'static,
 {
     client: Arc<C>,
@@ -38,7 +39,7 @@ impl<B: BlockTrait, C, TP> ProposerFactory<B, C, TP>
 where
     B: sp_runtime::traits::Block,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
     TP: TransactionPool<Block = B> + 'static,
 {
     /// Create a new proposer factory with the specified parameters

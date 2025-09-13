@@ -15,10 +15,6 @@ frame_benchmarking::define_benchmarks!(
     // `SystemBench` contains performance tests specific to the system operations.
     [frame_system, SystemBench::<Runtime>]
 
-    // Benchmarks for `frame_system_extensions`, possibly a custom extension or wrapper around system pallet logic.
-    // These benchmarks might involve extended system-level functionalities like custom hooks or weight calculations.
-    [frame_system_extensions, SystemExtensionsBench::<Runtime>]
-
     // Benchmarks for the `pallet_balances`, which manages the account balance information.
     // It includes benchmarking of functions like transfers, setting balances, reserving funds, etc.
     [pallet_balances, Balances]
@@ -31,14 +27,18 @@ frame_benchmarking::define_benchmarks!(
     // These tests measure overhead and weight of administrative operations through sudo.
     [pallet_sudo, Sudo]
 
-    // Benchmarks for the `pallet_cbc_poi`, which might be a custom pallet related to
-    // proof of identity or similar functionality.
-    // It includes performance tests for any identity-related operations or storage.
-    [pallet_cbc_poi, PoiBench::<Runtime>]
+    // Benchmarks for the `pallet_cbc_dcf`, the main Dynamic Consensus Framework pallet.
+    // It includes performance tests for validator management, consensus operations, governance,
+    // epoch transitions, and all core DCF functionality.
+    [pallet_cbc_dcf, DcfPallet]
 
-    // Benchmarks for the `pallet_cbc_pos`, which might be a custom pallet related to
-    // proof of stake or similar functionality.
-    // It includes performance tests for any staking-related operations or storage.
-    [pallet_cbc_pos, PosBench::<Runtime>]
-    
+    // Benchmarks for the `pallet_cbc_poi`, which handles Proof-of-Inference functionality.
+    // It includes performance tests for inference submission, challenge mechanisms,
+    // and inference validation operations.
+    [pallet_cbc_poi, PalletCbcPoi]
+
+    // Benchmarks for the `pallet_cbc_pos`, which handles Proof-of-Stake functionality.
+    // It includes performance tests for validator registration, score submission,
+    // slashing operations, and stake management.
+    [pallet_cbc_pos, PalletCbcPos]
 );

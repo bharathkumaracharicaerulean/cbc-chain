@@ -8,6 +8,7 @@ use crate::{
     types::{EpochConfig, ValidatorInfo},
 };
 use std::sync::Arc;
+use sp_runtime::traits::NumberFor;
 use log::{info, warn, error, debug};
 use sp_runtime::traits::{Block as BlockTrait, SaturatedConversion};
 use sp_api::ProvideRuntimeApi;
@@ -47,7 +48,7 @@ pub struct EpochManager<B, C>
 where
     B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
 {
     client: Arc<C>,
     epoch_config: EpochConfig,
@@ -58,7 +59,7 @@ impl<B, C> EpochManager<B, C>
 where
     B: BlockTrait,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
-    C::Api: RuntimeDcfApi<B, AccountId>,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
 {
     /// Create a new epoch manager
     pub fn new(client: Arc<C>, epoch_config: EpochConfig) -> Self {
@@ -66,6 +67,60 @@ where
             client,
             epoch_config,
             _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Get PoS score for a validator from the PoS pallet
+    fn get_pos_score(&self, validator: &AccountId) -> u64 {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        match api.get_validator_stake_score(best_hash, validator.clone()) {
+            Ok(score) => score as u64,
+            Err(e) => {
+                debug!("Failed to get PoS score for validator {:?}: {:?}", validator, e);
+                0u64
+            }
+        }
+    }
+
+    /// Calculate validator uptime based on historical data
+    fn calculate_validator_uptime(&self, validator: &AccountId) -> u32 {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get validator uptime from DCF pallet
+        match api.get_validator_uptime(best_hash, validator.clone()) {
+            Ok(Some(uptime_stats)) => {
+                // Return the participation rate as uptime percentage
+                uptime_stats.participation_rate
+            }
+            _ => {
+                debug!("Failed to calculate uptime for validator {:?}", validator);
+                0u32
+            }
+        }
+    }
+
+    /// Get validator participation rate and missed blocks
+    fn get_validator_participation_metrics(&self, validator: &AccountId) -> (u32, u32) {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        match api.get_validator_participation(best_hash, validator.clone()) {
+            Ok((authored, missed)) => {
+                let total_blocks = authored + missed;
+                let participation_rate = if total_blocks > 0 {
+                    ((authored * 100) / total_blocks).min(100)
+                } else {
+                    100 // New validators get 100% participation initially
+                };
+                (participation_rate, missed)
+            }
+            Err(e) => {
+                debug!("Failed to get participation metrics for validator {:?}: {:?}", validator, e);
+                (0u32, 0u32)
+            }
         }
     }
 
@@ -323,11 +378,14 @@ where
         let mut underperforming_count = 0;
         
         for validator in active_validators {
-            if let Ok(Some((combined_score, _pos_score, _poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
-                api.get_validator_profile(best_hash, validator.clone()) {
+            if let Ok(Some(profile)) = api.get_validator_profile(best_hash, validator.clone()) {
+                let combined_score = profile.final_score;
+                let _trust_score = profile.trust_score;
+                let _inference_count = profile.inference_count;
+                let (participation_rate, missed_blocks) = self.get_validator_participation_metrics(&validator);
                 
                 // Check for underperformance criteria
-                let is_underperforming = combined_score < config.min_performance_score || 
+                let is_underperforming = combined_score < config.min_performance_score as u64 || 
                                         participation_rate < config.min_participation_rate || 
                                         missed_blocks > config.max_missed_blocks;
                 
@@ -377,21 +435,25 @@ where
             .map_err(|e| ConsensusError::EpochTransition(format!("Failed to get consensus weights: {:?}", e)))?;
         
         for validator in active_validators.iter() {
-            if let Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, participation_rate, missed_blocks))) = 
-                api.get_validator_profile(best_hash, validator.clone()) {
+            if let Ok(Some(profile)) = api.get_validator_profile(best_hash, validator.clone()) {
+                let combined_score = profile.final_score;
+                let pos_score = self.get_pos_score(&validator);
+                let poi_score = profile.poi_score as u64;
+                let _inference_count = profile.inference_count;
+                let (participation_rate, missed_blocks) = self.get_validator_participation_metrics(validator);
                 
                 let mut proposal_reason = String::new();
                 
                 // Check for underperformance
-                if combined_score < config.min_performance_score {
+                if combined_score < config.min_performance_score as u64 {
                     proposal_reason = format!("Low combined score: {}", combined_score);
                 } else if participation_rate < config.min_participation_rate {
                     proposal_reason = format!("Low participation: {}%", participation_rate);
                 } else if missed_blocks > config.max_missed_blocks_high {
                     proposal_reason = format!("Too many missed blocks: {}", missed_blocks);
-                } else if pos_score == 0 && poi_score == 0 {
+                } else if pos_score == 0u64 && poi_score == 0u64 {
                     proposal_reason = "No PoS or PoI contribution".to_string();
-                } else if combined_score >= config.high_performance_score {
+                } else if combined_score >= config.high_performance_score as u64 {
                     proposal_reason = format!("High performance reward candidate: {}", combined_score);
                 }
                 
@@ -420,8 +482,10 @@ where
         let mut validator_performance: Vec<(AccountId, u64, u64, u64)> = Vec::new(); // (validator, combined, pos, poi)
         
         for (validator, _stored_score) in all_validators {
-            if let Ok(Some((combined_score, pos_score, poi_score, _uptime, _inference_count, _participation_rate, _missed_blocks))) = 
-                api.get_validator_profile(best_hash, validator.clone()) {
+            if let Ok(Some(profile)) = api.get_validator_profile(best_hash, validator.clone()) {
+                let combined_score = profile.final_score;
+                let pos_score = self.get_pos_score(&validator);
+                let poi_score = profile.poi_score as u64;
                 validator_performance.push((validator, combined_score, pos_score, poi_score));
             }
         }
@@ -447,8 +511,11 @@ where
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
-        if let Ok(Some((combined_score, pos_score, _poi_score, uptime, _inference_count, _participation_rate, missed_blocks))) = 
-            api.get_validator_profile(best_hash, validator.clone()) {
+        if let Ok(Some(profile)) = api.get_validator_profile(best_hash, validator.clone()) {
+            let combined_score = profile.final_score;
+            let pos_score = self.get_pos_score(validator);
+            let uptime = self.calculate_validator_uptime(validator);
+            let (_, missed_blocks) = self.get_validator_participation_metrics(validator);
             
             let stake_score = pos_score; // Use the fresh PoS score from the profile
             

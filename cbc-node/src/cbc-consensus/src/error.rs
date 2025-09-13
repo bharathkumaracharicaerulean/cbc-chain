@@ -61,4 +61,15 @@ pub enum ConsensusError {
     /// Error during block production
     #[error("Block production failed: {0}")]
     BlockProduction(String),
+
+    /// Block author mismatch detected
+    #[error("Block author mismatch: expected {expected:?}, got {actual:?} for block {block_number}")]
+    AuthorMismatch {
+        /// Block number where the mismatch occurred
+        block_number: u32,
+        /// Expected block author
+        expected: Option<cbc_runtime::AccountId>,
+        /// Actual block author found
+        actual: cbc_runtime::AccountId,
+    },
 }
