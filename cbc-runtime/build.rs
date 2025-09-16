@@ -15,7 +15,7 @@ fn main() {
         .enable_metadata_hash("UNIT", 12) // Embed metadata hash with the specified unit and version.
         .build(); // Build the Wasm binary.
 }
-
+//testing
 /// When the `std` feature is enabled but the `metadata-hash` feature is not enabled,
 /// this configuration is used. In this case, the Wasm binary is built using default settings
 /// without embedding a metadata hash.
