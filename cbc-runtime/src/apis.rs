@@ -2,6 +2,7 @@
 
 // External Crates
 use alloc::vec::Vec;
+use codec::Encode;
 use frame_support::{
 	genesis_builder_helper::{build_state},
 	weights::Weight,
@@ -185,6 +186,9 @@ impl_runtime_apis! {
 
 	// DCF API
 	impl pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, BlockNumber> for Runtime {
+		fn get_api_version() -> u32 {
+			pallet_cbc_dcf::DCF_API_VERSION
+		}
 		fn get_validator_scores() -> Vec<(AccountId, u64)> {
 			let validators = pallet_cbc_dcf::Pallet::<Runtime>::validator_set();
 			validators
@@ -278,6 +282,10 @@ impl_runtime_apis! {
 
 		fn get_validator_cooldown_status(validator: AccountId) -> Option<BlockNumber> {
 			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_cooldown_status(validator)
+		}
+
+		fn get_validator_detailed_cooldown_status(validator: AccountId) -> Option<(u32, bool)> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_detailed_cooldown_status(validator)
 		}
 
 		fn get_inference_result(validator: AccountId) -> Option<u64> {
@@ -414,6 +422,46 @@ impl_runtime_apis! {
 
 		fn report_author_mismatch(block_number: u32, expected: Option<AccountId>, actual: AccountId) -> Result<(), sp_runtime::DispatchError> {
 			pallet_cbc_dcf::Pallet::<Runtime>::report_author_mismatch(block_number, expected, actual)
+		}
+
+		fn get_governance_config() -> Vec<u8> {
+			pallet_cbc_dcf::Pallet::<Runtime>::governance_config().encode()
+		}
+
+		fn get_parameter_value(parameter: Vec<u8>) -> Option<Vec<u8>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_parameter_value_encoded(parameter)
+		}
+
+		fn validate_parameter_value(parameter: Vec<u8>, value: Vec<u8>) -> bool {
+			pallet_cbc_dcf::Pallet::<Runtime>::validate_parameter_value_encoded(parameter, value)
+		}
+
+		fn get_latest_invariant_report() -> Option<Vec<u8>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::latest_invariant_report()
+				.map(|report| report.encode())
+		}
+
+		fn get_invariant_report_for_epoch(epoch: u32) -> Option<Vec<u8>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::invariant_reports(epoch)
+				.map(|report| report.encode())
+		}
+
+		fn has_invariant_violations() -> bool {
+			pallet_cbc_dcf::Pallet::<Runtime>::latest_invariant_report()
+				.map(|report| !report.violations.is_empty())
+				.unwrap_or(false)
+		}
+
+		fn get_system_metrics() -> Vec<u8> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_system_metrics().encode()
+		}
+
+		fn get_performance_indicators() -> Vec<u8> {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_performance_indicators().encode()
+		}
+
+		fn get_metrics_last_updated() -> u32 {
+			pallet_cbc_dcf::Pallet::<Runtime>::get_metrics_last_updated()
 		}
 	}
 

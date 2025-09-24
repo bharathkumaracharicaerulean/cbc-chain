@@ -328,10 +328,22 @@ impl pallet_cbc_dcf::Config for Runtime {
     type MaxEvidenceLength = MaxEvidenceLength;
     type MisbehaviorSlashThreshold = MisbehaviorSlashThreshold;
 
+    // Slashing and reward bounds
+    type MaxSlashPerEpoch = ConstU128<50000>; // Maximum total slashing per epoch
+    type MaxSlashPerValidator = ConstU128<20000>; // Maximum slashing per validator per epoch
+    type MaxRewardPerEpoch = ConstU128<30000>; // Maximum total rewards per epoch
+    type MaxRewardPerValidator = ConstU128<10000>; // Maximum reward per validator per epoch
+
     // Trust score calculation weights
     type TrustScoreUptimeWeight = ConstU64<4000>; // 40% weight for uptime
     type TrustScoreInferenceWeight = ConstU64<4000>; // 40% weight for inference success
     type TrustScoreSlashingWeight = ConstU64<2000>; // 20% weight for slashing penalty
     type MaxTrustScore = ConstU64<10000>; // Maximum trust score (100.00%)
+    
+    // Trust score bounds and stability parameters
+    type MinTrustScore = ConstU64<1000>; // Minimum trust score (10.00%)
+    type MaxTrustScoreGrowthRate = ConstU32<500>; // Maximum 5% growth per epoch
+    type MaxTrustScoreDecayRate = ConstU32<200>; // Maximum 2% decay per epoch
+    type TrustScoreStabilityFactor = ConstU32<8000>; // 80% stability factor
 }
 

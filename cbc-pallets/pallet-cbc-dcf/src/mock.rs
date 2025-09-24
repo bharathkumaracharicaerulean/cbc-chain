@@ -277,7 +277,11 @@ impl Config for Test {
     type AuthorNotActiveErrorCode = ConstU8<1>;
     type AuthorMismatchErrorCode = ConstU8<2>;
     
-    // Missing configuration parameters
+    // Additional trust score configuration
+    type MinTrustScore = ConstU64<1000>;
+    type MaxTrustScoreGrowthRate = ConstU32<500>;
+    type MaxTrustScoreDecayRate = ConstU32<200>;
+    type TrustScoreStabilityFactor = ConstU32<8000>;
     type MaxInactiveEpochs = ConstU32<5>;
     type ScoreDecayInterval = ConstU32<10>;
     type ParticipationUpdateInterval = ConstU32<100>;
@@ -346,6 +350,13 @@ impl Config for Test {
     type RewardBoostDivisor = ConstU64<1000>;
     type SlashPercent = ConstU32<10>;
     type ValidatorReward = ConstU128<10000>;
+    
+    // Slashing and reward bounds
+    type MaxSlashPerEpoch = ConstU128<50000>;
+    type MaxSlashPerValidator = ConstU128<20000>;
+    type MaxRewardPerEpoch = ConstU128<30000>;
+    type MaxRewardPerValidator = ConstU128<10000>;
+    
     type MaxValidatorNameLength = ConstU32<32>;
     type MaxValidatorWebsiteLength = ConstU32<64>;
     type MaxValidatorContactLength = ConstU32<64>;
@@ -380,6 +391,18 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
             (2, 10000),
             (3, 10000),
             (4, 10000),
+            (10, 100000),
+            (11, 100000),
+            (12, 100000),
+            (13, 100000),
+            (14, 100000),
+            (15, 100000),
+            (16, 100000),
+            (17, 100000),
+            (18, 100000),
+            (19, 100000),
+            (20, 100000),
+            (21, 100000),
         ],
         dev_accounts: None,
     }
