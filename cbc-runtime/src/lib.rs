@@ -40,7 +40,7 @@ pub mod genesis_config_presets; // Preset configurations for the genesis block.
 pub mod mock; // Mock runtime for testing
 
 #[cfg(test)]
-pub mod tests; // Runtime integration tests
+pub mod tests; // Runtime integration tests with API unit tests
 
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmark_tests; // Benchmarking tests

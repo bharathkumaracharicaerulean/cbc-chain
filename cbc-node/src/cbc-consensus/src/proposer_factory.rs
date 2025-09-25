@@ -2,7 +2,7 @@
 //!
 //! This module creates real blocks with transactions using the DCF runtime API for author selection.
 
-use crate::error::{ConsensusError, Result};
+use crate::error::{ConsensusError, ConsensusResult};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::NumberFor;
@@ -55,7 +55,7 @@ where
     }
 
     /// Create a new block with transactions from the pool using the expected author from DCF runtime API
-    pub async fn create_block_with_transactions(&mut self, parent_hash: B::Hash, slot: u64) -> Result<(B, Public)> {
+    pub async fn create_block_with_transactions(&mut self, parent_hash: B::Hash, slot: u64) -> ConsensusResult<(B, Public)> {
         // Check if enough time has passed since last block
         if let Some(last_time) = self.last_block_time {
             if last_time.elapsed() < self.min_block_time {
@@ -118,7 +118,7 @@ where
     }
     
     /// Collect transactions from the transaction pool
-    async fn collect_transactions_from_pool(&self) -> Result<Vec<B::Extrinsic>> {
+    async fn collect_transactions_from_pool(&self) -> ConsensusResult<Vec<B::Extrinsic>> {
         let ready_transactions = self.transaction_pool.ready()
             .take(self.max_transactions_per_block)
             .map(|tx| (**tx.data()).clone())
@@ -129,7 +129,7 @@ where
     }
     
     /// Create inherent data for the block
-    async fn _create_inherent_data(&self) -> Result<InherentData> {
+    async fn _create_inherent_data(&self) -> ConsensusResult<InherentData> {
         let mut inherent_data = InherentData::new();
         
         // Add timestamp inherent
@@ -142,7 +142,7 @@ where
     }
 
     /// Create a new block with the expected author from the DCF runtime API (legacy method for compatibility)
-    pub fn create_block(&mut self, parent_hash: B::Hash, slot: u64) -> Result<(B::Header, Public)> {
+    pub fn create_block(&mut self, parent_hash: B::Hash, slot: u64) -> ConsensusResult<(B::Header, Public)> {
         warn!("ProposerFactory: Using legacy create_block method - consider using create_block_with_transactions");
         
         // Fetch expected author from runtime API
@@ -174,7 +174,7 @@ where
     }
 
     /// Create a new block proposer (header only, for compatibility)
-    pub fn create_proposer(&self) -> Result<B::Header> {
+    pub fn create_proposer(&self) -> ConsensusResult<B::Header> {
         let number = <<B as BlockTrait>::Header as HeaderTrait>::Number::zero();
         let header = B::Header::new(
             number,

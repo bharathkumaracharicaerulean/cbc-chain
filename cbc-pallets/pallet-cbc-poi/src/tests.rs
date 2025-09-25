@@ -346,4 +346,334 @@ mod tests {
             // Here we just verify the storage structure is correct
         });
     }
+
+    // ================================================================================================
+    // Additional Unit Tests for Comprehensive Coverage
+    // ================================================================================================
+
+    #[test]
+    fn test_inference_confidence_boundary_conditions() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            let min_confidence: u32 = <Test as crate::Config>::MinInferenceConfidence::get();
+            
+            // Test exactly at minimum confidence
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(validator),
+                85,
+                min_confidence
+            ));
+            
+            // Clear inference for next test
+            // Note: In real implementation, this would be handled by epoch transitions
+        });
+    }
+
+    #[test]
+    fn test_challenge_result_validation() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            let challenger = 2u64;
+            let result = 85u32;
+            let confidence = 90u32;
+            
+            // Submit inference
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(validator),
+                result,
+                confidence
+            ));
+            
+            // Test valid challenge results
+            assert_ok!(PalletCbcPoi::challenge_inference(
+                RuntimeOrigin::signed(challenger),
+                validator,
+                result // Same result should be valid for challenge
+            ));
+        });
+    }
+
+    #[test]
+    fn test_multiple_epoch_inference_tracking() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            let result = 85u32;
+            let confidence = 90u32;
+            
+            // Submit inference in epoch 0
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(validator),
+                result,
+                confidence
+            ));
+            
+            let (stored_result, stored_epoch) = PalletCbcPoi::inference_results(&validator).unwrap();
+            assert_eq!(stored_result, result);
+            assert_eq!(stored_epoch, 0);
+        });
+    }
+
+    #[test]
+    fn test_challenge_window_enforcement() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            let challenger = 2u64;
+            let result = 85u32;
+            let confidence = 90u32;
+            let challenge_window: u32 = <Test as crate::Config>::ChallengeWindow::get();
+            
+            // Submit inference
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(validator),
+                result,
+                confidence
+            ));
+            
+            // Challenge within window should work
+            assert_ok!(PalletCbcPoi::challenge_inference(
+                RuntimeOrigin::signed(challenger),
+                validator,
+                result
+            ));
+            
+            // Verify challenge window configuration
+            assert!(challenge_window > 0);
+        });
+    }
+
+    #[test]
+    fn test_inference_quality_assessment() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            
+            // Test different confidence levels
+            let confidence_levels = vec![60, 70, 80, 90, 100];
+            
+            for (i, confidence) in confidence_levels.iter().enumerate() {
+                let test_validator = (validator + i as u64) % 10 + 1; // Avoid conflicts
+                
+                let min_conf: u32 = <Test as crate::Config>::MinInferenceConfidence::get();
+                if *confidence >= min_conf {
+                    assert_ok!(PalletCbcPoi::submit_inference(
+                        RuntimeOrigin::signed(test_validator),
+                        (i * 10) as u32,
+                        *confidence
+                    ));
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn test_challenge_mechanism_edge_cases() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            let challenger = 2u64;
+            let result = 85u32;
+            let confidence = 90u32;
+            
+            // Submit inference
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(validator),
+                result,
+                confidence
+            ));
+            
+            // Test challenge with same result (should be valid)
+            assert_ok!(PalletCbcPoi::challenge_inference(
+                RuntimeOrigin::signed(challenger),
+                validator,
+                result
+            ));
+            
+            // Verify challenge was stored
+            let challenge_data = PalletCbcPoi::challenges(&challenger);
+            assert!(challenge_data.is_some());
+        });
+    }
+
+    #[test]
+    fn test_inference_data_consistency() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            let result = 85u32;
+            let confidence = 90u32;
+            
+            // Submit inference
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(validator),
+                result,
+                confidence
+            ));
+            
+            // Verify all fields are consistent
+            let (stored_result, stored_epoch) = PalletCbcPoi::inference_results(&validator).unwrap();
+            assert_eq!(stored_result, result);
+            assert_eq!(stored_epoch, PalletCbcPoi::current_epoch());
+            
+            // Verify no challenge exists initially
+            assert!(PalletCbcPoi::challenges(&validator).is_none());
+        });
+    }
+
+    #[test]
+    fn test_challenge_data_consistency() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            let challenger = 2u64;
+            let result = 85u32;
+            let confidence = 90u32;
+            
+            // Submit inference first
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(validator),
+                result,
+                confidence
+            ));
+            
+            // Submit challenge
+            assert_ok!(PalletCbcPoi::challenge_inference(
+                RuntimeOrigin::signed(challenger),
+                validator,
+                result
+            ));
+            
+            // Verify challenge data consistency
+            let (challenged_validator, challenge_result, challenge_epoch) = PalletCbcPoi::challenges(&challenger).unwrap();
+            assert_eq!(challenged_validator, validator);
+            assert_eq!(challenge_result, result);
+            assert_eq!(challenge_epoch, PalletCbcPoi::current_epoch());
+            
+            // Verify original inference still exists
+            assert!(PalletCbcPoi::inference_results(&validator).is_some());
+        });
+    }
+
+    #[test]
+    fn test_reward_configuration_validation() {
+        new_test_ext().execute_with(|| {
+            // Test reward configuration values
+            let inference_reward: u128 = <Test as crate::Config>::InferenceReward::get();
+            let challenge_reward: u128 = <Test as crate::Config>::ChallengeReward::get();
+            
+            // Rewards should be positive
+            assert!(inference_reward > 0);
+            assert!(challenge_reward > 0);
+            
+            // Inference reward should typically be higher than challenge reward
+            // (This is a design assumption, may vary by implementation)
+            assert!(inference_reward >= challenge_reward);
+        });
+    }
+
+    #[test]
+    fn test_comprehensive_error_handling() {
+        new_test_ext().execute_with(|| {
+            let validator = 1u64;
+            let challenger = 2u64;
+            let result = 85u32;
+            let confidence = 90u32;
+            let min_confidence: u32 = <Test as crate::Config>::MinInferenceConfidence::get();
+            
+            // Test ConfidenceTooLow
+            assert_noop!(
+                PalletCbcPoi::submit_inference(
+                    RuntimeOrigin::signed(validator),
+                    result,
+                    min_confidence - 1
+                ),
+                Error::<Test>::ConfidenceTooLow
+            );
+            
+            // Submit valid inference for further tests
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(validator),
+                result,
+                confidence
+            ));
+            
+            // Test InferenceAlreadySubmitted
+            assert_noop!(
+                PalletCbcPoi::submit_inference(
+                    RuntimeOrigin::signed(validator),
+                    result + 1,
+                    confidence
+                ),
+                Error::<Test>::InferenceAlreadySubmitted
+            );
+            
+            // Test InferenceNotFound
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(
+                    RuntimeOrigin::signed(challenger),
+                    999u64, // Non-existent validator
+                    result
+                ),
+                Error::<Test>::InferenceNotFound
+            );
+            
+            // Test CannotChallengeSelf
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(
+                    RuntimeOrigin::signed(validator),
+                    validator,
+                    result
+                ),
+                Error::<Test>::CannotChallengeSelf
+            );
+        });
+    }
+
+    #[test]
+    fn test_performance_with_multiple_inferences() {
+        new_test_ext().execute_with(|| {
+            // Test performance with many inference submissions
+            for i in 1..=10 {
+                assert_ok!(PalletCbcPoi::submit_inference(
+                    RuntimeOrigin::signed(i),
+                    (i * 10) as u32,
+                    (60 + i * 3) as u32
+                ));
+            }
+            
+            // Verify all inferences were stored correctly
+            for i in 1..=10 {
+                let inference_data = PalletCbcPoi::inference_results(&i);
+                assert!(inference_data.is_some());
+                
+                let (result, epoch) = inference_data.unwrap();
+                assert_eq!(result, (i * 10) as u32);
+                assert_eq!(epoch, 0);
+            }
+        });
+    }
+
+    #[test]
+    fn test_challenge_performance() {
+        new_test_ext().execute_with(|| {
+            // Submit multiple inferences
+            for i in 1..=5 {
+                assert_ok!(PalletCbcPoi::submit_inference(
+                    RuntimeOrigin::signed(i),
+                    (i * 10) as u32,
+                    (70 + i * 2) as u32
+                ));
+            }
+            
+            // Challenge multiple inferences
+            for i in 6..=10 {
+                let target_validator = ((i - 5) % 5) + 1;
+                assert_ok!(PalletCbcPoi::challenge_inference(
+                    RuntimeOrigin::signed(i),
+                    target_validator,
+                    (target_validator * 10) as u32
+                ));
+            }
+            
+            // Verify challenges were stored
+            for i in 6..=10 {
+                assert!(PalletCbcPoi::challenges(&i).is_some());
+            }
+        });
+    }
 } 

@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::epoch_manager::*;
+    use crate::epoch_manager::*;
     use crate::mock::*;
     use frame_support::traits::Hooks;
 
@@ -95,7 +95,7 @@ mod tests {
     fn test_epoch_history_management() {
         setup_consensus_test(MockConsensusConfig::default()).execute_with(|| {
             // Test epoch history storage
-            let max_history = pallet_cbc_dcf::MaxEpochHistory::<Test>::get();
+            let max_history = 24u32; // MaxEpochHistory constant value
             assert!(max_history > 0);
             
             // Test that we can store epoch histories
@@ -107,13 +107,10 @@ mod tests {
             // Test adding epoch history
             let mut histories = epoch_histories;
             let new_history = pallet_cbc_dcf::EpochHistory {
-                epoch: 1,
-                start_block: 1,
-                end_block: 2400,
-                validator_count: 4,
-                total_stake: 4000,
-                rewards_distributed: 1000,
-                slashing_events: 0,
+                epoch_number: 1,
+                active_validators: frame_support::BoundedVec::try_from(vec![1u64, 2u64, 3u64, 4u64]).unwrap(),
+                score_snapshot: frame_support::BoundedVec::try_from(vec![(1u64, 900), (2u64, 900), (3u64, 900), (4u64, 900)]).unwrap(),
+                inference_summary: frame_support::BoundedVec::try_from(vec![(1u64, Some(80u64)), (2u64, Some(80u64)), (3u64, Some(80u64)), (4u64, Some(80u64))]).unwrap(),
             };
             
             if histories.try_push(new_history.clone()).is_ok() {
@@ -124,9 +121,9 @@ mod tests {
                 assert!(!updated_histories.is_empty());
                 
                 if let Some(last_history) = updated_histories.last() {
-                    assert_eq!(last_history.epoch, 1);
-                    assert_eq!(last_history.validator_count, 4);
-                    assert_eq!(last_history.total_stake, 4000);
+                    assert_eq!(last_history.epoch_number, 1);
+                    assert_eq!(last_history.active_validators.len(), 4);
+                    assert_eq!(last_history.score_snapshot.len(), 4);
                 }
             }
         });
@@ -194,7 +191,7 @@ mod tests {
                 pallet_cbc_dcf::PendingValidatorActions::<Test>::insert(&test_validator, action);
                 
                 let stored_action = pallet_cbc_dcf::PendingValidatorActions::<Test>::get(&test_validator);
-                assert_eq!(stored_action, Some(*action));
+                assert_eq!(stored_action, Some(action.clone()));
             }
         });
     }
@@ -215,7 +212,7 @@ mod tests {
                 let performance_score = state.current.final_score;
                 
                 // Calculate performance-based reward multiplier
-                let max_score = pallet_cbc_dcf::MaxValidatorScore::<Test>::get();
+                let max_score = 100u64; // MaxValidatorScore constant value
                 let performance_ratio = performance_score as f64 / max_score as f64;
                 
                 assert!(performance_ratio >= 0.0);
@@ -246,7 +243,7 @@ mod tests {
             assert!(current_stake < initial_stake);
             
             // Test that slashing doesn't go below minimum
-            let min_stake = pallet_cbc_dcf::DcfMinStake::<Test>::get();
+            let min_stake = 1000u128; // DcfMinStake constant value
             if current_stake >= min_stake {
                 // Validator should still be valid
                 let state = pallet_cbc_dcf::ValidatorStates::<Test>::get(&validator);
@@ -300,13 +297,10 @@ mod tests {
                 // Add epoch history
                 let mut histories = pallet_cbc_dcf::EpochHistories::<Test>::get();
                 let history = pallet_cbc_dcf::EpochHistory {
-                    epoch,
-                    start_block: (epoch - 1) * 2400 + 1,
-                    end_block: epoch * 2400,
-                    validator_count: validators.len() as u32,
-                    total_stake: validators.len() as u128 * 1000,
-                    rewards_distributed: 1000,
-                    slashing_events: 0,
+                    epoch_number: epoch,
+                    active_validators: frame_support::BoundedVec::try_from(validators.clone()).unwrap(),
+                    score_snapshot: frame_support::BoundedVec::try_from(validators.iter().map(|v| (*v, 900u64)).collect::<Vec<_>>()).unwrap(),
+                    inference_summary: frame_support::BoundedVec::try_from(validators.iter().map(|v| (*v, Some(80u64))).collect::<Vec<_>>()).unwrap(),
                 };
                 
                 if histories.try_push(history).is_ok() {

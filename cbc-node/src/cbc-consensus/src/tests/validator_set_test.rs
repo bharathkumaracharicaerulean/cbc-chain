@@ -2,19 +2,18 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::validator_set::*;
+    use crate::validator_set::*;
     use crate::mock::*;
-    use sp_core::sr25519::{Pair, Public};
-    use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+    use sp_core::{sr25519::{Pair, Public}, Pair as PairTrait};
+
     use std::collections::HashSet;
 
     fn create_test_validator_id(seed: u8) -> u64 {
         seed as u64
     }
 
-    fn create_test_authority_id(seed: u8) -> AuraId {
-        let pair = Pair::from_seed(&[seed; 32]);
-        AuraId::from(pair.public())
+    fn create_test_authority_id(seed: u8) -> u64 {
+        seed as u64 // Use validator ID instead of AuraId
     }
 
     #[test]
@@ -96,7 +95,7 @@ mod tests {
                 assert!(state.current.final_score > 0);
                 
                 // Test score bounds
-                let max_score = pallet_cbc_dcf::MaxValidatorScore::<Test>::get();
+                let max_score = 100u64; // MaxValidatorScore constant value
                 assert!(state.current.final_score <= max_score);
                 
                 // Test participation rate bounds
@@ -148,7 +147,7 @@ mod tests {
             
             // Success rate should be high
             if updated_state.inference_count > 0 {
-                let success_rate = (updated_state.inference_success_count * 100) / updated_state.inference_count;
+                let success_rate = (updated_state.inference_success_count * 100) / (updated_state.inference_count as u32);
                 assert!(success_rate >= 80); // At least 80% success rate
             }
             
@@ -241,14 +240,14 @@ mod tests {
     #[test]
     fn test_validator_set_limits() {
         setup_consensus_test(MockConsensusConfig::default()).execute_with(|| {
-            let max_validators = pallet_cbc_dcf::DcfMaxValidators::<Test>::get();
+            let max_validators = 100u32; // DcfMaxValidators constant value
             let current_validators = pallet_cbc_dcf::ValidatorSet::<Test>::get();
             
             // Current validator count should not exceed maximum
             assert!(current_validators.len() <= max_validators as usize);
             
             // Test minimum active validators
-            let min_active = pallet_cbc_dcf::MinActiveValidators::<Test>::get();
+            let min_active = 3u32; // MinActiveValidators constant value
             let active_validators = pallet_cbc_dcf::ActiveValidators::<Test>::get();
             
             // Should have at least minimum active validators

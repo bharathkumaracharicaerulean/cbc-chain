@@ -1,19 +1,27 @@
 //! Mock runtime for CBC consensus tests
 
 use super::*;
+use crate::{ConsensusResult, ConsensusError, RealBlockImport, ConsensusParams};
+use crate::types::AuthorSelectionMode;
 use frame_support::{
     parameter_types,
-    traits::{ConstU32, ConstU64, ConstU128},
+    traits::{ConstU32, ConstU64, ConstU128, ConstU8},
     weights::Weight,
 };
 use sp_runtime::{
     traits::{BlakeTwo256, IdentityLookup},
     BuildStorage, Perbill,
 };
-use sp_core::{H256, sr25519::{Pair, Public}};
+use sp_core::H256;
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use std::sync::Arc;
+use std::pin::Pin;
+use std::future::Future;
+use futures::StreamExt;
+
+
+// CBC consensus authority types
+pub type AuthorityId = u64;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -24,8 +32,9 @@ frame_support::construct_runtime!(
         System: frame_system,
         Balances: pallet_balances,
         Timestamp: pallet_timestamp,
-        Aura: pallet_aura,
         DcfPallet: pallet_cbc_dcf,
+        PosPallet: pallet_cbc_pos,
+        PoiPallet: pallet_cbc_poi,
     }
 );
 
@@ -86,16 +95,35 @@ impl pallet_timestamp::Config for Test {
     type WeightInfo = ();
 }
 
+// CBC PoS pallet configuration
 parameter_types! {
-    pub const MaxAuthorities: u32 = 32;
+    pub const PosMaxValidators: u32 = 100;
+    pub const PosMinStake: u128 = 1000;
 }
 
-impl pallet_aura::Config for Test {
-    type AuthorityId = AuraId;
-    type DisabledValidators = ();
-    type MaxAuthorities = MaxAuthorities;
-    type AllowMultipleBlocksPerSlot = ConstBool<false>;
-    type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Test>;
+impl pallet_cbc_pos::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type MaxValidators = PosMaxValidators;
+    type MinStake = PosMinStake;
+    type Balance = u128;
+    type WeightInfo = ();
+    type MinValidatorScore = ConstU32<50>;
+    type MinActiveValidators = ConstU32<3>;
+    type ValidatorScoreDecay = ConstU32<10>;
+    type MaxSlashingCount = ConstU32<10>;
+}
+
+// CBC PoI pallet configuration
+impl pallet_cbc_poi::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = ();
+    type MinInferenceConfidence = ConstU32<70>;
+    type MaxInferenceAge = ConstU32<100>;
+    type ChallengeWindow = ConstU32<50>;
+    type InferenceReward = ConstU128<100>;
+    type ChallengeReward = ConstU128<50>;
+    type PosInterface = MockPosInterface;
+    type DcfInterface = MockDcfInterface;
 }
 
 // Mock DCF pallet configuration
@@ -259,9 +287,75 @@ impl pallet_cbc_dcf::Config for Test {
     type BaseRewardPercentage = ConstU32<60>;
     type PerformanceRewardPercentage = ConstU32<25>;
     type TopPerformerRewardPercentage = ConstU32<15>;
+    type MaxSlashPerEpoch = ConstU128<1000>;
+    type MaxSlashPerValidator = ConstU128<500>;
+    type MaxRewardPerEpoch = ConstU128<2000>;
+    type MaxRewardPerValidator = ConstU128<1000>;
+    type MinTrustScore = ConstU64<0>;
+    type MaxTrustScoreGrowthRate = ConstU32<20>;
+    type MaxTrustScoreDecayRate = ConstU32<10>;
+    type TrustScoreStabilityFactor = ConstU32<5>;
 }
 
 use frame_support::traits::ConstBool;
+
+// Type aliases for test infrastructure - simplified for compilation
+pub type TestBlock = frame_system::mocking::MockBlock<Test>;
+pub type TestClient = ();
+pub type DcfBlockImport = ();
+pub type MockTransactionPool = ();
+
+// Helper functions for test infrastructure - simplified for compilation
+pub fn create_test_client() -> TestClient {
+    ()
+}
+
+pub fn create_test_consensus_params() -> ConsensusParams {
+    ConsensusParams {
+        author_selection_mode: AuthorSelectionMode::RoundRobin,
+        finality_threshold: 10,
+        block_time: 6,
+        max_block_size: 1024 * 1024,
+        max_transactions_per_block: 1000,
+        slot_duration: std::time::Duration::from_secs(6),
+        min_block_time: 6000,
+        metrics_update_interval: 10,
+        score_refresh_interval: 50,
+        consensus_loop_interval: 1000,
+        detailed_logging_interval: 100,
+        health_check_interval: 1000,
+        min_performance_score: 30,
+        high_performance_score: 80,
+        min_participation_rate: 50,
+        high_participation_rate: 90,
+        max_missed_blocks: 10,
+        max_missed_blocks_high: 2,
+        healthy_validator_score: 50,
+        healthy_participation_rate: 80,
+        healthy_missed_blocks_max: 5,
+        top_validators_display_count: 5,
+        health_check_sample_size: 5,
+    }
+}
+
+// Mock interfaces for CBC pallets
+pub struct MockPosInterface;
+impl pallet_cbc_poi::PosInterface<u64> for MockPosInterface {
+    fn boost_score(_validator: &u64, _weight: u32) -> frame_support::dispatch::DispatchResult {
+        Ok(())
+    }
+    
+    fn slash_score(_validator: &u64, _weight: u32) -> frame_support::dispatch::DispatchResult {
+        Ok(())
+    }
+}
+
+pub struct MockDcfInterface;
+impl pallet_cbc_poi::DcfInterface<u64> for MockDcfInterface {
+    fn record_inference_activity(_validator: &u64) -> frame_support::dispatch::DispatchResult {
+        Ok(())
+    }
+}
 
 // Helper functions for testing
 pub fn new_test_ext() -> sp_io::TestExternalities {
@@ -290,37 +384,34 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     ext
 }
 
-pub fn new_test_ext_with_authorities(authorities: Vec<AuraId>) -> sp_io::TestExternalities {
+pub fn new_test_ext_with_validators(validators: Vec<u64>) -> sp_io::TestExternalities {
     let mut ext = new_test_ext();
     
     ext.execute_with(|| {
-        // Initialize Aura with authorities
-        pallet_aura::Authorities::<Test>::put(&authorities);
+        // Initialize CBC consensus with validators
+        let bounded_validators = frame_support::BoundedVec::try_from(validators.clone())
+            .expect("Too many validators for test");
+        pallet_cbc_dcf::ValidatorSet::<Test>::put(bounded_validators.clone());
+        pallet_cbc_dcf::ActiveValidators::<Test>::put(bounded_validators);
     });
     
     ext
 }
 
-// Helper to create test authorities
-pub fn create_test_authorities(count: u32) -> Vec<AuraId> {
-    (0..count)
-        .map(|i| {
-            let pair = Pair::from_seed(&[i as u8; 32]);
-            AuraId::from(pair.public())
-        })
-        .collect()
+// Helper to create test authorities (CBC consensus uses validator IDs)
+pub fn create_test_authorities(count: u32) -> Vec<u64> {
+    (1..=count as u64).collect()
 }
 
 // Helper to create test validator set
 pub fn create_test_validator_set(count: u32) -> Vec<u64> {
-    (1..=count).collect()
+    (1..=count as u64).collect()
 }
 
 // Mock consensus configuration
 pub struct MockConsensusConfig {
     pub slot_duration: u64,
     pub epoch_length: u32,
-    pub authorities: Vec<AuraId>,
     pub validators: Vec<u64>,
 }
 
@@ -329,7 +420,6 @@ impl Default for MockConsensusConfig {
         Self {
             slot_duration: 6000, // 6 seconds
             epoch_length: 2400,  // 4 hours at 6s per block
-            authorities: create_test_authorities(4),
             validators: create_test_validator_set(4),
         }
     }
@@ -337,7 +427,7 @@ impl Default for MockConsensusConfig {
 
 // Helper to setup consensus test environment
 pub fn setup_consensus_test(config: MockConsensusConfig) -> sp_io::TestExternalities {
-    let mut ext = new_test_ext_with_authorities(config.authorities);
+    let mut ext = new_test_ext_with_validators(config.validators.clone());
     
     ext.execute_with(|| {
         // Setup DCF pallet with test validators

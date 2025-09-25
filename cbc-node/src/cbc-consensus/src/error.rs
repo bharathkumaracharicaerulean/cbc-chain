@@ -5,7 +5,7 @@
 use thiserror::Error;
 
 /// Result type for consensus operations
-pub type Result<T> = std::result::Result<T, ConsensusError>;
+pub type ConsensusResult<T> = std::result::Result<T, ConsensusError>;
 
 /// Consensus error types
 #[derive(Debug, Error)]

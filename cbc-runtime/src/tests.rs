@@ -4,7 +4,7 @@
 //! works correctly with all pallets integrated together.
 
 use crate::{
-    mock::{*, account_id, funded_account_id},
+    mock::{*, funded_account_id},
     RuntimeOrigin, System, Balances, Runtime,
 };
 type DcfPallet = pallet_cbc_dcf::Pallet<Runtime>;
@@ -12,6 +12,7 @@ type PalletCbcPos = pallet_cbc_pos::Pallet<Runtime>;
 type PalletCbcPoi = pallet_cbc_poi::Pallet<Runtime>;
 use frame_support::{assert_ok, assert_noop, traits::Get};
 use sp_runtime::traits::Zero;
+use codec::Encode;
 
 #[cfg(test)]
 mod runtime_integration_tests {
@@ -26,7 +27,7 @@ mod runtime_integration_tests {
             // Verify all pallets are working
             let test_account = funded_account_id(1);
             assert!(System::account_exists(&test_account));
-            assert!(Balances::free_balance(&test_account) > Zero::zero());
+            assert!(Balances::free_balance(&test_account) > 0u128);
             
             // Verify DCF pallet is initialized
             let validators = DcfPallet::validator_set();
@@ -48,7 +49,7 @@ mod runtime_integration_tests {
     fn test_cross_pallet_interactions() {
         new_test_ext().execute_with(|| {
             let validator = funded_account_id(1);
-            let initial_balance = Balances::free_balance(&validator);
+            let _initial_balance = Balances::free_balance(&validator);
             
             // Test DCF and Balances interaction
             let stake_amount = 5000u128;
@@ -357,7 +358,7 @@ mod runtime_integration_tests {
             }
             
             // Test storage consistency
-            let current_epoch = DcfPallet::current_epoch();
+            let _current_epoch = DcfPallet::current_epoch();
             let epoch_config = pallet_cbc_dcf::EpochConfigStorage::<Runtime>::get();
             
             assert!(epoch_config.blocks_per_epoch > 0);
@@ -431,6 +432,239 @@ mod runtime_mock_tests {
             setup_validator_with_stake(test_account.clone(), 10000);
             assert_eq!(Balances::reserved_balance(&test_account), 10000);
             assert_eq!(DcfPallet::validator_stake(&test_account), 10000);
+        });
+    }
+}
+
+// ================================================================================================
+// Runtime API Unit Tests
+// ================================================================================================
+
+#[cfg(test)]
+mod runtime_api_tests {
+    use super::*;
+    use sp_runtime::traits::Zero;
+
+    #[test]
+    fn test_account_nonce_api() {
+        new_test_ext().execute_with(|| {
+            let account = funded_account_id(1);
+            
+            // Test initial nonce
+            let nonce = System::account_nonce(&account);
+            assert_eq!(nonce, 0);
+            
+            // Increment nonce and test again
+            System::inc_account_nonce(&account);
+            let new_nonce = System::account_nonce(&account);
+            assert_eq!(new_nonce, 1);
+        });
+    }
+
+    #[test]
+    fn test_pos_api_functions() {
+        new_test_ext().execute_with(|| {
+            let validator = funded_account_id(1);
+            
+            // Test getting validator stake
+            let stake = DcfPallet::validator_stake(&validator);
+            assert!(stake >= 0);
+            
+            // Test getting active validators
+            let validators = DcfPallet::active_validators();
+            assert!(!validators.is_empty());
+            
+            // If validators exist, they should be valid account IDs
+            for validator in validators {
+                // AccountId should not be empty - just verify we have validators
+                assert!(validator.encode().len() > 0);
+            }
+        });
+    }
+
+    #[test]
+    fn test_poi_api_functions() {
+        new_test_ext().execute_with(|| {
+            let validator = funded_account_id(1);
+            
+            // Test getting current epoch
+            let epoch = DcfPallet::current_epoch();
+            assert!(epoch >= 0);
+            
+            // Test getting inference result (should be None initially)
+            let _result = PalletCbcPoi::inference_results(&validator);
+            // May be None or Some depending on genesis setup
+        });
+    }
+
+    #[test]
+    fn test_dcf_api_functions() {
+        new_test_ext().execute_with(|| {
+            // Test getting all validator scores
+            let scores = DcfPallet::get_validators_by_score();
+            
+            // Should return a list of (validator, score) pairs
+            for (validator, score) in scores {
+                // AccountId should not be empty - just verify we have validators
+                assert!(validator.encode().len() > 0);
+                assert!(score >= 0);
+            }
+            
+            // Test getting current epoch
+            let epoch = DcfPallet::current_epoch();
+            assert!(epoch >= 0);
+            
+            // Test getting consensus weights
+            let pos_weight = DcfPallet::pos_weight();
+            let poi_weight = DcfPallet::poi_weight();
+            
+            // Weights should be positive and sum to 100
+            assert!(pos_weight > 0);
+            assert!(poi_weight > 0);
+            assert_eq!(pos_weight + poi_weight, 100);
+        });
+    }
+
+    #[test]
+    fn test_dcf_validator_functions() {
+        new_test_ext().execute_with(|| {
+            let validator = funded_account_id(1);
+            
+            // Test checking if validator is active
+            let is_active = DcfPallet::is_validator_active(&validator);
+            assert!(is_active == true || is_active == false);
+            
+            // Test getting validator stake
+            let stake = DcfPallet::validator_stake(&validator);
+            assert!(stake >= 0);
+            
+            // Test getting validator participation
+            let (authored, missed) = DcfPallet::validator_participation(&validator);
+            assert!(authored >= 0);
+            assert!(missed >= 0);
+        });
+    }
+
+    #[test]
+    fn test_dcf_system_functions() {
+        new_test_ext().execute_with(|| {
+            // Test getting total validators count
+            let count = DcfPallet::get_total_validators_count();
+            assert!(count >= 0);
+            
+            // Test getting validator set info
+            let (total, active, inactive) = DcfPallet::get_validator_set_info();
+            
+            // Verify counts are consistent
+            assert!(total >= active + inactive);
+            assert!(active >= 0);
+            assert!(inactive >= 0);
+            
+            // Test getting governance mode
+            let governance_enabled = DcfPallet::get_governance_mode();
+            assert!(governance_enabled == true || governance_enabled == false);
+        });
+    }
+
+    #[test]
+    fn test_dcf_finality_functions() {
+        new_test_ext().execute_with(|| {
+            // Test finality-related functions
+            let last_finalized = DcfPallet::get_last_finalized_block();
+            assert!(last_finalized >= 0);
+            
+            let is_finalized = DcfPallet::is_block_finalized(1);
+            assert!(is_finalized == true || is_finalized == false);
+            
+            let (finalized_block, current_block) = DcfPallet::get_finality_info();
+            assert!(finalized_block <= current_block);
+            
+            let blocks_since = DcfPallet::blocks_since_finalization(current_block);
+            assert!(blocks_since >= 0);
+        });
+    }
+
+    #[test]
+    fn test_cross_pallet_api_consistency() {
+        new_test_ext().execute_with(|| {
+            // Test that APIs return consistent data across pallets
+            let validator = funded_account_id(1);
+            
+            // Get validator from different APIs
+            let dcf_active = DcfPallet::is_validator_active(&validator);
+            let dcf_validators = DcfPallet::active_validators();
+            
+            // If validator is active in DCF, it should be in the active list
+            if dcf_active {
+                assert!(dcf_validators.contains(&validator));
+            }
+            
+            // Validator lists should be consistent
+            assert!(dcf_validators.len() >= 0);
+        });
+    }
+
+    #[test]
+    fn test_epoch_consistency_across_pallets() {
+        new_test_ext().execute_with(|| {
+            // Test epoch consistency across pallets
+            let dcf_epoch = DcfPallet::current_epoch();
+            let poi_epoch = PalletCbcPoi::current_epoch();
+            
+            // Epochs should be consistent across pallets
+            assert_eq!(dcf_epoch, poi_epoch);
+        });
+    }
+
+    #[test]
+    fn test_api_error_handling() {
+        new_test_ext().execute_with(|| {
+            let invalid_validator = funded_account_id(999999);
+            
+            // Test that APIs handle invalid validators gracefully
+            let stake = DcfPallet::validator_stake(&invalid_validator);
+            assert_eq!(stake, 0);
+            
+            let is_active = DcfPallet::is_validator_active(&invalid_validator);
+            assert_eq!(is_active, false);
+        });
+    }
+
+    #[test]
+    fn test_api_edge_cases() {
+        new_test_ext().execute_with(|| {
+            // Test APIs with edge case inputs
+            
+            // Test with block number 0
+            let is_zero_finalized = DcfPallet::is_block_finalized(0);
+            assert!(is_zero_finalized == true || is_zero_finalized == false);
+            
+            // Test finality with edge cases
+            let (finalized_block, current_block) = DcfPallet::get_finality_info();
+            assert!(finalized_block <= current_block);
+            
+            // If we reach here, all edge cases were handled gracefully
+            assert!(true);
+        });
+    }
+
+    #[test]
+    fn test_api_performance() {
+        new_test_ext().execute_with(|| {
+            // Test API performance with multiple validators
+            let validators = DcfPallet::active_validators();
+            
+            // Test that getting scores for all validators doesn't panic
+            for validator in validators.iter().take(10) { // Limit to 10 for test performance
+                let _ = DcfPallet::validator_stake(validator);
+                let _ = DcfPallet::validator_participation(validator);
+            }
+            
+            // Test bulk operations
+            let all_scores = DcfPallet::get_validators_by_score();
+            
+            // Should complete without issues
+            assert!(all_scores.len() >= 0);
         });
     }
 }

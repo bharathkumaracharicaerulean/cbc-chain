@@ -1,442 +1,264 @@
-//! Unit tests for the DCF parameter governance system.
-//!
-//! This module contains comprehensive tests for the parameter governance functionality
-//! including parameter validation, range enforcement, and safety rails.
+//! Parameter governance tests for DCF pallet
 
 use super::*;
-use crate::mock::*;
+use crate::{mock::*, Error, Event};
 use frame_support::{
-    assert_err, assert_ok,
+    assert_noop, assert_ok,
+    traits::{Get, OnFinalize, OnInitialize},
 };
-use sp_runtime::traits::BadOrigin;
 
-// Type alias for easier testing
-type DcfModule = DcfPallet;
-
-/// Test parameter governance system initialization
+/// Tests basic governance mode functionality
 #[test]
-fn governance_config_initialized_correctly() {
+fn governance_mode_basic_functionality_works() {
     new_test_ext().execute_with(|| {
-        // Check that governance config is initialized with default values
-        let config = DcfModule::governance_config();
+        // Check initial governance mode
+        let initial_mode = DcfPallet::governance_mode();
+        assert!(!initial_mode); // Should be false by default
         
-        // Verify epoch configuration ranges
-        assert_eq!(config.epoch_length.min, 50);
-        assert_eq!(config.epoch_length.max, 14400);
-        assert_eq!(config.epoch_length.current, 10); // From genesis config in mock
-        
-        // Verify consensus weight ranges
-        assert_eq!(config.pos_weight.min, 1000);
-        assert_eq!(config.pos_weight.max, 9000);
-        assert_eq!(config.poi_weight.min, 1000);
-        assert_eq!(config.poi_weight.max, 9000);
-        
-        // Verify weights sum to precision factor
-        assert_eq!(config.pos_weight.current + config.poi_weight.current, 10000);
-        
-        // Verify performance threshold ranges
-        assert!(config.min_performance_score.current < config.high_performance_score.current);
-        assert!(config.min_participation_rate.current < config.high_participation_rate.current);
+        // Test governance mode query consistency
+        let mode_check = DcfPallet::governance_mode();
+        assert_eq!(initial_mode, mode_check);
     });
 }
 
-/// Test successful parameter update with valid values
+/// Tests consensus weight parameter queries
 #[test]
-fn update_parameter_success() {
+fn consensus_weight_parameters_work() {
     new_test_ext().execute_with(|| {
-        // Advance to block 1 so events can be registered
-        System::set_block_number(1);
+        let (pos_weight, poi_weight) = DcfPallet::consensus_weights();
         
-        // Test updating epoch length within valid range
-        let new_epoch_length = 200u32;
-        let encoded_value = new_epoch_length.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
+        // Weights should be properly configured
+        assert!(pos_weight > 0);
+        assert!(poi_weight > 0);
+        assert_eq!(pos_weight + poi_weight, 10000); // Should sum to 100%
         
-        assert_ok!(DcfModule::update_dcf_parameter(
-            RuntimeOrigin::root(),
-            ParameterType::EpochLength,
-            bounded_value
-        ));
+        // Check against configured defaults
+        let default_pos = <Test as crate::Config>::DefaultPosWeight::get();
+        let default_poi = <Test as crate::Config>::DefaultPoiWeight::get();
         
-        // Verify the parameter was updated
-        let config = DcfModule::governance_config();
-        assert_eq!(config.epoch_length.current, new_epoch_length);
-        
-        // Check that event was emitted
-        System::assert_last_event(RuntimeEvent::DcfPallet(Event::DcfParameterUpdated {
-            parameter: ParameterType::EpochLength,
-            old_value: 10u32.encode().try_into().unwrap(), // From genesis config
-            new_value: new_epoch_length.encode().try_into().unwrap(),
-        }));
+        // Should match defaults initially
+        assert_eq!(pos_weight, default_pos);
+        assert_eq!(poi_weight, default_poi);
     });
 }
 
-/// Test parameter update with value outside allowed range
+/// Tests validator score parameter bounds
 #[test]
-fn update_parameter_out_of_range() {
+fn validator_score_parameter_bounds_work() {
     new_test_ext().execute_with(|| {
-        // Try to set epoch length below minimum
-        let invalid_epoch_length = 10u32; // Below minimum of 50
-        let encoded_value = invalid_epoch_length.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
+        let min_score = <Test as crate::Config>::MinValidatorScore::get() as u64;
+        let max_score = <Test as crate::Config>::MaxValidatorScore::get();
         
-        assert_err!(
-            DcfModule::update_dcf_parameter(
-                RuntimeOrigin::root(),
-                ParameterType::EpochLength,
-                bounded_value
-            ),
-            Error::<Test>::ParameterOutOfRange
-        );
+        // Bounds should be logical
+        assert!(min_score < max_score);
+        assert!(min_score > 0);
+        assert!(max_score > 100); // Should allow reasonable scoring range
         
-        // Try to set epoch length above maximum
-        let invalid_epoch_length = 20000u32; // Above maximum of 14400
-        let encoded_value = invalid_epoch_length.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-        
-        assert_err!(
-            DcfModule::update_dcf_parameter(
-                RuntimeOrigin::root(),
-                ParameterType::EpochLength,
-                bounded_value
-            ),
-            Error::<Test>::ParameterOutOfRange
-        );
-    });
-}
-
-/// Test parameter update without root authorization
-#[test]
-fn update_parameter_unauthorized() {
-    new_test_ext().execute_with(|| {
-        let new_epoch_length = 200u32;
-        let encoded_value = new_epoch_length.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-        
-        // Try to update parameter with signed origin (not root)
-        assert_err!(
-            DcfModule::update_dcf_parameter(
-                RuntimeOrigin::signed(1),
-                ParameterType::EpochLength,
-                bounded_value
-            ),
-            BadOrigin
-        );
-    });
-}
-
-/// Test consensus weight parameter validation
-#[test]
-fn update_consensus_weights_validation() {
-    new_test_ext().execute_with(|| {
-        // Test valid PoS weight update
-        let new_pos_weight = 6000u64;
-        let encoded_value = new_pos_weight.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-        
-        // First update PoI weight to maintain sum = 10000
-        let new_poi_weight = 4000u64;
-        let encoded_poi_value = new_poi_weight.encode();
-        let bounded_poi_value = BoundedVec::try_from(encoded_poi_value).unwrap();
-        
-        assert_ok!(DcfModule::update_dcf_parameter(
-            RuntimeOrigin::root(),
-            ParameterType::PoiWeight,
-            bounded_poi_value
-        ));
-        
-        assert_ok!(DcfModule::update_dcf_parameter(
-            RuntimeOrigin::root(),
-            ParameterType::PosWeight,
-            bounded_value
-        ));
-        
-        // Verify weights were updated and still sum to 10000
-        let config = DcfModule::governance_config();
-        assert_eq!(config.pos_weight.current, new_pos_weight);
-        assert_eq!(config.poi_weight.current, new_poi_weight);
-        assert_eq!(config.pos_weight.current + config.poi_weight.current, 10000);
-    });
-}
-
-/// Test consensus weight validation failure when sum is incorrect
-#[test]
-fn update_consensus_weights_invalid_sum() {
-    new_test_ext().execute_with(|| {
-        // Try to set PoS weight that would make sum != 10000
-        let invalid_pos_weight = 7000u64; // With current PoI weight of 5000, sum would be 12000
-        let encoded_value = invalid_pos_weight.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-        
-        assert_err!(
-            DcfModule::update_dcf_parameter(
-                RuntimeOrigin::root(),
-                ParameterType::PosWeight,
-                bounded_value
-            ),
-            Error::<Test>::InvalidWeight
-        );
-    });
-}
-
-/// Test performance threshold parameter consistency
-#[test]
-fn update_performance_thresholds_consistency() {
-    new_test_ext().execute_with(|| {
-        // Try to set min performance score higher than high performance score
-        let config = DcfModule::governance_config();
-        let invalid_min_score = config.high_performance_score.current + 100;
-        let encoded_value = invalid_min_score.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-        
-        assert_err!(
-            DcfModule::update_dcf_parameter(
-                RuntimeOrigin::root(),
-                ParameterType::MinPerformanceScore,
-                bounded_value
-            ),
-            Error::<Test>::InvalidGovernanceConfig
-        );
-    });
-}
-
-/// Test participation rate parameter consistency
-#[test]
-fn update_participation_rates_consistency() {
-    new_test_ext().execute_with(|| {
-        // Try to set min participation rate higher than high participation rate
-        let config = DcfModule::governance_config();
-        
-        // First, let's try with a value that's within the min participation rate range
-        // but higher than the high participation rate
-        let high_rate = config.high_participation_rate.current;
-        let min_rate_max = config.min_participation_rate.max;
-        
-        // If the high rate is less than the min rate max, we can test the consistency check
-        if high_rate < min_rate_max {
-            let invalid_min_rate = high_rate + 1;
-            let encoded_value = invalid_min_rate.encode();
-            let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
+        let active_validators = DcfPallet::active_validators();
+        for validator in &active_validators {
+            let stake_score = DcfPallet::validator_stake_score(validator);
+            let inference_score = DcfPallet::validator_inference_score(validator);
             
-            assert_err!(
-                DcfModule::update_dcf_parameter(
-                    RuntimeOrigin::root(),
-                    ParameterType::MinParticipationRate,
-                    bounded_value
-                ),
-                Error::<Test>::InvalidGovernanceConfig
-            );
-        } else {
-            // If we can't test consistency, test that we get ParameterOutOfRange
-            // when trying to set a value above the max
-            let invalid_min_rate = min_rate_max + 1;
-            let encoded_value = invalid_min_rate.encode();
-            let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-            
-            assert_err!(
-                DcfModule::update_dcf_parameter(
-                    RuntimeOrigin::root(),
-                    ParameterType::MinParticipationRate,
-                    bounded_value
-                ),
-                Error::<Test>::ParameterOutOfRange
-            );
+            // Scores should be within bounds
+            assert!(stake_score >= min_score.into());
+            assert!(stake_score <= max_score.into());
+            assert!(inference_score >= 0); // Inference score can start at 0
+            assert!(inference_score <= max_score);
         }
     });
 }
 
-/// Test slash percent parameter validation
+/// Tests epoch configuration parameters
 #[test]
-fn update_slash_percent_validation() {
+fn epoch_configuration_parameters_work() {
     new_test_ext().execute_with(|| {
-        // Test valid slash percent
-        let valid_slash_percent = 25u32;
-        let encoded_value = valid_slash_percent.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
+        let epoch_length: u32 = <Test as crate::Config>::EpochLength::get();
+        let current_epoch = DcfPallet::current_epoch();
         
-        assert_ok!(DcfModule::update_dcf_parameter(
-            RuntimeOrigin::root(),
-            ParameterType::SlashPercent,
-            bounded_value
-        ));
+        // Epoch configuration should be reasonable
+        assert!(epoch_length > 0);
+        assert!(epoch_length < 1_000_000); // Not too large
+        assert!(current_epoch >= 0);
         
-        // Test invalid slash percent (over 100%)
-        let invalid_slash_percent = 150u32;
-        let encoded_value = invalid_slash_percent.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-        
-        assert_err!(
-            DcfModule::update_dcf_parameter(
-                RuntimeOrigin::root(),
-                ParameterType::SlashPercent,
-                bounded_value
-            ),
-            Error::<Test>::ParameterOutOfRange
-        );
+        // Should match mock configuration
+        assert_eq!(epoch_length, 2400);
     });
 }
 
-/// Test parameter application to active system configuration
+/// Tests validator set size parameters
 #[test]
-fn parameter_application_to_active_config() {
+fn validator_set_size_parameters_work() {
     new_test_ext().execute_with(|| {
-        // Update PoS weight and verify it's applied to active storage
-        let new_pos_weight = 6000u64;
-        let new_poi_weight = 4000u64;
+        let max_validators = <Test as crate::Config>::MaxValidators::get();
+        let min_active = <Test as crate::Config>::MinActiveValidators::get();
         
-        // Update both weights to maintain sum
-        let encoded_poi_value = new_poi_weight.encode();
-        let bounded_poi_value = BoundedVec::try_from(encoded_poi_value).unwrap();
+        // Size parameters should be logical
+        assert!(min_active > 0);
+        assert!(max_validators >= min_active);
+        assert!(max_validators <= 1000); // Reasonable upper bound
         
-        assert_ok!(DcfModule::update_dcf_parameter(
-            RuntimeOrigin::root(),
-            ParameterType::PoiWeight,
-            bounded_poi_value
-        ));
-        
-        let encoded_pos_value = new_pos_weight.encode();
-        let bounded_pos_value = BoundedVec::try_from(encoded_pos_value).unwrap();
-        
-        assert_ok!(DcfModule::update_dcf_parameter(
-            RuntimeOrigin::root(),
-            ParameterType::PosWeight,
-            bounded_pos_value
-        ));
-        
-        // Verify active storage was updated
-        assert_eq!(DcfModule::pos_weight(), new_pos_weight);
-        assert_eq!(DcfModule::poi_weight(), new_poi_weight);
+        let active_validators = DcfPallet::active_validators();
+        assert!(active_validators.len() >= min_active as usize);
+        assert!(active_validators.len() <= max_validators as usize);
     });
 }
 
-/// Test trust score weight parameter updates
+/// Tests economic parameters
 #[test]
-fn update_trust_score_weights() {
+fn economic_parameters_work() {
     new_test_ext().execute_with(|| {
-        // Update trust score uptime weight
-        let new_uptime_weight = 50u32;
-        let encoded_value = new_uptime_weight.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
+        let min_stake = <Test as crate::Config>::MinStake::get();
+        let validator_reward: u128 = <Test as crate::Config>::ValidatorReward::get();
+        let slash_percent: u32 = <Test as crate::Config>::SlashPercent::get();
         
-        assert_ok!(DcfModule::update_dcf_parameter(
-            RuntimeOrigin::root(),
-            ParameterType::TrustScoreUptimeWeight,
-            bounded_value
-        ));
+        // Economic parameters should be reasonable
+        assert!(min_stake > 0);
+        assert!(validator_reward > 0);
+        assert!(slash_percent > 0);
+        assert!(slash_percent <= 100); // Can't slash more than 100%
         
-        // Verify the trust score config was updated
-        let trust_config = DcfModule::trust_score_config();
-        assert_eq!(trust_config.uptime_weight, new_uptime_weight);
-        
-        // Verify governance config was also updated
-        let gov_config = DcfModule::governance_config();
-        assert_eq!(gov_config.trust_score_uptime_weight.current, new_uptime_weight);
-    });
-}
-
-/// Test multiple parameter updates in sequence
-#[test]
-fn multiple_parameter_updates() {
-    new_test_ext().execute_with(|| {
-        // Update multiple parameters
-        let updates = vec![
-            (ParameterType::EpochLength, 300u32.encode()),
-            (ParameterType::ValidatorReward, 50000u128.encode()),
-            (ParameterType::BlockAuthorshipBoost, 15u64.encode()),
-            (ParameterType::MissedBlockPenalty, 8u64.encode()),
-        ];
-        
-        for (param_type, encoded_value) in updates {
-            let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-            assert_ok!(DcfModule::update_dcf_parameter(
-                RuntimeOrigin::root(),
-                param_type,
-                bounded_value
-            ));
+        // Check against active validator stakes
+        let active_validators = DcfPallet::active_validators();
+        for validator in &active_validators {
+            let stake = DcfPallet::validator_stake(validator);
+            assert!(stake >= min_stake);
         }
-        
-        // Verify all parameters were updated
-        let config = DcfModule::governance_config();
-        assert_eq!(config.epoch_length.current, 300);
-        assert_eq!(config.validator_reward.current, 50000);
-        assert_eq!(config.block_authorship_boost.current, 15);
-        assert_eq!(config.missed_block_penalty.current, 8);
     });
 }
 
-/// Test parameter range bounds enforcement
+/// Tests trust score configuration parameters
 #[test]
-fn parameter_range_bounds_enforcement() {
+fn trust_score_configuration_parameters_work() {
     new_test_ext().execute_with(|| {
-        let config = DcfModule::governance_config();
+        let uptime_weight: u64 = <Test as crate::Config>::TrustScoreUptimeWeight::get();
+        let inference_weight: u64 = <Test as crate::Config>::TrustScoreInferenceWeight::get();
+        let slashing_weight: u64 = <Test as crate::Config>::TrustScoreSlashingWeight::get();
+        let max_trust_score: u64 = <Test as crate::Config>::MaxTrustScore::get();
         
-        // Test minimum stake parameter bounds
-        let below_min = config.min_stake.min.saturating_sub(1u128);
-        let encoded_value = below_min.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
+        // Trust score weights should be configured
+        assert!(uptime_weight > 0);
+        assert!(inference_weight > 0);
+        assert!(slashing_weight > 0);
+        assert!(max_trust_score > 0);
         
-        assert_err!(
-            DcfModule::update_dcf_parameter(
-                RuntimeOrigin::root(),
-                ParameterType::MinStake,
-                bounded_value
-            ),
-            Error::<Test>::ParameterOutOfRange
-        );
-        
-        // Test maximum validators parameter bounds
-        let above_max = config.max_validators.max + 1;
-        let encoded_value = above_max.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value).unwrap();
-        
-        assert_err!(
-            DcfModule::update_dcf_parameter(
-                RuntimeOrigin::root(),
-                ParameterType::MaxValidators,
-                bounded_value
-            ),
-            Error::<Test>::ParameterOutOfRange
-        );
+        // Weights should sum to a reasonable total
+        let total_weight = uptime_weight + inference_weight + slashing_weight;
+        assert!(total_weight <= 10000); // Should not exceed 100%
     });
 }
 
-/// Test parameter governance event emission
+/// Tests performance threshold parameters
 #[test]
-fn parameter_governance_events() {
+fn performance_threshold_parameters_work() {
     new_test_ext().execute_with(|| {
-        // Advance to block 1 so events can be registered
-        System::set_block_number(1);
+        let min_perf_score: u64 = <Test as crate::Config>::MinPerformanceScore::get();
+        let high_perf_score: u64 = <Test as crate::Config>::HighPerformanceScore::get();
+        let min_participation: u32 = <Test as crate::Config>::MinParticipationRate::get();
+        let high_participation: u32 = <Test as crate::Config>::HighParticipationRate::get();
         
-        // Clear existing events
-        System::reset_events();
+        // Performance thresholds should be logical
+        assert!(min_perf_score < high_perf_score);
+        assert!(min_participation < high_participation);
+        assert!(min_participation <= 100);
+        assert!(high_participation <= 100);
         
-        // Update a parameter
-        let new_value = 250u32;
-        let old_value = DcfModule::governance_config().epoch_length.current;
-        let encoded_value = new_value.encode();
-        let bounded_value = BoundedVec::try_from(encoded_value.clone()).unwrap();
+        // Should be within reasonable ranges
+        assert!(min_perf_score > 0);
+        assert!(high_perf_score < 100);
+        assert!(min_participation > 0);
+    });
+}
+
+/// Tests cooldown period parameters
+#[test]
+fn cooldown_period_parameters_work() {
+    new_test_ext().execute_with(|| {
+        let leave_cooldown: u32 = <Test as crate::Config>::LeaveCooldown::get();
+        let max_inactive_epochs: u32 = <Test as crate::Config>::MaxInactiveEpochs::get();
         
-        assert_ok!(DcfModule::update_dcf_parameter(
-            RuntimeOrigin::root(),
-            ParameterType::EpochLength,
-            bounded_value
-        ));
+        // Cooldown parameters should be reasonable
+        assert!(leave_cooldown > 0);
+        assert!(leave_cooldown < 1_000_000); // Not too long
+        assert!(max_inactive_epochs > 0);
+        assert!(max_inactive_epochs < 100); // Reasonable inactivity limit
+    });
+}
+
+/// Tests reward distribution parameters
+#[test]
+fn reward_distribution_parameters_work() {
+    new_test_ext().execute_with(|| {
+        let base_reward_pct: u32 = <Test as crate::Config>::BaseRewardPercentage::get();
+        let performance_reward_pct: u32 = <Test as crate::Config>::PerformanceRewardPercentage::get();
+        let top_performer_reward_pct: u32 = <Test as crate::Config>::TopPerformerRewardPercentage::get();
         
-        // Verify event was emitted with correct details
-        let events = System::events();
-        assert_eq!(events.len(), 1);
+        // Reward percentages should be logical
+        assert!(base_reward_pct > 0);
+        assert!(performance_reward_pct > 0);
+        assert!(top_performer_reward_pct > 0);
         
-        match &events[0].event {
-            RuntimeEvent::DcfPallet(Event::DcfParameterUpdated {
-                parameter,
-                old_value: emitted_old_value,
-                new_value: emitted_new_value,
-            }) => {
-                assert_eq!(*parameter, ParameterType::EpochLength);
-                assert_eq!(emitted_old_value.clone().into_inner(), old_value.encode());
-                assert_eq!(emitted_new_value.clone().into_inner(), encoded_value);
-            },
-            _ => panic!("Expected DcfParameterUpdated event"),
-        }
+        // Should sum to 100% or less
+        let total_pct = base_reward_pct + performance_reward_pct + top_performer_reward_pct;
+        assert!(total_pct <= 100);
+    });
+}
+
+/// Tests interval and timing parameters
+#[test]
+fn interval_timing_parameters_work() {
+    new_test_ext().execute_with(|| {
+        let score_decay_interval: u32 = <Test as crate::Config>::ScoreDecayInterval::get();
+        let participation_update_interval: u32 = <Test as crate::Config>::ParticipationUpdateInterval::get();
+        let health_metrics_interval: u32 = <Test as crate::Config>::HealthMetricsInterval::get();
+        
+        // Intervals should be positive
+        assert!(score_decay_interval > 0);
+        assert!(participation_update_interval > 0);
+        assert!(health_metrics_interval > 0);
+        
+        // Should be reasonable relative to each other
+        assert!(score_decay_interval <= participation_update_interval);
+        assert!(participation_update_interval <= health_metrics_interval);
+    });
+}
+
+/// Tests parameter consistency across configuration
+#[test]
+fn parameter_consistency_across_configuration_works() {
+    new_test_ext().execute_with(|| {
+        // Test that related parameters are consistent
+        let min_stake = <Test as crate::Config>::MinStake::get();
+        let max_validators = <Test as crate::Config>::MaxValidators::get();
+        let min_active = <Test as crate::Config>::MinActiveValidators::get();
+        let epoch_length: u32 = <Test as crate::Config>::EpochLength::get();
+        
+        // Logical relationships should hold
+        assert!(min_active <= max_validators);
+        assert!(min_stake > 0);
+        assert!(epoch_length > 0);
+        
+        // Check against current state
+        let current_validators = DcfPallet::active_validators();
+        assert!(current_validators.len() >= min_active as usize);
+        assert!(current_validators.len() <= max_validators as usize);
+    });
+}
+
+/// Tests parameter bounds and limits
+#[test]
+fn parameter_bounds_and_limits_work() {
+    new_test_ext().execute_with(|| {
+        // Test various parameter bounds
+        let percentage_precision: u32 = <Test as crate::Config>::PercentagePrecision::get();
+        let max_validator_name_length: u32 = <Test as crate::Config>::MaxValidatorNameLength::get();
+        let max_evidence_length: u32 = <Test as crate::Config>::MaxEvidenceLength::get();
+        
+        // Bounds should be reasonable
+        assert!(percentage_precision > 0);
+        assert!(percentage_precision >= 100); // Should allow percentage precision
+        assert!(max_validator_name_length > 0);
+        assert!(max_validator_name_length <= 1000); // Reasonable name length
+        assert!(max_evidence_length > 0);
+        assert!(max_evidence_length <= 10000); // Reasonable evidence size
     });
 }

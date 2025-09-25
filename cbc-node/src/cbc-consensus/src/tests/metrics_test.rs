@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::metrics::ConsensusMetrics;
+    use crate::metrics::ConsensusMetrics;
     use prometheus::Registry;
 
     #[test]
@@ -106,11 +106,11 @@ mod tests {
         metrics.record_slashing(0);
         
         // Test large values
-        metrics.update_active_validators(u32::MAX);
-        metrics.update_total_reserved_stake(u64::MAX);
+        metrics.update_active_validators(u32::MAX as u64);
+        metrics.update_total_reserved_stake(u64::MAX as u128);
         metrics.update_current_epoch(u32::MAX);
-        metrics.record_reward_distribution(u64::MAX);
-        metrics.record_slashing(u64::MAX);
+        metrics.record_reward_distribution(u64::MAX as u128);
+        metrics.record_slashing(u64::MAX as u128);
         
         println!("Edge cases test completed successfully");
     }
@@ -130,14 +130,14 @@ mod tests {
             let handle = thread::spawn(move || {
                 for i in 0..100 {
                     metrics_clone.update_active_validators(thread_id * 100 + i);
-                    metrics_clone.record_reward_distribution((thread_id * 100 + i) as u64);
+                    metrics_clone.record_reward_distribution((thread_id * 100 + i) as u128);
                     
                     if i % 10 == 0 {
-                        metrics_clone.update_current_epoch(thread_id * 100 + i);
+                        metrics_clone.update_current_epoch((thread_id * 100 + i) as u32);
                     }
                     
                     if i % 20 == 0 {
-                        metrics_clone.record_slashing((thread_id * 10 + i / 20) as u64);
+                        metrics_clone.record_slashing((thread_id * 10 + i / 20) as u128);
                     }
                 }
             });
@@ -164,15 +164,15 @@ mod tests {
         
         for i in 0..10000 {
             metrics.update_active_validators(i % 100);
-            metrics.update_total_reserved_stake(i as u64 * 1000);
+            metrics.update_total_reserved_stake((i as u64 * 1000) as u128);
             
             if i % 100 == 0 {
-                metrics.update_current_epoch(i / 100);
+                metrics.update_current_epoch((i / 100) as u32);
             }
             
             if i % 1000 == 0 {
-                metrics.record_reward_distribution(i as u64);
-                metrics.record_slashing(i as u64 / 10);
+                metrics.record_reward_distribution(i as u128);
+                metrics.record_slashing((i / 10) as u128);
             }
         }
         

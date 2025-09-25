@@ -4,7 +4,7 @@
 
 use sp_runtime::traits::Block as BlockTrait;
 use std::collections::HashMap;
-use crate::error::{ConsensusError, Result};
+use crate::error::{ConsensusError, ConsensusResult};
 
 /// Tracks block finality and confirmations
 pub struct FinalityEngine<B: BlockTrait> {
@@ -27,7 +27,7 @@ impl<B: BlockTrait> FinalityEngine<B> {
     }
 
     /// Update block confirmations and check for finality
-    pub fn update_confirmations(&mut self, block_hash: B::Hash) -> Result<bool> {
+    pub fn update_confirmations(&mut self, block_hash: B::Hash) -> ConsensusResult<bool> {
         if let Some(confirmations) = self.confirmations.get_mut(&block_hash) {
             *confirmations += 1;
             Ok(*confirmations >= self.finality_threshold)

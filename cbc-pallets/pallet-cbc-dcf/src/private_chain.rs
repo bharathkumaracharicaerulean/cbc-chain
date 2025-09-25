@@ -272,18 +272,18 @@ mod tests {
     fn test_private_chain_mode_enable_disable() {
         new_test_ext().execute_with(|| {
             // Initially in public mode
-            assert!(!DcfModule::is_private_chain_mode());
+            assert!(!DcfPallet::is_private_chain_mode());
             
             // Enable private mode with allowlist
             let allowlist = vec![1u64, 2u64, 3u64];
-            assert_ok!(DcfModule::enable_private_chain_mode(allowlist.clone(), true));
+            assert_ok!(DcfPallet::enable_private_chain_mode(allowlist.clone(), true));
             
-            assert!(DcfModule::is_private_chain_mode());
-            assert_eq!(DcfModule::get_validator_allowlist(), allowlist);
+            assert!(DcfPallet::is_private_chain_mode());
+            assert_eq!(DcfPallet::get_validator_allowlist(), allowlist);
             
             // Disable private mode
-            assert_ok!(DcfModule::disable_private_chain_mode());
-            assert!(!DcfModule::is_private_chain_mode());
+            assert_ok!(DcfPallet::disable_private_chain_mode());
+            assert!(!DcfPallet::is_private_chain_mode());
         });
     }
 
@@ -291,15 +291,15 @@ mod tests {
     fn test_validator_allowlist_management() {
         new_test_ext().execute_with(|| {
             // Enable private mode
-            assert_ok!(DcfModule::enable_private_chain_mode(vec![1u64, 2u64], true));
+            assert_ok!(DcfPallet::enable_private_chain_mode(vec![1u64, 2u64], true));
             
             // Add validator to allowlist
-            assert_ok!(DcfModule::add_to_validator_allowlist(3u64));
-            assert!(DcfModule::is_validator_allowed(&3u64));
+            assert_ok!(DcfPallet::add_to_validator_allowlist(3u64));
+            assert!(DcfPallet::is_validator_allowed(&3u64));
             
             // Remove validator from allowlist
-            assert_ok!(DcfModule::remove_from_validator_allowlist(&3u64));
-            assert!(!DcfModule::is_validator_allowed(&3u64));
+            assert_ok!(DcfPallet::remove_from_validator_allowlist(&3u64));
+            assert!(!DcfPallet::is_validator_allowed(&3u64));
         });
     }
 
@@ -311,14 +311,14 @@ mod tests {
             let _ = Balances::make_free_balance_be(&2, 100_000_000);
             
             // Enable private mode with limited allowlist
-            assert_ok!(DcfModule::enable_private_chain_mode(vec![1u64], false));
+            assert_ok!(DcfPallet::enable_private_chain_mode(vec![1u64], false));
             
             // Allowed validator can join
-            assert_ok!(DcfModule::join_validators(RuntimeOrigin::signed(1)));
+            assert_ok!(DcfPallet::join_validators(RuntimeOrigin::signed(1), None));
             
             // Non-allowed validator cannot join
             assert_noop!(
-                DcfModule::join_validators(RuntimeOrigin::signed(2)),
+                DcfPallet::join_validators(RuntimeOrigin::signed(2), None),
                 Error::<Test>::NotInAllowlist
             );
         });
@@ -332,20 +332,20 @@ mod tests {
             let _ = Balances::make_free_balance_be(&2, 100_000_000);
             let _ = Balances::make_free_balance_be(&3, 100_000_000);
             
-            assert_ok!(DcfModule::join_validators(RuntimeOrigin::signed(1)));
-            assert_ok!(DcfModule::join_validators(RuntimeOrigin::signed(2)));
+            assert_ok!(DcfPallet::join_validators(RuntimeOrigin::signed(1), None));
+            assert_ok!(DcfPallet::join_validators(RuntimeOrigin::signed(2), None));
             
             // Enable private mode
-            assert_ok!(DcfModule::enable_private_chain_mode(vec![1u64, 2u64], true));
+            assert_ok!(DcfPallet::enable_private_chain_mode(vec![1u64, 2u64], true));
             
             // Allowlisted validator can make proposals
-            assert_ok!(DcfModule::validate_proposal_in_private_mode(&1u64, &2u64));
+            assert_ok!(DcfPallet::validate_proposal_in_private_mode(&1u64, &2u64));
             
             // Non-allowlisted validator cannot make proposals
-            assert_noop!(
-                DcfModule::validate_proposal_in_private_mode(&3u64, &1u64),
-                Error::<Test>::ProposerNotInAllowlist
-            );
+            assert!(matches!(
+                DcfPallet::validate_proposal_in_private_mode(&3u64, &1u64),
+                Err(Error::<Test>::ProposerNotInAllowlist)
+            ));
         });
     }
 
@@ -354,10 +354,10 @@ mod tests {
         new_test_ext().execute_with(|| {
             // Try to enable with too many validators
             let large_allowlist: Vec<u64> = (1..=200).collect();
-            assert_noop!(
-                DcfModule::enable_private_chain_mode(large_allowlist, true),
-                Error::<Test>::TooManyValidators
-            );
+            assert!(matches!(
+                DcfPallet::enable_private_chain_mode(large_allowlist, true),
+                Err(Error::<Test>::TooManyValidators)
+            ));
         });
     }
 }

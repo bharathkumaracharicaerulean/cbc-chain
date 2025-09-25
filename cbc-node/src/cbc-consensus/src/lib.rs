@@ -29,36 +29,12 @@ pub mod finality;
 mod mock;
 
 #[cfg(test)]
-mod metrics_test;
+mod tests;
 
-#[cfg(test)]
-mod validator_set_test;
-
-#[cfg(test)]
-mod epoch_manager_test;
-
-// Re-export commonly used types from dcf
-pub use dcf::{
-    RealBlockImport,
-    DcfConsensus,
-};
-
-// Re-export commonly used types from types module
-pub use types::{
-    ValidatorInfo,
-    ValidatorMetrics,
-    EpochConfig,
-    AuthorSelectionMode,
-    ConsensusParams,
-    BlockT,
-};
-
-// Re-export commonly used error types
-pub use error::{
-    ConsensusError,
-    Result,
-};
-
+// Re-export commonly used types
+pub use error::{ConsensusError, ConsensusResult};
+pub use dcf::{RealBlockImport, DcfConsensus};
+pub use types::{ValidatorInfo, ValidatorMetrics, EpochConfig, AuthorSelectionMode, ConsensusParams, BlockT};
 pub use proposer_factory::ProposerFactory;
 pub use finality::FinalityEngine;
 

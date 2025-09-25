@@ -21,6 +21,7 @@ sp-inherents = { features = ["std"], workspace = true }
 sp-timestamp = { features = ["std"], workspace = true }
 sp-keyring = { features = ["std"], workspace = true }
 sp-application-crypto = { features = ["std"], workspace = true }
+sp-keystore = { version = "0.42.0", default-features = false }
 sc-consensus = { workspace = true, default-features = true }
 sc-transaction-pool-api = { workspace = true }
 sc-basic-authorship = { workspace = true }
@@ -33,6 +34,10 @@ thiserror = "1.0"
 async-trait = "0.1"
 futures = "0.3"
 pallet-cbc-dcf = { workspace = true }
+pallet-cbc-pos = { workspace = true }
+pallet-cbc-poi = { workspace = true }
+pallet-balances = { workspace = true }
+pallet-timestamp = { workspace = true }
 prometheus = { version = "0.13", default-features = false }
 parking_lot = "0.12"
 
@@ -41,6 +46,8 @@ parking_lot = "0.12"
 sp-core = { default-features = true, workspace = true }
 sp-io = { default-features = true, workspace = true }
 sp-runtime = { default-features = true, workspace = true }
+pallet-balances = { workspace = true }
+pallet-timestamp = { workspace = true }
 
 [features]
 default = ["std"]
@@ -53,7 +60,13 @@ std = [
 	"sp-std/std",
 	"sp-core/std",
 	"sp-runtime/std",
-	"sp-api/std"
+	"sp-api/std",
+	"sp-keystore/std",
+	"pallet-cbc-dcf/std",
+	"pallet-cbc-pos/std",
+	"pallet-cbc-poi/std",
+	"pallet-balances/std",
+	"pallet-timestamp/std"
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

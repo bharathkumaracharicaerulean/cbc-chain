@@ -1,6 +1,6 @@
 //! Author selection implementation for the consensus engine
 
-use crate::error::{ConsensusError, Result};
+use crate::error::{ConsensusError, ConsensusResult};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::NumberFor;
@@ -10,7 +10,7 @@ use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use std::sync::Arc;
 
 /// Fetch the expected block author for a given block number/slot using the DCF runtime API.
-pub fn get_expected_author<B, C>(client: Arc<C>, block_number: u32) -> Result<Public>
+pub fn get_expected_author<B, C>(client: Arc<C>, block_number: u32) -> ConsensusResult<Public>
 where
     B: sp_runtime::traits::Block,
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,

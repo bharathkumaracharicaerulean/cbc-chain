@@ -1216,7 +1216,11 @@ dependencies = [
  "frame-system",
  "futures",
  "log",
+ "pallet-balances",
  "pallet-cbc-dcf",
+ "pallet-cbc-poi",
+ "pallet-cbc-pos",
+ "pallet-timestamp",
  "parity-scale-codec",
  "parking_lot 0.12.4",
  "prometheus",
@@ -1234,6 +1238,7 @@ dependencies = [
  "sp-inherents",
  "sp-io",
  "sp-keyring",
+ "sp-keystore",
  "sp-runtime",
  "sp-std",
  "sp-timestamp",
@@ -7269,7 +7274,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "once_cell",
@@ -7302,7 +7307,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.104",

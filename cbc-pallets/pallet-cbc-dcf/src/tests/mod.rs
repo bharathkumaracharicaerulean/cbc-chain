@@ -3,6 +3,8 @@
 //! This module organizes all test files into logical groups for better
 //! maintainability and readability.
 
+// Unit tests are integrated into integration_tests.rs
+
 // Basic functionality and integration tests
 pub mod integration_tests;
 pub mod system_integration_tests;
@@ -48,4 +50,9 @@ pub mod property_tests;
 pub mod ci_readiness_tests;
 pub mod production_readiness_tests;
 
-// Removed placeholder implementation tests as they're no longer needed
+// Cross-pallet integration and workflow tests
+pub mod cross_pallet_integration_tests;
+pub mod consensus_invariant_tests;
+pub mod end_to_end_workflow_tests;
+pub mod stress_tests;
+pub mod runtime_api_cross_pallet_tests;

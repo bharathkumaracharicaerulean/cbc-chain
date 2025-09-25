@@ -4,7 +4,7 @@
 //! that works in conjunction with the DCF runtime pallet.
 
 use crate::{
-    error::{ConsensusError, Result},
+    error::{ConsensusError, ConsensusResult},
     types::{EpochConfig, ValidatorInfo},
 };
 use std::sync::Arc;
@@ -125,7 +125,7 @@ where
     }
 
     /// Get runtime configuration constants
-    fn get_runtime_config(&self) -> Result<EpochManagerRuntimeConfig> {
+    fn get_runtime_config(&self) -> ConsensusResult<EpochManagerRuntimeConfig> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -148,7 +148,7 @@ where
     }
 
     /// Check if an epoch transition should occur
-    pub fn should_transition_epoch(&self, current_block: u32) -> Result<bool> {
+    pub fn should_transition_epoch(&self, current_block: u32) -> ConsensusResult<bool> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -171,7 +171,7 @@ where
     }
 
     /// Handle epoch transition logic
-    pub fn handle_epoch_transition(&self, current_block: u32) -> Result<()> {
+    pub fn handle_epoch_transition(&self, current_block: u32) -> ConsensusResult<()> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -203,7 +203,7 @@ where
     }
 
     /// Apply score decay to inactive validators
-    fn apply_validator_score_decay(&self, current_epoch: u32) -> Result<()> {
+    fn apply_validator_score_decay(&self, current_epoch: u32) -> ConsensusResult<()> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -233,7 +233,7 @@ where
     }
 
     /// Update the active validator set based on current scores and stake
-    fn update_active_validator_set(&self) -> Result<()> {
+    fn update_active_validator_set(&self) -> ConsensusResult<()> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -299,7 +299,7 @@ where
     }
 
     /// Process validator join/leave requests
-    fn process_validator_set_changes(&self) -> Result<()> {        
+    fn process_validator_set_changes(&self) -> ConsensusResult<()> {        
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -325,7 +325,7 @@ where
     }
 
     /// Update validator participation rates
-    fn update_validator_participation_rates(&self) -> Result<()> {
+    fn update_validator_participation_rates(&self) -> ConsensusResult<()> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         let config = self.get_runtime_config()?;
@@ -367,7 +367,7 @@ where
     }
 
     /// Handle underperforming validators
-    fn handle_underperforming_validators(&self) -> Result<()> {
+    fn handle_underperforming_validators(&self) -> ConsensusResult<()> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         let config = self.get_runtime_config()?;
@@ -407,7 +407,7 @@ where
     }
 
     /// Get current epoch information
-    pub fn get_current_epoch_info(&self) -> Result<(u32, Vec<AccountId>)> {
+    pub fn get_current_epoch_info(&self) -> ConsensusResult<(u32, Vec<AccountId>)> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -421,7 +421,7 @@ where
     }
 
     /// Generate validator management proposals based on combined PoS and PoI scores
-    pub fn generate_validator_management_proposals(&self) -> Result<Vec<(AccountId, String, u64, u64, u64)>> {
+    pub fn generate_validator_management_proposals(&self) -> ConsensusResult<Vec<(AccountId, String, u64, u64, u64)>> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         let config = self.get_runtime_config()?;
@@ -468,7 +468,7 @@ where
     }
     
     /// Update validator set based on combined PoS and PoI scores
-    pub fn update_validator_set_by_combined_scores(&self) -> Result<()> {
+    pub fn update_validator_set_by_combined_scores(&self) -> ConsensusResult<()> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -507,7 +507,7 @@ where
     }
     
     /// Get validator information for a specific validator
-    pub fn get_validator_info(&self, validator: &AccountId) -> Result<Option<ValidatorInfo>> {
+    pub fn get_validator_info(&self, validator: &AccountId) -> ConsensusResult<Option<ValidatorInfo>> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         

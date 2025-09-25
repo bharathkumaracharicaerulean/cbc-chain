@@ -389,11 +389,11 @@ mod tests {
     fn test_event_type_id_assignment() {
         new_test_ext().execute_with(|| {
             // Test that different events get different type IDs
-            let join_event = Event::ValidatorJoined {
+            let join_event = Event::<Test>::ValidatorJoined {
                 validator: 1u64,
                 stake_amount: 1000,
             };
-            let leave_event = Event::ValidatorLeft {
+            let leave_event = Event::<Test>::ValidatorLeft {
                 validator: 1u64,
             };
 
@@ -412,18 +412,18 @@ mod tests {
             let block_number = 100u32;
             let sample_event = EvmCompatibleEvent {
                 event_type: 1,
-                indexed_fields: vec![vec![1, 2, 3]],
-                data_fields: vec![4, 5, 6],
-                raw_data: vec![1, 2, 3, 4, 5, 6],
+                indexed_fields: BoundedVec::try_from(vec![BoundedVec::try_from(vec![1u8, 2u8, 3u8]).unwrap()]).unwrap(),
+                data_fields: BoundedVec::try_from(vec![4u8, 5u8, 6u8]).unwrap(),
+                raw_data: BoundedVec::try_from(vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8]).unwrap(),
             };
 
             // Store event
             EvmCompatibleEvents::<Test>::mutate(block_number, |events| {
-                events.push(sample_event.clone());
+                let _ = events.try_push(sample_event.clone());
             });
 
             // Retrieve event
-            let retrieved_events = DcfModule::get_evm_events_for_block(block_number);
+            let retrieved_events = DcfPallet::get_evm_events_for_block(block_number);
             assert_eq!(retrieved_events.len(), 1);
             assert_eq!(retrieved_events[0], sample_event);
         });
@@ -436,25 +436,25 @@ mod tests {
             for block in 100..=102 {
                 let event = EvmCompatibleEvent {
                     event_type: if block % 2 == 0 { 1 } else { 2 },
-                    indexed_fields: vec![],
-                    data_fields: vec![],
-                    raw_data: vec![],
+                    indexed_fields: BoundedVec::new(),
+                    data_fields: BoundedVec::new(),
+                    raw_data: BoundedVec::new(),
                 };
 
                 EvmCompatibleEvents::<Test>::mutate(block, |events| {
-                    events.push(event);
+                    let _ = events.try_push(event);
                 });
             }
 
             // Query all events
-            let all_events = DcfModule::query_evm_events(None, 100, 102);
+            let all_events = DcfPallet::query_evm_events(None, 100, 102);
             assert_eq!(all_events.len(), 3);
 
             // Query events by type
-            let type1_events = DcfModule::query_evm_events(Some(1), 100, 102);
+            let type1_events = DcfPallet::query_evm_events(Some(1), 100, 102);
             assert_eq!(type1_events.len(), 2); // blocks 100 and 102
 
-            let type2_events = DcfModule::query_evm_events(Some(2), 100, 102);
+            let type2_events = DcfPallet::query_evm_events(Some(2), 100, 102);
             assert_eq!(type2_events.len(), 1); // block 101
         });
     }
@@ -466,28 +466,28 @@ mod tests {
             for block in 1..=10 {
                 let event = EvmCompatibleEvent {
                     event_type: 1,
-                    indexed_fields: vec![],
-                    data_fields: vec![],
-                    raw_data: vec![],
+                    indexed_fields: BoundedVec::new(),
+                    data_fields: BoundedVec::new(),
+                    raw_data: BoundedVec::new(),
                 };
 
                 EvmCompatibleEvents::<Test>::mutate(block, |events| {
-                    events.push(event);
+                    let _ = events.try_push(event);
                 });
             }
 
             // Verify events exist
-            assert!(!DcfModule::get_evm_events_for_block(5).is_empty());
+            assert!(!DcfPallet::get_evm_events_for_block(5).is_empty());
 
             // Clean up old events (keep only last 3 blocks)
             frame_system::Pallet::<Test>::set_block_number(10);
-            DcfModule::cleanup_old_evm_events(3);
+            DcfPallet::cleanup_old_evm_events(3);
 
             // Verify old events are cleaned up
-            assert!(DcfModule::get_evm_events_for_block(5).is_empty());
+            assert!(DcfPallet::get_evm_events_for_block(5).is_empty());
             
             // Verify recent events are kept
-            assert!(!DcfModule::get_evm_events_for_block(9).is_empty());
+            assert!(!DcfPallet::get_evm_events_for_block(9).is_empty());
         });
     }
 }

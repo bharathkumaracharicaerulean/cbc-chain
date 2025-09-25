@@ -9553,7 +9553,7 @@ pub mod pallet {
         /// - `Ok(Weight)`: Validation passed with weight consumed
         /// - `Err(MigrationError)`: Validation failed with specific error details
         pub fn validate_storage_integrity() -> Result<Weight, MigrationError> {
-            let weight = <T as Config>::WeightInfo::on_initialize();
+            let mut weight = <T as Config>::WeightInfo::on_initialize();
             
             log::info!("DCF: Starting storage integrity validation");
             
@@ -9562,7 +9562,7 @@ pub mod pallet {
             
             // Validate governance configuration if it exists
             if GovernanceConfigStorage::<T>::exists() {
-                let _governance_config = GovernanceConfigStorage::<T>::get();
+                let governance_config = GovernanceConfigStorage::<T>::get();
                 // Governance config validation (available in test/benchmark builds only)
                 #[cfg(any(feature = "runtime-benchmarks", test))]
                 {
@@ -9571,7 +9571,7 @@ pub mod pallet {
             }
             
             // Validate epoch configuration
-            let _epoch_config = EpochConfigStorage::<T>::get();
+            let epoch_config = EpochConfigStorage::<T>::get();
             // Epoch config validation (available in test/benchmark builds only)
             #[cfg(any(feature = "runtime-benchmarks", test))]
             {
@@ -12667,6 +12667,79 @@ pub mod pallet {
         /// Get the inference result for a validator.
         pub fn get_inference_result(account_id: T::AccountId) -> Option<u64> {
             ValidatorStates::<T>::get(&account_id).map(|state| state.current.inference_score)
+        }
+
+        /// Get validator stake score
+        pub fn validator_stake_score(validator: &T::AccountId) -> u128 {
+            Self::validator_stake(validator).saturated_into()
+        }
+
+        /// Get validator inference score
+        pub fn validator_inference_score(validator: &T::AccountId) -> u64 {
+            ValidatorStates::<T>::get(validator)
+                .map(|state| state.current.inference_score)
+                .unwrap_or(0)
+        }
+
+        /// Get validator participation data (authored blocks, missed blocks)
+        pub fn validator_participation(validator: &T::AccountId) -> (u32, u32) {
+            ValidatorStates::<T>::get(validator)
+                .map(|state| (state.current.authored_blocks, state.current.missed_blocks))
+                .unwrap_or((0, 0))
+        }
+
+        /// Get validator last active block
+        pub fn validator_last_active(validator: &T::AccountId) -> u32 {
+            ValidatorStates::<T>::get(validator)
+                .map(|state| state.last_active_block)
+                .unwrap_or(0)
+        }
+
+        /// Get consensus weights
+        pub fn consensus_weights() -> (u64, u64) {
+            (PosWeight::<T>::get(), PoiWeight::<T>::get())
+        }
+
+        /// Get governance mode
+        pub fn governance_mode() -> bool {
+            // Return true if governance config exists and has valid parameters
+            let config = GovernanceConfigStorage::<T>::get();
+            config.epoch_length.current > 0
+        }
+
+        /// Get total validators count
+        pub fn total_validators_count() -> u32 {
+            ValidatorStates::<T>::iter().count() as u32
+        }
+
+        /// Get validator set info
+        pub fn validator_set_info() -> (u32, u32, u32) {
+            let active_count = Self::active_validators().len() as u32;
+            let total_count = Self::total_validators_count();
+            let max_validators = <T as Config>::MaxValidators::get();
+            (active_count, total_count, max_validators)
+        }
+
+        /// Get validators by score (sorted)
+        pub fn validators_by_score() -> Vec<(T::AccountId, u64)> {
+            Self::get_validators_by_score()
+        }
+
+        /// Get expected author for a block
+        pub fn expected_author(block_number: u32) -> Option<T::AccountId> {
+            Self::get_expected_author(block_number)
+        }
+
+        /// Get validator score history
+        pub fn validator_score_history(validator: &T::AccountId) -> Vec<EpochStats> {
+            ValidatorStates::<T>::get(validator)
+                .map(|state| state.history.to_vec())
+                .unwrap_or_default()
+        }
+
+        /// Get finality info
+        pub fn finality_info() -> (u32, u32) {
+            Self::get_finality_info()
         }
 
         /// Execute slashing action on a validator with overflow protection and bounds checking
