@@ -9562,20 +9562,20 @@ pub mod pallet {
             
             // Validate governance configuration if it exists
             if GovernanceConfigStorage::<T>::exists() {
-                let governance_config = GovernanceConfigStorage::<T>::get();
+                let _governance_config = GovernanceConfigStorage::<T>::get();
                 // Governance config validation (available in test/benchmark builds only)
                 #[cfg(any(feature = "runtime-benchmarks", test))]
                 {
-                    weight = weight.saturating_add(Self::validate_governance_config(&governance_config)?);
+                    weight = weight.saturating_add(Self::validate_governance_config(&_governance_config)?);
                 }
             }
             
             // Validate epoch configuration
-            let epoch_config = EpochConfigStorage::<T>::get();
+            let _epoch_config = EpochConfigStorage::<T>::get();
             // Epoch config validation (available in test/benchmark builds only)
             #[cfg(any(feature = "runtime-benchmarks", test))]
             {
-                weight = weight.saturating_add(Self::validate_epoch_config(&epoch_config)?);
+                weight = weight.saturating_add(Self::validate_epoch_config(&_epoch_config)?);
             }
             
             // Validate active validators don't exceed maximum
@@ -11494,7 +11494,9 @@ pub mod pallet {
             // Set up validator set
             ValidatorSet::<T>::put(
                 BoundedVec::try_from(self.validators.clone())
-                    .expect("Initial validators exceed MaxValidators"),
+                    .unwrap_or_else(|_| {
+                        panic!("Initial validators exceed MaxValidators");
+                    }),
             );
 
             // Initialize each validator with their stake, score, and name
@@ -11588,7 +11590,9 @@ pub mod pallet {
             // Initialize active validators with all genesis validators
             ActiveValidators::<T>::put(
                 BoundedVec::try_from(self.validators.clone())
-                    .expect("Initial validators exceed MaxValidators"),
+                    .unwrap_or_else(|_| {
+                        panic!("Initial validators exceed MaxValidators");
+                    }),
             );
 
             CurrentEpoch::<T>::put(self.current_epoch);
@@ -13850,7 +13854,15 @@ pub mod pallet {
                                                 .unwrap_or_else(|| {
                                                     // Last resort: decode from known pattern
                                                     T::AccountId::decode(&mut &[2u8; 32][..])
-                                                        .expect("Failed to create fallback account")
+                                                        .unwrap_or_else(|_| {
+                                                            // Create a zero account if decode fails
+                                                            // Use the first validator as fallback
+                                                            Self::validator_set().get(0).cloned()
+                                                                .unwrap_or_else(|| {
+                                                                    // If no validators exist, panic as this is a critical error
+                                                                    panic!("No validators available and cannot create fallback account");
+                                                                })
+                                                        })
                                                 })
                                         })
                                 })

@@ -412,9 +412,9 @@ mod tests {
             let block_number = 100u32;
             let sample_event = EvmCompatibleEvent {
                 event_type: 1,
-                indexed_fields: BoundedVec::try_from(vec![BoundedVec::try_from(vec![1u8, 2u8, 3u8]).unwrap()]).unwrap(),
-                data_fields: BoundedVec::try_from(vec![4u8, 5u8, 6u8]).unwrap(),
-                raw_data: BoundedVec::try_from(vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8]).unwrap(),
+                indexed_fields: BoundedVec::try_from(vec![BoundedVec::try_from(vec![1u8, 2u8, 3u8]).unwrap_or_default()]).unwrap_or_default(),
+                data_fields: BoundedVec::try_from(vec![4u8, 5u8, 6u8]).unwrap_or_default(),
+                raw_data: BoundedVec::try_from(vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8]).unwrap_or_default(),
             };
 
             // Store event

@@ -45,6 +45,7 @@ pub mod trust_score_stability_tests;
 
 // Property and fuzz testing
 pub mod property_tests;
+pub mod comprehensive_property_tests;
 
 // CI readiness and production tests
 pub mod ci_readiness_tests;

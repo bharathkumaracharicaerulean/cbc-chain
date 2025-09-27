@@ -6275,6 +6275,8 @@ dependencies = [
  "pallet-cbc-pos",
  "pallet-timestamp",
  "parity-scale-codec",
+ "proptest",
+ "rand 0.8.5",
  "scale-info",
  "serde",
  "sp-api",
