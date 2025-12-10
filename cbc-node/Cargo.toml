@@ -22,7 +22,8 @@ targets = ["x86_64-unknown-linux-gnu"] # Target platforms for which documentatio
 [dependencies]
 
 pallet-cbc-dcf = { path = "../cbc-pallets/pallet-cbc-dcf" }
-
+pallet-cbc-pos = { path = "../cbc-pallets/pallet-cbc-pos" }
+serde = { workspace = true }
 
 # === CLI and Command-Line Parsing ===
 clap = { features = ["derive"], workspace = true } # Command-line argument parsing library
@@ -119,6 +120,9 @@ sp-timestamp.workspace = true               # Use workspace version
 # === RPC System ===
 substrate-frame-rpc-system.default-features = true # FRAME RPC system
 substrate-frame-rpc-system.workspace = true       # Use workspace version
+
+[dev-dependencies]
+proptest = "1.0"
 
 [build-dependencies]
 # === Build Script Utilities ===
