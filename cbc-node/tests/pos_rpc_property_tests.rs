@@ -1,15 +1,3 @@
-//! Property-based tests for PoS RPC data consistency
-//! 
-//! **Feature: cbc-pending-work, Property 1: RPC endpoint data consistency**
-//! **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
-//!
-//! These tests verify that the PoS RPC endpoints return data that is consistent
-//! with the underlying Runtime API. The property being tested is:
-//!
-//! For any validator account, the data returned by RPC endpoints (pos_getValidatorScore,
-//! pos_getValidatorStake, pos_getSlashingCount, pos_getValidatorStatus) should match
-//! the data returned by the corresponding Runtime API methods.
-
 use proptest::prelude::*;
 use sp_core::crypto::AccountId32;
 use cbc_runtime::AccountId;

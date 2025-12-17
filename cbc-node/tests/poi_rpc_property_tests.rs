@@ -1,14 +1,4 @@
-//! Property-based tests for PoI RPC data consistency
-//! 
-//! **Feature: cbc-pending-work, Property 1: RPC endpoint data consistency (PoI endpoints)**
-//! **Validates: Requirements 2.1, 2.2, 2.4**
-//!
-//! These tests verify that the PoI RPC endpoints return data that is consistent
-//! with the underlying Runtime API. The property being tested is:
-//!
-//! For any validator account, the data returned by PoI RPC endpoints (poi_getInferenceResult,
-//! poi_getInferenceConfidence, poi_getInferenceStatus) should match the data returned by 
-//! the corresponding Runtime API methods.
+
 
 use proptest::prelude::*;
 use sp_core::crypto::AccountId32;

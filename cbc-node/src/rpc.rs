@@ -85,6 +85,62 @@ pub struct ConsensusWeights {
     pub poi_weight: u64,
 }
 
+// CBC Unified RPC Types
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidatorProfile {
+    pub account: AccountId,
+    pub stake: Balance,
+    pub pos_score: u32,
+    pub poi_score: u64,
+    pub trust_score: u64,
+    pub status: ValidatorStatus,
+    pub authored_blocks: u32,
+    pub missed_blocks: u32,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustScore {
+    pub total: u64,
+    pub pos_component: u64,
+    pub poi_component: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemStatus {
+    pub current_epoch: u32,
+    pub active_validators: u32,
+    pub total_validators: u32,
+    pub last_finalized_block: u32,
+    pub consensus_health: ConsensusHealth,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConsensusHealth {
+    Healthy,
+    Degraded,
+    Critical,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcMethodDescription {
+    pub name: String,
+    pub description: String,
+    pub params: Vec<String>,
+    pub returns: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthStatus {
+    pub is_healthy: bool,
+    pub issues: Vec<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct RpcSecurityConfig {
     pub enable_cbc_extensions: bool,
@@ -444,6 +500,440 @@ where
     }
 }
 
+// CBC Unified RPC API
+#[rpc(server)]
+pub trait CbcRpcApi {
+    #[method(name = "cbc_getCurrentEpoch")]
+    fn get_current_epoch(&self) -> RpcResult<u32>;
+    
+    #[method(name = "cbc_getValidatorProfile")]
+    fn get_validator_profile(&self, validator: AccountId) -> RpcResult<ValidatorProfile>;
+    
+    #[method(name = "cbc_getTrustScore")]
+    fn get_trust_score(&self, validator: AccountId) -> RpcResult<TrustScore>;
+    
+    #[method(name = "cbc_listValidators")]
+    fn list_validators(&self) -> RpcResult<Vec<AccountId>>;
+    
+    #[method(name = "cbc_getStatus")]
+    fn get_status(&self) -> RpcResult<SystemStatus>;
+    
+    #[method(name = "cbc_describe")]
+    fn describe(&self) -> RpcResult<Vec<RpcMethodDescription>>;
+    
+    #[method(name = "cbc_health")]
+    fn health(&self) -> RpcResult<HealthStatus>;
+}
+
+pub struct CbcRpcApiImpl<C> {
+    client: Arc<C>,
+    security_config: RpcSecurityConfig,
+}
+
+impl<C> CbcRpcApiImpl<C> {
+    pub fn new(client: Arc<C>, security_config: RpcSecurityConfig) -> Self {
+        Self { client, security_config }
+    }
+    
+    fn check_cbc_extensions_enabled(&self) -> RpcResult<()> {
+        if !self.security_config.enable_cbc_extensions {
+            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
+                -32001,
+                "CBC RPC extensions are disabled. Use --enable-cbc-extensions flag.".to_string(),
+                None::<()>
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl<C> CbcRpcApiServer for CbcRpcApiImpl<C>
+where
+    C: ProvideRuntimeApi<Block> + HeaderBackend<Block> + Send + Sync + 'static,
+    C::Api: pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>,
+    C::Api: pallet_cbc_pos::PosApi<Block, AccountId, Balance>,
+    C::Api: cbc_runtime::pallet_cbc_poi::PoiApi<Block, AccountId>,
+{
+    fn get_current_epoch(&self) -> RpcResult<u32> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_current_epoch(&api, best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Runtime API call failed: {:?}", e),
+                None::<()>
+            ))
+    }
+    
+    fn get_validator_profile(&self, validator: AccountId) -> RpcResult<ValidatorProfile> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Aggregate data from multiple pallets
+        let stake = <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_validator_stake(&api, best_hash, validator.clone())
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get validator stake: {:?}", e),
+                None::<()>
+            ))?;
+        
+        let pos_score = <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_validator_score(&api, best_hash, validator.clone())
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get PoS score: {:?}", e),
+                None::<()>
+            ))?;
+        
+        // Get PoI score from inference result
+        let poi_score = match <C::Api as cbc_runtime::pallet_cbc_poi::PoiApi<Block, AccountId>>::get_inference_result(&api, best_hash, validator.clone()) {
+            Ok(Some((_result, confidence))) => confidence as u64,
+            Ok(None) => 0,
+            Err(e) => {
+                log::warn!("Failed to get PoI score for validator {:?}: {:?}", validator, e);
+                0
+            }
+        };
+        
+        // Calculate trust score using consensus weights
+        let (pos_weight, poi_weight) = <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_consensus_weights(&api, best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get consensus weights: {:?}", e),
+                None::<()>
+            ))?;
+        
+        let trust_score = (pos_score as u64 * pos_weight + poi_score * poi_weight) / (pos_weight + poi_weight);
+        
+        // Get validator status
+        let active_validators = <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_active_validators(&api, best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get active validators: {:?}", e),
+                None::<()>
+            ))?;
+        
+        let slashing_count = <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_slashing_count(&api, best_hash, validator.clone())
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get slashing count: {:?}", e),
+                None::<()>
+            ))?;
+        
+        let status = if !active_validators.contains(&validator) {
+            ValidatorStatus::Inactive
+        } else if slashing_count > 0 {
+            ValidatorStatus::Slashed
+        } else {
+            ValidatorStatus::Active
+        };
+        
+        // Get authored and missed blocks (using placeholder values for now)
+        let authored_blocks = 0; // TODO: Implement block authoring tracking
+        let missed_blocks = 0;   // TODO: Implement missed block tracking
+        
+        Ok(ValidatorProfile {
+            account: validator,
+            stake,
+            pos_score,
+            poi_score,
+            trust_score,
+            status,
+            authored_blocks,
+            missed_blocks,
+        })
+    }
+    
+    fn get_trust_score(&self, validator: AccountId) -> RpcResult<TrustScore> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get PoS component
+        let pos_score = <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_validator_score(&api, best_hash, validator.clone())
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get PoS score: {:?}", e),
+                None::<()>
+            ))?;
+        
+        // Get PoI component
+        let poi_score = match <C::Api as cbc_runtime::pallet_cbc_poi::PoiApi<Block, AccountId>>::get_inference_result(&api, best_hash, validator) {
+            Ok(Some((_result, confidence))) => confidence as u64,
+            Ok(None) => 0,
+            Err(e) => {
+                log::warn!("Failed to get PoI score: {:?}", e);
+                0
+            }
+        };
+        
+        // Get consensus weights
+        let (pos_weight, poi_weight) = <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_consensus_weights(&api, best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get consensus weights: {:?}", e),
+                None::<()>
+            ))?;
+        
+        // Calculate weighted components
+        let pos_component = pos_score as u64 * pos_weight;
+        let poi_component = poi_score * poi_weight;
+        let total = (pos_component + poi_component) / (pos_weight + poi_weight);
+        
+        Ok(TrustScore {
+            total,
+            pos_component,
+            poi_component,
+        })
+    }
+    
+    fn list_validators(&self) -> RpcResult<Vec<AccountId>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get active validators from PoS pallet
+        let active_validators = <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_active_validators(&api, best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get active validators: {:?}", e),
+                None::<()>
+            ))?;
+        
+        Ok(active_validators)
+    }
+    
+    fn get_status(&self) -> RpcResult<SystemStatus> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get current epoch
+        let current_epoch = <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_current_epoch(&api, best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get current epoch: {:?}", e),
+                None::<()>
+            ))?;
+        
+        // Get validator counts
+        let active_validators = <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_active_validators(&api, best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get active validators: {:?}", e),
+                None::<()>
+            ))?;
+        
+        let active_validators_count = active_validators.len() as u32;
+        let total_validators = active_validators_count; // TODO: Get total from runtime
+        
+        // Get last finalized block
+        let last_finalized_block = self.client.info().finalized_number as u32;
+        
+        // Determine consensus health
+        let consensus_health = if active_validators_count >= 3 {
+            ConsensusHealth::Healthy
+        } else if active_validators_count >= 1 {
+            ConsensusHealth::Degraded
+        } else {
+            ConsensusHealth::Critical
+        };
+        
+        Ok(SystemStatus {
+            current_epoch,
+            active_validators: active_validators_count,
+            total_validators,
+            last_finalized_block,
+            consensus_health,
+        })
+    }
+    
+    fn describe(&self) -> RpcResult<Vec<RpcMethodDescription>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let methods = vec![
+            // CBC Unified methods
+            RpcMethodDescription {
+                name: "cbc_getCurrentEpoch".to_string(),
+                description: "Get the current epoch number".to_string(),
+                params: vec![],
+                returns: "u32".to_string(),
+            },
+            RpcMethodDescription {
+                name: "cbc_getValidatorProfile".to_string(),
+                description: "Get comprehensive validator profile including stake, scores, and status".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "ValidatorProfile".to_string(),
+            },
+            RpcMethodDescription {
+                name: "cbc_getTrustScore".to_string(),
+                description: "Get validator trust score with PoS and PoI components".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "TrustScore".to_string(),
+            },
+            RpcMethodDescription {
+                name: "cbc_listValidators".to_string(),
+                description: "Get list of all active validators".to_string(),
+                params: vec![],
+                returns: "Vec<AccountId>".to_string(),
+            },
+            RpcMethodDescription {
+                name: "cbc_getStatus".to_string(),
+                description: "Get system-wide status including epoch, validators, and health".to_string(),
+                params: vec![],
+                returns: "SystemStatus".to_string(),
+            },
+            RpcMethodDescription {
+                name: "cbc_describe".to_string(),
+                description: "List all available CBC RPC methods".to_string(),
+                params: vec![],
+                returns: "Vec<RpcMethodDescription>".to_string(),
+            },
+            RpcMethodDescription {
+                name: "cbc_health".to_string(),
+                description: "Get health check status for monitoring".to_string(),
+                params: vec![],
+                returns: "HealthStatus".to_string(),
+            },
+            // PoS methods
+            RpcMethodDescription {
+                name: "pos_getValidatorScore".to_string(),
+                description: "Get validator PoS performance score".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "u32".to_string(),
+            },
+            RpcMethodDescription {
+                name: "pos_getValidatorStake".to_string(),
+                description: "Get validator staked amount".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "Balance".to_string(),
+            },
+            RpcMethodDescription {
+                name: "pos_getSlashingCount".to_string(),
+                description: "Get number of times validator has been slashed".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "u32".to_string(),
+            },
+            RpcMethodDescription {
+                name: "pos_getValidatorStatus".to_string(),
+                description: "Get validator status (Active/Inactive/Slashed)".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "ValidatorStatus".to_string(),
+            },
+            // PoI methods
+            RpcMethodDescription {
+                name: "poi_getInferenceResult".to_string(),
+                description: "Get validator inference result and confidence".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "Option<InferenceResult>".to_string(),
+            },
+            RpcMethodDescription {
+                name: "poi_getInferenceConfidence".to_string(),
+                description: "Get inference confidence score".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "Option<u32>".to_string(),
+            },
+            RpcMethodDescription {
+                name: "poi_getChallengeWindow".to_string(),
+                description: "Get current challenge window parameters".to_string(),
+                params: vec![],
+                returns: "ChallengeWindow".to_string(),
+            },
+            RpcMethodDescription {
+                name: "poi_getInferenceStatus".to_string(),
+                description: "Get inference submission status".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "InferenceStatus".to_string(),
+            },
+            // DCF methods
+            RpcMethodDescription {
+                name: "dcf_getCurrentAuthor".to_string(),
+                description: "Get current block author".to_string(),
+                params: vec![],
+                returns: "Option<AccountId>".to_string(),
+            },
+            RpcMethodDescription {
+                name: "dcf_getExpectedAuthor".to_string(),
+                description: "Get expected author for a specific block".to_string(),
+                params: vec!["u32".to_string()],
+                returns: "Option<AccountId>".to_string(),
+            },
+            RpcMethodDescription {
+                name: "dcf_getValidatorScores".to_string(),
+                description: "Get trust scores for all active validators".to_string(),
+                params: vec![],
+                returns: "Vec<(AccountId, u64)>".to_string(),
+            },
+            RpcMethodDescription {
+                name: "dcf_getConsensusWeights".to_string(),
+                description: "Get current PoS and PoI weight distribution".to_string(),
+                params: vec![],
+                returns: "ConsensusWeights".to_string(),
+            },
+        ];
+        
+        Ok(methods)
+    }
+    
+    fn health(&self) -> RpcResult<HealthStatus> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let mut issues = Vec::new();
+        let mut is_healthy = true;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Check if we can get current epoch
+        if let Err(e) = <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_current_epoch(&api, best_hash) {
+            issues.push(format!("Cannot get current epoch: {:?}", e));
+            is_healthy = false;
+        }
+        
+        // Check if we have active validators
+        match <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_active_validators(&api, best_hash) {
+            Ok(validators) => {
+                if validators.is_empty() {
+                    issues.push("No active validators".to_string());
+                    is_healthy = false;
+                } else if validators.len() < 3 {
+                    issues.push(format!("Low validator count: {}", validators.len()));
+                    // Don't mark as unhealthy, just degraded
+                }
+            }
+            Err(e) => {
+                issues.push(format!("Cannot get active validators: {:?}", e));
+                is_healthy = false;
+            }
+        }
+        
+        // Check consensus weights
+        if let Err(e) = <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_consensus_weights(&api, best_hash) {
+            issues.push(format!("Cannot get consensus weights: {:?}", e));
+            is_healthy = false;
+        }
+        
+        // Check if we're syncing
+        let client_info = self.client.info();
+        if client_info.best_number < client_info.finalized_number {
+            issues.push("Node is behind finalized block".to_string());
+            is_healthy = false;
+        }
+        
+        Ok(HealthStatus {
+            is_healthy,
+            issues,
+        })
+    }
+}
+
 pub fn create_full<C, P>(
     deps: FullDeps<C, P>,
 ) -> Result<RpcModule<()>, Box<dyn std::error::Error + Send + Sync>>
@@ -488,6 +978,10 @@ where
         // Register DCF RPC handler
         let dcf_api = DcfRpcApiImpl::new(client.clone(), rpc_config.clone());
         module.merge(DcfRpcApiServer::into_rpc(dcf_api))?;
+        
+        // Register CBC Unified RPC handler
+        let cbc_api = CbcRpcApiImpl::new(client.clone(), rpc_config.clone());
+        module.merge(CbcRpcApiServer::into_rpc(cbc_api))?;
     }
 
     if rpc_config.expose_unsafe_methods {

@@ -1,13 +1,4 @@
-//! Property-based tests for DCF RPC deterministic author consistency
-//! 
-//! **Feature: cbc-pending-work, Property 2: DCF RPC deterministic author consistency**
-//! **Validates: Requirements 3.2**
-//!
-//! These tests verify that the DCF RPC endpoints return deterministic author data
-//! that is consistent with the underlying Runtime API. The property being tested is:
-//!
-//! For any block number, calling dcf_getExpectedAuthor should return the same author
-//! as calling the DCF Runtime API's get_expected_author method.
+
 
 use proptest::prelude::*;
 use sp_core::crypto::AccountId32;
