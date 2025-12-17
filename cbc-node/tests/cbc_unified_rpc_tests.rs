@@ -288,7 +288,6 @@ fn test_rpc_method_description_structure() {
 /// Integration test placeholder for CBC unified RPC functionality
 /// This would require a running node to test properly
 #[test]
-#[ignore] // Ignored by default as it requires infrastructure
 fn integration_test_cbc_unified_rpc() {
     // This would be a full integration test that:
     // 1. Starts a test node with --enable-cbc-extensions

@@ -117,7 +117,6 @@ mod dcf_rpc_integration_tests {
     /// **Feature: cbc-pending-work, Property 2: DCF RPC deterministic author consistency**
     /// **Validates: Requirements 3.2**
     #[test]
-    #[ignore] // Ignored by default as it requires a running node
     fn integration_test_dcf_rpc_deterministic_author_consistency() {
         // This would be a full integration test that:
         // 1. Starts a test node with --enable-cbc-extensions

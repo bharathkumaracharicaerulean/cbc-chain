@@ -121,7 +121,6 @@ mod poi_rpc_integration_tests {
     /// **Feature: cbc-pending-work, Property 1: RPC endpoint data consistency (PoI endpoints)**
     /// **Validates: Requirements 2.1, 2.2, 2.4**
     #[test]
-    #[ignore] // Ignored by default as it requires a running node
     fn integration_test_poi_rpc_data_consistency() {
         // This would be a full integration test that:
         // 1. Starts a test node with --enable-cbc-extensions

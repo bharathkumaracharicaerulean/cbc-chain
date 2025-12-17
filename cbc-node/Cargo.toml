@@ -123,6 +123,9 @@ substrate-frame-rpc-system.workspace = true       # Use workspace version
 
 [dev-dependencies]
 proptest = "1.0"
+env_logger = "0.10"
+tokio-test = "0.4"
+serde_json = { workspace = true }
 
 [build-dependencies]
 # === Build Script Utilities ===

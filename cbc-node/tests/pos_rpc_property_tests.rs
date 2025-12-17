@@ -119,7 +119,6 @@ mod pos_rpc_integration_tests {
     /// **Feature: cbc-pending-work, Property 1: RPC endpoint data consistency**
     /// **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
     #[test]
-    #[ignore] // Ignored by default as it requires a running node
     fn integration_test_pos_rpc_data_consistency() {
         // This would be a full integration test that:
         // 1. Starts a test node with --enable-cbc-extensions
