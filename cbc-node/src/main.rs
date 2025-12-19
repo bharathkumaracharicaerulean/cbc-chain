@@ -1,6 +1,7 @@
 
 
 mod benchmarking;
+mod block_tracker;
 mod chain_spec;
 mod cli;
 mod command;

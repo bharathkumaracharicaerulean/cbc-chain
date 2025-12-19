@@ -13,7 +13,7 @@ mod tests {
     }
 
     fn create_test_authority_id(seed: u8) -> u64 {
-        seed as u64 // Use validator ID instead of AuraId
+        seed as u64 
     }
 
     #[test]

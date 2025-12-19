@@ -172,7 +172,6 @@ The testing infrastructure uses comprehensive mock runtimes that simulate the fu
 ### Consensus Mock Runtime
 - **File**: `cbc-consensus/src/mock.rs`
 - **Features**:
-  - Aura consensus simulation
   - Authority management
   - Keystore integration
   - Performance testing utilities

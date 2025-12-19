@@ -15,6 +15,7 @@ use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::{SaturatedConversion, Header as HeaderT};
 use sp_consensus::BlockOrigin;
 use pallet_cbc_dcf::DcfApi;
+use crate::block_tracker::{BlockTracker, BlockTrackerConfig};
 
 /// DCF-integrated import queue that validates blocks through the DCF runtime
 pub struct DcfImportQueue {
@@ -413,6 +414,30 @@ where
                         log::warn!("CBC: Failed to update consensus metrics: {}", e);
                     }
                 }
+            },
+        );
+    }
+
+    // Start block authoring and missed block tracking service
+    {
+        let tracker_client = client.clone();
+        task_manager.spawn_handle().spawn(
+            "block-authoring-tracker",
+            None,
+            async move {
+                log::info!("CBC: Starting block authoring tracking service");
+                
+                let tracker_config = BlockTrackerConfig {
+                    monitoring_interval: std::time::Duration::from_secs(10),
+                    stats_reporting_interval: std::time::Duration::from_secs(120), // 2 minutes
+                    underperformance_threshold: 80.0, // 80% participation threshold
+                    max_consecutive_misses: 3,
+                    enable_alerts: true,
+                    enable_detailed_logging: true,
+                };
+                
+                let mut tracker = BlockTracker::<Block, FullClient>::new(tracker_client, tracker_config);
+                tracker.run().await;
             },
         );
     }

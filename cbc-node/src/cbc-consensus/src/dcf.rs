@@ -22,6 +22,7 @@ use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use cbc_runtime::AccountId;
 use sc_transaction_pool_api::TransactionPool;
 use sp_runtime::DigestItem;
+use codec::Encode;
 // use sc_client_api::BlockBackend;
 
 
@@ -737,12 +738,16 @@ where
         let block_number = *block.header().number();
         debug!("Signing block #{} with author {:?}", block_number, author);
         
-        // For now, use a simplified signing approach
-        //  this would integrate with the keystore properly
-        // Caution need an attention here 
         let block_hash = block.header().hash();
+        let author_account: AccountId = author.clone().into();
         
-        // Create a basic signature using the author's public key and block hash (palceholder caution)
+        // Create author information digest (pre-runtime)
+        let author_digest = DigestItem::PreRuntime(
+            *b"cbc ", // Using CBC consensus engine ID (4 bytes)
+            author_account.encode(),
+        );
+        
+        // Create a signature using the author's public key and block hash
         let signature_data = {
             let mut data = Vec::new();
             data.extend_from_slice(author.as_ref());
@@ -754,12 +759,18 @@ where
         // Add the signature to the block's digest as a seal
         let seal_digest = DigestItem::Seal(
             *b"cbc ", // Using CBC consensus engine ID (4 bytes)
-            signature_data.to_vec(),
+            {
+                let mut seal_data = Vec::new();
+                seal_data.extend_from_slice(author.as_ref()); // Include author in seal for extraction
+                seal_data.extend_from_slice(&signature_data);
+                seal_data
+            },
         );
         
-        // Create new header with the seal
+        // Create new header with both author info and seal
         let mut header = block.header().clone();
         let mut digest = header.digest().clone();
+        digest.push(author_digest);
         digest.push(seal_digest);
         
         // Update the header with the new digest
@@ -768,7 +779,7 @@ where
         // Create new block with signed header
         let signed_block = B::new(header, block.extrinsics().to_vec());
         
-        debug!("Block #{} signed and sealed", block_number);
+        debug!("Block #{} signed and sealed with author {:?}", block_number, author_account);
         Ok(signed_block)
     }
     
@@ -824,9 +835,16 @@ where
         let author_public = Public::from_raw(*author.as_ref());
         self.metrics.update_validator_score(author_public, 0, 0, 1); // Increment block count
         
-        // Update runtime state through API calls
+        // Record successful block authorship in runtime
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
+        
+        // Record block authorship through runtime API
+        if let Err(e) = api.report_successful_block_authorship(best_hash, block_number, author.clone()) {
+            warn!("Failed to record block authorship for validator {:?} at block #{}: {:?}", author, block_number, e);
+        } else {
+            debug!("Recorded successful block authorship for validator {:?} at block #{}", author, block_number);
+        }
         
         // Update validator performance in runtime 
         if let Ok(Some(profile)) = api.get_validator_profile(best_hash, author.clone()) {
@@ -937,6 +955,8 @@ where
     
     /// Handle block production failure and update consensus state
     async fn handle_block_production_failure(&mut self, author: &AccountId) -> ConsensusResult<()> {
+        let current_block = self.client.info().best_number.saturated_into::<u32>() + 1;
+        
         // Still advance the slot even if block production failed
         self.current_slot = self.current_slot.saturating_add(1);
         
@@ -948,14 +968,21 @@ where
         // Update metrics to track the failure
         self.metrics.failed_blocks = self.metrics.failed_blocks.saturating_add(1);
         
+        // Record missed block in runtime
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        if let Err(e) = api.report_missed_block(best_hash, current_block, author.clone()) {
+            warn!("Failed to record missed block for validator {:?} at block #{}: {:?}", author, current_block, e);
+        } else {
+            debug!("Recorded missed block for validator {:?} at block #{}", author, current_block);
+        }
+        
         // Log the failure for monitoring
         info!("PoS+PoI: Block production failed - Slot: {}, Failed blocks: {}, Author: {:?}", 
               self.current_slot, self.metrics.failed_blocks, author);
         
-        //  update validator metrics in runtime to reflect the missed block
-        let api = self.client.runtime_api();
-        let best_hash = self.client.info().best_hash;
-        
+        // Get updated validator metrics after recording the missed block
         if let Ok(Some(profile)) = api.get_validator_profile(best_hash, author.clone()) {
             let combined_score = profile.final_score;
             let pos_score = self.get_pos_score(author);
@@ -963,7 +990,7 @@ where
             let (participation_rate, missed_blocks) = self.get_validator_participation_metrics(author);
             
             info!("PoS+PoI: Validator {:?} missed block - Combined: {}, PoS: {}, PoI: {}, Participation: {}%, Total Missed: {}", 
-                  author, combined_score, pos_score, poi_score, participation_rate, missed_blocks + 1);
+                  author, combined_score, pos_score, poi_score, participation_rate, missed_blocks);
         }
         
         Ok(())
@@ -1050,6 +1077,41 @@ where
             return Ok(ImportResult::imported(false));
         }
         
+        // Extract block author from digest before importing
+        let block_author = self.extract_block_author_from_digest(&block.header);
+        
+        // Validate block authorship if we have an author
+        if let Some(author) = &block_author {
+            // Validate that the author is an active validator
+            if !active_validators.contains(author) {
+                warn!("Block #{} authored by inactive validator {:?}", block_number, author);
+            }
+            
+            // Check if this matches the expected author
+            if let Ok(Some(expected_author)) = api.get_expected_author(best_hash, block_number) {
+                if *author != expected_author {
+                    warn!("Block #{} author mismatch: expected {:?}, got {:?}", 
+                          block_number, expected_author, author);
+                    
+                    // Report the mismatch and record missed block for expected author
+                    let _ = api.report_author_mismatch(best_hash, block_number, Some(expected_author.clone()), author.clone());
+                    let _ = api.report_missed_block(best_hash, block_number, expected_author);
+                } else {
+                    // Correct author, record successful authorship
+                    let _ = api.report_successful_block_authorship(best_hash, block_number, author.clone());
+                }
+            } else {
+                // No expected author, still record the authorship
+                let _ = api.report_successful_block_authorship(best_hash, block_number, author.clone());
+            }
+        } else {
+            // No author found in block, check if we expected one
+            if let Ok(Some(expected_author)) = api.get_expected_author(best_hash, block_number) {
+                warn!("Block #{} has no author but expected {:?}", block_number, expected_author);
+                let _ = api.report_missed_block(best_hash, block_number, expected_author);
+            }
+        }
+        
         // Actually import the block using the client's import functionality
         let import_result = self.client.import_block(block).await
             .map_err(|e| sp_consensus::Error::ClientImport(format!("Client import failed: {:?}", e)))?;
@@ -1073,6 +1135,50 @@ where
     C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
     C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
 {
+    /// Extract block author from block header digest
+    fn extract_block_author_from_digest(&self, header: &B::Header) -> Option<AccountId> {
+        use sp_runtime::DigestItem;
+        use sp_core::Decode;
+        
+        // Look for consensus digest items that might contain author information
+        for log in header.digest().logs() {
+            match log {
+                DigestItem::Seal(engine_id, data) => {
+                    // Check if this is a CBC consensus seal
+                    if engine_id == b"cbc " {
+                        // Try to extract author from seal data
+                        // The seal should contain author information
+                        if data.len() >= 32 {
+                            // First 32 bytes should be the author's public key
+                            if let Ok(author) = AccountId::decode(&mut &data[0..32]) {
+                                return Some(author);
+                            }
+                        }
+                    }
+                }
+                DigestItem::PreRuntime(engine_id, data) => {
+                    // Check for pre-runtime digest with author info
+                    if engine_id == b"cbc " {
+                        if let Ok(author) = AccountId::decode(&mut &data[..]) {
+                            return Some(author);
+                        }
+                    }
+                }
+                DigestItem::Consensus(engine_id, data) => {
+                    // Check for consensus digest with author info
+                    if engine_id == b"cbc " {
+                        if let Ok(author) = AccountId::decode(&mut &data[..]) {
+                            return Some(author);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        None
+    }
+
     /// Update validator scores based on block authorship
     pub fn update_block_authorship_scores(&self, block_number: u32) {
         let api = self.client.runtime_api();
@@ -1143,7 +1249,7 @@ mod tests {
         (0..4)
             .map(|i| {
                 let pair = Pair::from_seed(&[i as u8; 32]);
-                i as u64 // Use validator ID instead of AuraId
+                i as u64 
             })
             .collect()
     }

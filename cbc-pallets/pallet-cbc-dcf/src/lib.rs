@@ -378,6 +378,8 @@ sp_api::decl_runtime_apis! {
         fn get_epoch_length() -> u32; // Get configurable epoch length from T::EpochLength
         fn validate_block_author_strict(block_number: u32, actual_author: AccountId) -> Result<(), u8>;
         fn report_author_mismatch(block_number: u32, expected: Option<AccountId>, actual: AccountId) -> Result<(), sp_runtime::DispatchError>;
+        fn report_successful_block_authorship(block_number: u32, author: AccountId) -> Result<(), sp_runtime::DispatchError>;
+        fn report_missed_block(block_number: u32, expected_author: AccountId) -> Result<(), sp_runtime::DispatchError>;
         
         /// Get the complete governance configuration with parameter ranges and current values.
         /// 
@@ -9553,7 +9555,7 @@ pub mod pallet {
         /// - `Ok(Weight)`: Validation passed with weight consumed
         /// - `Err(MigrationError)`: Validation failed with specific error details
         pub fn validate_storage_integrity() -> Result<Weight, MigrationError> {
-            let mut weight = <T as Config>::WeightInfo::on_initialize();
+            let weight = <T as Config>::WeightInfo::on_initialize();
             
             log::info!("DCF: Starting storage integrity validation");
             

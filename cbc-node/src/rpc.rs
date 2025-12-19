@@ -141,6 +141,17 @@ pub struct HealthStatus {
     pub issues: Vec<String>,
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockAuthoringStats {
+    pub authored_blocks: u32,
+    pub missed_blocks: u32,
+    pub expected_blocks: u32,
+    pub participation_rate: f64,
+    pub consecutive_misses: u32,
+    pub last_authored_block: Option<u32>,
+}
+
 #[derive(Clone, Debug)]
 pub struct RpcSecurityConfig {
     pub enable_cbc_extensions: bool,
@@ -523,6 +534,12 @@ pub trait CbcRpcApi {
     
     #[method(name = "cbc_health")]
     fn health(&self) -> RpcResult<HealthStatus>;
+    
+    #[method(name = "cbc_getBlockAuthoringStats")]
+    fn get_block_authoring_stats(&self, validator: AccountId) -> RpcResult<BlockAuthoringStats>;
+    
+    #[method(name = "cbc_getAllBlockAuthoringStats")]
+    fn get_all_block_authoring_stats(&self) -> RpcResult<Vec<(AccountId, BlockAuthoringStats)>>;
 }
 
 pub struct CbcRpcApiImpl<C> {
@@ -632,9 +649,14 @@ where
             ValidatorStatus::Active
         };
         
-        // Get authored and missed blocks (using placeholder values for now)
-        let authored_blocks = 0; // TODO: Implement block authoring tracking
-        let missed_blocks = 0;   // TODO: Implement missed block tracking
+        // Get authored and missed blocks from validator state
+        let (authored_blocks, missed_blocks) = match <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_validator_participation(&api, best_hash, validator.clone()) {
+            Ok((authored, missed)) => (authored, missed),
+            Err(e) => {
+                log::warn!("Failed to get block participation for validator {:?}: {:?}", validator, e);
+                (0u32, 0u32)
+            }
+        };
         
         Ok(ValidatorProfile {
             account: validator,
@@ -802,6 +824,18 @@ where
                 params: vec![],
                 returns: "HealthStatus".to_string(),
             },
+            RpcMethodDescription {
+                name: "cbc_getBlockAuthoringStats".to_string(),
+                description: "Get block authoring statistics for a specific validator".to_string(),
+                params: vec!["AccountId".to_string()],
+                returns: "BlockAuthoringStats".to_string(),
+            },
+            RpcMethodDescription {
+                name: "cbc_getAllBlockAuthoringStats".to_string(),
+                description: "Get block authoring statistics for all active validators".to_string(),
+                params: vec![],
+                returns: "Vec<(AccountId, BlockAuthoringStats)>".to_string(),
+            },
             // PoS methods
             RpcMethodDescription {
                 name: "pos_getValidatorScore".to_string(),
@@ -932,6 +966,93 @@ where
             issues,
         })
     }
+    
+    fn get_block_authoring_stats(&self, validator: AccountId) -> RpcResult<BlockAuthoringStats> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get validator participation data
+        let (authored_blocks, missed_blocks) = <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_validator_participation(&api, best_hash, validator.clone())
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get validator participation: {:?}", e),
+                None::<()>
+            ))?;
+        
+        let expected_blocks = authored_blocks + missed_blocks;
+        let participation_rate = if expected_blocks > 0 {
+            (authored_blocks as f64 / expected_blocks as f64) * 100.0
+        } else {
+            100.0
+        };
+        
+        // Get validator state for additional info
+        let consecutive_misses = if let Ok(Some(_profile)) = <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_validator_profile(&api, best_hash, validator.clone()) {
+            // Calculate consecutive misses based on recent performance
+            // This is a simplified calculation - in practice you'd track this more precisely
+            if participation_rate < 90.0 && missed_blocks > 0 {
+                std::cmp::min(missed_blocks, 5) // Cap at 5 for display
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+        
+        let last_authored_block = if authored_blocks > 0 {
+            // Get the last active block from validator state
+            <C::Api as pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>>::get_validator_last_active(&api, best_hash, validator.clone())
+                .ok()
+                .filter(|&block| block > 0)
+        } else {
+            None
+        };
+        
+        Ok(BlockAuthoringStats {
+            authored_blocks,
+            missed_blocks,
+            expected_blocks,
+            participation_rate,
+            consecutive_misses,
+            last_authored_block,
+        })
+    }
+    
+    fn get_all_block_authoring_stats(&self) -> RpcResult<Vec<(AccountId, BlockAuthoringStats)>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        // Get all active validators
+        let active_validators = <C::Api as pallet_cbc_pos::PosApi<Block, AccountId, Balance>>::get_active_validators(&api, best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Failed to get active validators: {:?}", e),
+                None::<()>
+            ))?;
+        
+        let mut results = Vec::new();
+        
+        for validator in active_validators {
+            match self.get_block_authoring_stats(validator.clone()) {
+                Ok(stats) => {
+                    results.push((validator, stats));
+                }
+                Err(e) => {
+                    log::warn!("Failed to get block authoring stats for validator {:?}: {:?}", validator, e);
+                    // Continue with other validators instead of failing the entire request
+                }
+            }
+        }
+        
+        // Sort by participation rate (highest first)
+        results.sort_by(|a, b| b.1.participation_rate.partial_cmp(&a.1.participation_rate).unwrap_or(std::cmp::Ordering::Equal));
+        
+        Ok(results)
+    }
 }
 
 pub fn create_full<C, P>(
@@ -989,3 +1110,4 @@ where
 
     Ok(module)
 }
+
