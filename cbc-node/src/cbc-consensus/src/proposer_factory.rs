@@ -80,6 +80,8 @@ where
         // Get transactions from the pool
         let ready_transactions = self.collect_transactions_from_pool().await?;
         
+        debug!("ProposerFactory: Using parent_hash parameter: {:?}", parent_hash);
+        
         // Get parent header
         let parent_header = self.client.header(parent_hash)
             .map_err(|e| ConsensusError::Proposer(format!("Failed to get parent header: {:?}", e)))?
@@ -88,30 +90,40 @@ where
         let block_number = (*parent_header.number()).saturated_into::<u32>() + 1;
         let header_number = (block_number as u64).saturated_into::<<B::Header as HeaderTrait>::Number>();
         
-        // For now, create a simple block with just the ready transactions
-        // The runtime will handle inherents and proper root calculations during execution
-        let all_extrinsics = ready_transactions;
+        debug!("ProposerFactory: Creating header with parent_hash: {:?}", parent_hash);
+        
+        // For now, create empty blocks to test the basic block production pipeline
+        // The timestamp issue needs to be resolved at the runtime level
+        let all_extrinsics = Vec::new(); // Empty block for now
+        
+        debug!("ProposerFactory: Created empty block to test basic pipeline");
         
         // Calculate extrinsics root using the correct method
         let extrinsics_root = <<B::Header as HeaderTrait>::Hashing as Hash>::ordered_trie_root(
-            all_extrinsics.iter().map(|xt| xt.encode()).collect(),
+            all_extrinsics.iter().map(|xt: &B::Extrinsic| xt.encode()).collect(),
             sp_runtime::StateVersion::V1,
         );
         
-        // Create header with proper roots
+        let state_root = Default::default();
+        debug!("ProposerFactory: Parameters - number: {:?}, parent: {:?}, state_root: {:?}, extrinsics_root: {:?}", 
+               header_number, parent_hash, state_root, extrinsics_root);
+        
+        // Create header with proper roots - correct parameter order
         let header = B::Header::new(
             header_number,
-            parent_hash,
-            Default::default(), // state root will be calculated during execution
             extrinsics_root,
+            state_root, // state root will be calculated during execution  
+            parent_hash,
             Default::default(), // digest will be set during execution
         );
+        
+        debug!("ProposerFactory: Header created with parent: {:?}", header.parent_hash());
 
         // Create the complete block with transactions
         let block = B::new(header, all_extrinsics);
         
-        debug!("Created block #{} with {} extrinsics from pool", 
-              block_number, block.extrinsics().len());
+        debug!("Created block #{} with {} extrinsics from pool, final parent: {:?}", 
+              block_number, block.extrinsics().len(), block.header().parent_hash());
 
         self.last_block_time = Some(Instant::now());
         Ok((block, author))

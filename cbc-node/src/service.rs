@@ -362,9 +362,8 @@ where
         None
     };
     
-    // This will actually add blocks to the chain state
-    let dcf_block_import = cbc_consensus::RealBlockImport::new(client.clone());
-    let dcf_block_import_arc = Arc::new(dcf_block_import);
+    // Use the client directly for block import - Substrate handles this internally
+    let dcf_block_import_arc = client.clone();
     
     // Set up  PoS+PoI block production with DCF consensus
     if config.role.is_authority() {

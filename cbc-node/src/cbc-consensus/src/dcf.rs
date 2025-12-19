@@ -711,6 +711,8 @@ where
         debug!("Creating block proposal #{} for author {:?}", block_number, author);
         
         let parent_hash = self.client.info().best_hash;
+        let parent_number = self.client.info().best_number;
+        debug!("Using parent hash {:?} (block #{})", parent_hash, parent_number);
         
         // Use the enhanced proposer factory to create a complete block with transactions
         let (block, expected_author) = self.proposer_factory.create_block_with_transactions(parent_hash, block_number as u64)
@@ -726,7 +728,8 @@ where
             )));
         }
         
-        debug!("Created block #{} with {} transactions", block_number, block.extrinsics().len());
+        debug!("Created block #{} with {} transactions, parent: {:?}", 
+               block_number, block.extrinsics().len(), block.header().parent_hash());
         
         Ok(block)
     }
@@ -769,6 +772,9 @@ where
         
         // Create new header with both author info and seal
         let mut header = block.header().clone();
+        let original_parent = *header.parent_hash();
+        debug!("Original parent hash: {:?}", original_parent);
+        
         let mut digest = header.digest().clone();
         digest.push(author_digest);
         digest.push(seal_digest);
@@ -776,8 +782,12 @@ where
         // Update the header with the new digest
         *header.digest_mut() = digest;
         
+        debug!("After digest update, parent hash: {:?}", header.parent_hash());
+        
         // Create new block with signed header
         let signed_block = B::new(header, block.extrinsics().to_vec());
+        
+        debug!("Final signed block parent hash: {:?}", signed_block.header().parent_hash());
         
         debug!("Block #{} signed and sealed with author {:?}", block_number, author_account);
         Ok(signed_block)
@@ -787,8 +797,9 @@ where
     async fn import_consensus_block(&self, block: B) -> ConsensusResult<()> {
         let block_hash = block.header().hash();
         let block_number = *block.header().number();
+        let parent_hash = *block.header().parent_hash();
         
-        debug!("Importing consensus block #{} ({:?})", block_number, block_hash);
+        debug!("Importing consensus block #{} ({:?}) with parent {:?}", block_number, block_hash, parent_hash);
         
         // Create proper block import parameters
         let mut import_params = BlockImportParams::new(

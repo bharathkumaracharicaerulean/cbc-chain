@@ -14798,8 +14798,8 @@ pub mod pallet {
             if score_change > significant_change_threshold {
                 let current_epoch = Self::current_epoch();
                 TrustScoreHistory::<T>::try_mutate(validator, |history| {
-                    // Remove oldest entry if at capacity
-                    if history.len() == history.capacity() {
+                    // Remove oldest entry if at capacity and not empty
+                    if history.len() == history.capacity() && !history.is_empty() {
                         history.remove(0);
                     }
                     // Add new entry
