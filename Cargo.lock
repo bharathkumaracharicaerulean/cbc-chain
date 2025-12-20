@@ -1269,6 +1269,7 @@ dependencies = [
  "serde",
  "sp-api",
  "sp-application-crypto",
+ "sp-block-builder",
  "sp-blockchain",
  "sp-consensus",
  "sp-core",

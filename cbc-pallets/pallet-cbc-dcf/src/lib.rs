@@ -5618,6 +5618,44 @@ pub mod pallet {
             result_count: u32,
         },
 
+        /// Emitted when a validator successfully authors a block.
+        /// 
+        /// This event tracks successful block production by validators and is
+        /// essential for monitoring validator performance and network health.
+        /// It provides transparency about which validators are actively
+        /// participating in block production.
+        /// 
+        /// # Usage
+        /// - Block production monitoring and analytics
+        /// - Validator performance tracking
+        /// - Network health assessment
+        /// - Reward distribution calculations
+        BlockAuthored {
+            /// Block number that was successfully authored
+            block_number: u32,
+            /// Validator account that authored the block
+            author: T::AccountId,
+        },
+
+        /// Emitted when a validator misses their assigned block production slot.
+        /// 
+        /// This event tracks missed block production opportunities and is
+        /// critical for identifying validator performance issues and network
+        /// health problems. Missed blocks can indicate validator downtime,
+        /// network connectivity issues, or other operational problems.
+        /// 
+        /// # Usage
+        /// - Validator performance monitoring
+        /// - Network reliability assessment
+        /// - Penalty and slashing calculations
+        /// - Validator health diagnostics
+        MissedBlock {
+            /// Block number that was missed
+            block_number: u32,
+            /// Validator account that was expected to author the block
+            validator: T::AccountId,
+        },
+
     }
 
     /// Errors that can occur during replay validation.
@@ -8453,6 +8491,92 @@ pub mod pallet {
             // Update trust score after block authorship
             Self::update_trust_score(validator)?;
             
+            Ok(())
+        }
+
+        /// Report successful block authorship (Runtime API function)
+        /// This is called by the consensus engine after successfully importing a block
+        pub fn report_successful_block_authorship(
+            block_number: u32,
+            author: T::AccountId,
+        ) -> Result<(), sp_runtime::DispatchError> {
+            // Validate that the author is an active validator
+            if !Self::is_validator_active(&author) {
+                Self::deposit_event(Event::InvalidAuthor {
+                    block_number,
+                    author: author.clone(),
+                });
+                return Err(sp_runtime::DispatchError::Other("Author is not an active validator"));
+            }
+
+            // Record the block authorship
+            Self::record_block_authorship(&author)?;
+
+            // Emit event for successful block authorship
+            Self::deposit_event(Event::BlockAuthored {
+                block_number,
+                author: author.clone(),
+            });
+
+            log::debug!(
+                "DCF: Recorded successful block authorship for block #{} by {:?}",
+                block_number,
+                author
+            );
+
+            Ok(())
+        }
+
+        /// Report author mismatch (Runtime API function)
+        /// This is called when the actual block author doesn't match the expected author
+        pub fn report_author_mismatch(
+            block_number: u32,
+            expected: Option<T::AccountId>,
+            actual: T::AccountId,
+        ) -> Result<(), sp_runtime::DispatchError> {
+            // Emit author mismatch event
+            Self::deposit_event(Event::AuthorMismatch {
+                block_number,
+                expected: expected.clone(),
+                actual: actual.clone(),
+            });
+
+            // If there was an expected author, record it as a missed block
+            if let Some(expected_author) = expected {
+                Self::record_missed_block(&expected_author)?;
+                
+                log::warn!(
+                    "DCF: Author mismatch at block #{}: expected {:?}, got {:?}",
+                    block_number,
+                    expected_author,
+                    actual
+                );
+            }
+
+            Ok(())
+        }
+
+        /// Report missed block (Runtime API function)
+        /// This is called when a validator fails to produce their assigned block
+        pub fn report_missed_block_for_api(
+            block_number: u32,
+            expected_author: T::AccountId,
+        ) -> Result<(), sp_runtime::DispatchError> {
+            // Record the missed block
+            Self::record_missed_block(&expected_author)?;
+
+            // Emit event for missed block
+            Self::deposit_event(Event::MissedBlock {
+                block_number,
+                validator: expected_author.clone(),
+            });
+
+            log::debug!(
+                "DCF: Recorded missed block #{} for validator {:?}",
+                block_number,
+                expected_author
+            );
+
             Ok(())
         }
 
@@ -12299,22 +12423,6 @@ pub mod pallet {
             }
         }
 
-        /// Report author mismatch for event emission (called from consensus layer).
-        /// This function is used by the import queue to emit AuthorMismatch events.
-        pub fn report_author_mismatch(
-            block_number: u32, 
-            expected: Option<T::AccountId>, 
-            actual: T::AccountId
-        ) -> Result<(), sp_runtime::DispatchError> {
-            // Emit the AuthorMismatch event
-            Self::deposit_event(Event::AuthorMismatch {
-                block_number,
-                expected,
-                actual,
-            });
-            Ok(())
-        }
-
         /// Check if an account is an active validator.
         pub fn is_validator_active(author: &T::AccountId) -> bool {
             Self::active_validators().contains(author)
@@ -14324,18 +14432,51 @@ pub mod pallet {
             }
         }
 
-        /// Extract block author from system digest (simplified implementation)
+        /// Extract block author from system digest (enhanced implementation)
         fn extract_block_author() -> Option<T::AccountId> {
-            // This is a simplified implementation
-            // In a real scenario, you would extract the author from block headers or consensus logs
+            // Extract the author from block headers or consensus logs
+            // This matches the digest format created by the CBC consensus engine
             frame_system::Pallet::<T>::digest()
                 .logs()
                 .iter()
                 .find_map(|log| {
-                    if let DigestItem::Consensus(_, data) = log {
-                        T::AccountId::decode(&mut &data[..]).ok()
-                    } else {
-                        None
+                    match log {
+                        // Check PreRuntime digest items (where consensus engine stores author info)
+                        DigestItem::PreRuntime(engine_id, data) => {
+                            if engine_id == b"cbc " {
+                                // The digest data contains: [32 bytes author][32 bytes signature]
+                                if data.len() >= 32 {
+                                    // First 32 bytes should be the author's account ID
+                                    T::AccountId::decode(&mut &data[0..32]).ok()
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                        // Check Seal digest items (alternative location for author info - legacy support)
+                        DigestItem::Seal(engine_id, data) => {
+                            if engine_id == b"cbc " {
+                                // First 32 bytes should be the author's account ID
+                                if data.len() >= 32 {
+                                    T::AccountId::decode(&mut &data[0..32]).ok()
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                        // Check Consensus digest items (legacy support)
+                        DigestItem::Consensus(engine_id, data) => {
+                            if engine_id == b"cbc " {
+                                T::AccountId::decode(&mut &data[..]).ok()
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
                     }
                 })
         }

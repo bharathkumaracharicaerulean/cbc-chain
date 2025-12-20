@@ -424,12 +424,12 @@ impl_runtime_apis! {
 			pallet_cbc_dcf::Pallet::<Runtime>::report_author_mismatch(block_number, expected, actual)
 		}
 
-		fn report_successful_block_authorship(_block_number: u32, author: AccountId) -> Result<(), sp_runtime::DispatchError> {
-			pallet_cbc_dcf::Pallet::<Runtime>::record_block_authorship(&author)
+		fn report_successful_block_authorship(block_number: u32, author: AccountId) -> Result<(), sp_runtime::DispatchError> {
+			pallet_cbc_dcf::Pallet::<Runtime>::report_successful_block_authorship(block_number, author)
 		}
 
-		fn report_missed_block(_block_number: u32, expected_author: AccountId) -> Result<(), sp_runtime::DispatchError> {
-			pallet_cbc_dcf::Pallet::<Runtime>::record_missed_block(&expected_author)
+		fn report_missed_block(block_number: u32, expected_author: AccountId) -> Result<(), sp_runtime::DispatchError> {
+			pallet_cbc_dcf::Pallet::<Runtime>::report_missed_block_for_api(block_number, expected_author)
 		}
 
 		fn get_governance_config() -> Vec<u8> {

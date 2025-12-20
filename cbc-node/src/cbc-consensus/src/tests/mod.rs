@@ -11,3 +11,9 @@ pub mod metrics_test;
 
 /// Validator set management tests
 pub mod validator_set_test;
+
+/// Header parameter order and parent hash propagation tests
+pub mod header_parameter_order_test;
+
+/// Proposer factory integration tests
+pub mod proposer_integration_test;

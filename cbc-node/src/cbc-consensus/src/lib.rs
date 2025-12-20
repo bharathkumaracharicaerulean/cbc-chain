@@ -13,6 +13,8 @@ pub mod validator_set;
 /// Block production and import
 pub mod proposer_factory;
 pub mod import_queue;
+pub mod inherent_providers;
+pub mod block_import;
 
 /// Epoch management
 pub mod epoch_manager;
@@ -37,5 +39,7 @@ pub use dcf::{RealBlockImport, DcfConsensus};
 pub use types::{ValidatorInfo, ValidatorMetrics, EpochConfig, AuthorSelectionMode, ConsensusParams, BlockT};
 pub use proposer_factory::ProposerFactory;
 pub use finality::FinalityEngine;
+pub use inherent_providers::CbcInherentDataProviders;
+pub use block_import::CbcBlockImport;
 
 

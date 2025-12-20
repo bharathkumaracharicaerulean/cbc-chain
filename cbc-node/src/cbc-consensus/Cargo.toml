@@ -19,6 +19,7 @@ sp-blockchain = { workspace = true }
 sp-consensus = { workspace = true }
 sp-inherents = { features = ["std"], workspace = true }
 sp-timestamp = { features = ["std"], workspace = true }
+sp-block-builder = { features = ["std"], workspace = true }
 sp-keyring = { features = ["std"], workspace = true }
 sp-application-crypto = { features = ["std"], workspace = true }
 sp-keystore = { version = "0.42.0", default-features = false }
@@ -61,6 +62,7 @@ std = [
 	"sp-core/std",
 	"sp-runtime/std",
 	"sp-api/std",
+	"sp-block-builder/std",
 	"sp-keystore/std",
 	"pallet-cbc-dcf/std",
 	"pallet-cbc-pos/std",
