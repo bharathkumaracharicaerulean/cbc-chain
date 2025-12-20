@@ -3,6 +3,8 @@
 // This module provides utilities for handling and validating errors in tests,
 // including RPC error validation and test failure analysis.
 
+#![allow(dead_code)]
+
 use serde_json::Value;
 use std::fmt;
 

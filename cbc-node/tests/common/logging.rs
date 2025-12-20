@@ -3,6 +3,8 @@
 // This module provides logging configuration and utilities for test execution,
 // including structured logging for property tests and integration tests.
 
+#![allow(dead_code)]
+
 use std::sync::Once;
 
 static INIT: Once = Once::new();

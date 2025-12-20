@@ -48,6 +48,13 @@ impl SubstrateCli for Cli {
 pub fn run() -> sc_cli::Result<()> {
     let cli = Cli::from_args();
 
+    // Log node startup information
+    crate::logging::log_consensus_event(&format!(
+        "Starting CBC node version {} in {} mode", 
+        env!("CARGO_PKG_VERSION"),
+        if cli.cbc_mode == "production" { "production" } else { &cli.cbc_mode }
+    ));
+
     match &cli.subcommand {
         Some(Subcommand::Key(cmd)) => cmd.run(&cli),
 

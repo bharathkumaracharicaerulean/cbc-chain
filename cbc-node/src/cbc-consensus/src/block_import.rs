@@ -4,7 +4,7 @@
 //! validation with Substrate's default block import pipeline.
 
 use crate::{
-    error::{ConsensusError, ConsensusResult},
+    error::ConsensusResult,
     types::ValidatorMetrics,
 };
 use std::sync::{Arc, Mutex};
@@ -57,6 +57,7 @@ where
     }
 
     /// Extract block author from block header digest
+    #[allow(dead_code)]
     fn extract_block_author(&self, header: &B::Header) -> Result<AccountId, Error> {
         // Look for the author in the digest items
         for digest_item in header.digest().logs() {
@@ -146,6 +147,7 @@ where
     }
 
     /// Verify block signature and consensus digests
+    #[allow(dead_code)]
     fn verify_block_signature(&self, header: &B::Header, author: &AccountId) -> Result<(), Error> {
         let block_number = (*header.number()).saturated_into::<u32>();
         let block_hash = header.hash();

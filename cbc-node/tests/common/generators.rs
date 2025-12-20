@@ -5,7 +5,6 @@
 
 use proptest::prelude::*;
 use proptest::strategy::{Strategy, ValueTree};
-use proptest::test_runner::TestRunner;
 use sp_core::crypto::AccountId32;
 use cbc_runtime::AccountId;
 
@@ -84,6 +83,7 @@ pub fn balance_strategy() -> impl Strategy<Value = u128> {
 /// 
 /// Generates slashing counts in the range [0, 10] to test various
 /// validator penalty scenarios.
+#[allow(dead_code)]
 pub fn slashing_count_strategy() -> impl Strategy<Value = u32> {
     0u32..=10u32
 }
@@ -92,6 +92,7 @@ pub fn slashing_count_strategy() -> impl Strategy<Value = u32> {
 /// 
 /// Generates epoch numbers in a reasonable range for testing
 /// epoch-dependent functionality.
+#[allow(dead_code)]
 pub fn epoch_strategy() -> impl Strategy<Value = u32> {
     1u32..=1000u32
 }
@@ -100,6 +101,7 @@ pub fn epoch_strategy() -> impl Strategy<Value = u32> {
 /// 
 /// Generates PoI inference results as (result, confidence) pairs
 /// where both values are in valid ranges.
+#[allow(dead_code)]
 pub fn inference_result_strategy() -> impl Strategy<Value = (u32, u32)> {
     (0u32..=100u32, 0u32..=100u32)
 }
@@ -108,6 +110,7 @@ pub fn inference_result_strategy() -> impl Strategy<Value = (u32, u32)> {
 /// 
 /// Generates (validator, stake) pairs for testing staking scenarios.
 /// Each validator has a positive stake amount.
+#[allow(dead_code)]
 pub fn validator_stakes_strategy() -> impl Strategy<Value = Vec<(AccountId, u128)>> {
     prop::collection::vec(
         (validator_account_strategy(), balance_strategy()),
@@ -124,6 +127,7 @@ pub fn validator_stakes_strategy() -> impl Strategy<Value = Vec<(AccountId, u128
 /// 
 /// Generates (validator, score) pairs for testing score-based scenarios.
 /// Scores are in the valid range for the respective consensus mechanism.
+#[allow(dead_code)]
 pub fn validator_pos_scores_strategy() -> impl Strategy<Value = Vec<(AccountId, u32)>> {
     prop::collection::vec(
         (validator_account_strategy(), pos_score_strategy()),
@@ -139,6 +143,7 @@ pub fn validator_pos_scores_strategy() -> impl Strategy<Value = Vec<(AccountId, 
 /// Strategy to generate PoI inference results for validators
 /// 
 /// Generates (validator, inference_result) pairs for testing PoI scenarios.
+#[allow(dead_code)]
 pub fn validator_poi_results_strategy() -> impl Strategy<Value = Vec<(AccountId, (u32, u32))>> {
     prop::collection::vec(
         (validator_account_strategy(), inference_result_strategy()),

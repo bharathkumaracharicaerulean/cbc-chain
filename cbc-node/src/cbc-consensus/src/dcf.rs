@@ -21,8 +21,6 @@ use sp_core::sr25519::Public;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use cbc_runtime::AccountId;
 use sc_transaction_pool_api::TransactionPool;
-use sp_runtime::DigestItem;
-use codec::Encode;
 // use sc_client_api::BlockBackend;
 
 

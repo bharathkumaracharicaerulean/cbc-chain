@@ -6,7 +6,6 @@ mod common;
 
 use common::*;
 use proptest::strategy::{Strategy, ValueTree};
-use proptest::test_runner::TestRunner;
 use sp_core::crypto::AccountId32;
 
 #[test]

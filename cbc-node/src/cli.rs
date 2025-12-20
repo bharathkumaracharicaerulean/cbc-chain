@@ -25,6 +25,9 @@ pub struct Cli {
     #[clap(long, help = "Write logs to the given file instead of stdout")]
     pub log_file: Option<String>,
 
+    #[clap(long, help = "Show only CBC-related logs")]
+    pub cbc_log_only: bool,
+
     #[clap(long, help = "Enable unsafe RPC methods (use with caution)")]
     pub unsafe_rpc_expose: bool,
 

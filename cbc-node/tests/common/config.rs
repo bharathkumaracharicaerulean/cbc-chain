@@ -3,6 +3,8 @@
 // This module provides configuration types and builders for setting up
 // test environments with specific parameters and constraints.
 
+#![allow(dead_code)]
+
 use cbc_runtime::{AccountId, Balance};
 
 /// Configuration for property-based tests

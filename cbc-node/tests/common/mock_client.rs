@@ -3,6 +3,8 @@
 // This module provides mock implementations of blockchain clients and Runtime APIs
 // for isolated unit testing of RPC handlers without requiring a full blockchain node.
 
+#![allow(dead_code)]
+
 use crate::common::config::RpcSecurityConfig;
 use cbc_runtime::{AccountId, Balance};
 use std::collections::HashMap;

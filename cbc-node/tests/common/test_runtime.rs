@@ -3,6 +3,8 @@
 // This module provides utilities for creating and configuring test blockchain
 // instances with specific validator sets, stakes, and consensus parameters.
 
+#![allow(dead_code)]
+
 use crate::common::config::TestConfig;
 use cbc_runtime::{AccountId, Balance};
 
