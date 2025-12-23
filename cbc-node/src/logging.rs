@@ -259,72 +259,9 @@ pub fn configure_rust_log(cbc_log_only: bool) -> String {
     log_config.to_string()
 }
 
-/// Initialize CBC logging with the specified configuration
-pub fn init_cbc_logging(
-    cbc_log_only: bool, 
-    enable_colors: bool, 
-    log_file: Option<String>
-) -> Result<(LogDeduplicator, LogFileWriter), Box<dyn std::error::Error>> {
-    // Configure RUST_LOG
-    let log_config = configure_rust_log(cbc_log_only);
-    
-    // Create log deduplicator (5 second window for deduplication)
-    let deduplicator = LogDeduplicator::new(5);
-    let dedup_clone = deduplicator.clone();
-    
-    // Create log file writer
-    let file_writer = LogFileWriter::new(log_file.clone())?;
-    let is_file_logging = file_writer.is_file_logging();
-    
-    // Initialize env_logger with custom formatting
-    env_logger::Builder::from_default_env()
-        .filter_level(if cbc_log_only { LevelFilter::Debug } else { LevelFilter::Info })
-        .format_timestamp(Some(env_logger::fmt::TimestampPrecision::Millis))
-        .format_module_path(false)
-        .format_target(false)
-        .format(move |buf, record| {
-            use std::io::Write;
-            
-            let formatter = CbcLogFormatter::new(enable_colors && !is_file_logging, true);
-            let level = record.level();
-            let message = record.args().to_string();
-            
-            // Check for deduplication
-            if let Some(count) = dedup_clone.should_deduplicate(&message) {
-                if count == 2 {
-                    // First time we see a duplicate, log the summary
-                    let summary_msg = format!("(Previous message repeated {} times)", count);
-                    writeln!(buf, "{}", formatter.format_log_with_level(&Level::Info, &summary_msg))?;
-                }
-                return Ok(());
-            }
-            
-            // Apply CBC-specific formatting based on the module
-            let formatted_message = match record.module_path() {
-                Some(module) if module.contains("cbc") => {
-                    if module.contains("validator") || message.contains("validator") {
-                        formatter.format_validator_log(&message)
-                    } else if module.contains("epoch") || message.contains("epoch") {
-                        formatter.format_epoch_log(&message)
-                    } else if module.contains("consensus") || message.contains("consensus") {
-                        formatter.format_consensus_log(&message)
-                    } else {
-                        formatter.format_log_with_level(&level, &message)
-                    }
-                },
-                _ => formatter.format_log_with_level(&level, &message)
-            };
-            
-            writeln!(buf, "{}", formatted_message)
-        })
-        .try_init()?;
-    
-    log::info!("CBC logging initialized with config: {}", log_config);
-    if log_file.is_some() {
-        log::info!("Log file redirection enabled: {:?}", log_file);
-    }
-    
-    Ok((deduplicator, file_writer))
+/// Initialize CBC logging configuration (RUST_LOG only, no custom logger)
+pub fn init_cbc_logging_config(cbc_log_only: bool) -> String {
+    configure_rust_log(cbc_log_only)
 }
 
 /// Display startup information for the CBC node
