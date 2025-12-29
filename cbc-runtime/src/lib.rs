@@ -236,8 +236,8 @@ parameter_types! {
 
     // DCF parameters
     pub const DcfMaxValidators: u32 = 100;
-    pub const DefaultPosWeight: u64 = 60; // 60% weight for POS score
-    pub const DefaultPoiWeight: u64 = 40; // 40% weight for POI score
+    pub const DefaultPosWeight: u64 = 6000; // 60% weight for PoS score (6000/10000)
+    pub const DefaultPoiWeight: u64 = 4000; // 40% weight for PoI score (4000/10000)
     pub const MinStake: Balance = 1000 * DOLLARS; // Minimum stake required
     pub const MaxValidatorsPerEpoch: u32 = 50; // Maximum validators per epoch
     pub const MaxValidatorScore: u64 = 100;

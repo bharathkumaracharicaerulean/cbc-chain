@@ -1,9 +1,8 @@
 //! Runtime API integration tests between pallets
 
-use super::*;
-use crate::{mock::*, Error, Event};
+use crate::mock::*;
 use frame_support::{
-    assert_noop, assert_ok,
+    assert_ok,
     traits::{Get, OnFinalize, OnInitialize, Currency},
 };
 

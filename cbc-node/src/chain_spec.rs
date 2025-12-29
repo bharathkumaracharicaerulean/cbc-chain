@@ -35,26 +35,7 @@ pub fn chain_metadata() -> ChainMetadata {
     }
 }
 
-/// Example bootnode configurations for different networks
-#[allow(dead_code)]
-pub fn example_bootnodes() -> Vec<String> {
-    vec![
-        // Example bootnode addresses - these would be replaced with actual bootnode addresses
-        "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp".to_string(),
-        "/ip4/127.0.0.1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD".to_string(),
-        "/dns/bootnode1.cbc-chain.io/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp".to_string(),
-        "/dns/bootnode2.cbc-chain.io/tcp/30333/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD".to_string(),
-    ]
-}
 
-/// Example telemetry endpoints
-#[allow(dead_code)]
-pub fn example_telemetry_endpoints() -> Vec<(String, u8)> {
-    vec![
-        ("wss://telemetry.polkadot.io/submit/".to_string(), 0),
-        ("wss://telemetry.cbc-chain.io/submit/".to_string(), 0),
-    ]
-}
 
 pub fn development_chain_spec() -> Result<ChainSpec, String> {
     Ok(

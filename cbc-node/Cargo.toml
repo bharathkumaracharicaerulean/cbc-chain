@@ -41,6 +41,7 @@ anyhow = { version = "1.0", default-features = false } # Error handling
 
 # === new packages ===
 hex-literal = { workspace = true }
+hex = "0.4"
 sc-chain-spec = { workspace = true }
 jsonrpsee-core = { workspace = true, features = ["server"] }
 jsonrpsee-http-server = { workspace = true }
@@ -69,7 +70,7 @@ env_logger = "0.10" # Environment-based logger
 atty = "0.2" # Terminal detection for color support
 
 # === JSON-RPC ===
-jsonrpsee = { features = ["server"], workspace = true }    # JSON-RPC server implementation
+jsonrpsee = { features = ["server", "http-client"], workspace = true }    # JSON-RPC server implementation
 serde_json = { workspace = true }
 # === Pallet Transaction Payment ===
 pallet-transaction-payment-rpc.default-features = true # RPC for transaction payment pallet
@@ -139,6 +140,7 @@ env_logger = "0.10"
 tokio-test = "0.4"
 serde_json = { workspace = true }
 tempfile = "3.0"
+rand = "0.8"
 
 [build-dependencies]
 # === Build Script Utilities ===

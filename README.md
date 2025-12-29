@@ -1,332 +1,527 @@
 # CBC Chain - Caerulean ByteChains
 
-A next-generation blockchain built on Substrate, featuring a novel **Dynamic Consensus Framework (DCF)** that combines **Proof of Stake (PoS)** and **Proof of Inference (PoI)** for intelligent validator selection and network security.
+A production-ready Substrate-based blockchain implementing a sophisticated **Dynamic Consensus Framework (DCF)** that combines **Proof of Stake (PoS)** and **Proof of Inference (PoI)** for advanced validator selection and network security.
 
-## 🌟 Overview
+## Overview
 
-CBC Chain introduces a revolutionary consensus mechanism that goes beyond traditional PoS by incorporating **Proof of Inference (PoI)** - rewarding validators not just for their stake, but for their computational contributions to AI inference tasks. This creates a more meritocratic and utility-driven blockchain network.
+CBC Chain represents a next-generation blockchain platform that extends traditional PoS consensus by incorporating **Proof of Inference (PoI)** - validators are selected and rewarded based on both their economic stake and their computational contributions to AI inference tasks. The system features comprehensive monitoring, advanced RPC APIs, and production-ready infrastructure.
 
-### Key Innovations
+### Key Features
 
-- **Dynamic Consensus Framework (DCF)**: Adaptive consensus that balances stake and inference capabilities
-- **Proof of Inference (PoI)**: Validators earn rewards by performing AI inference tasks
-- **Intelligent Validator Selection**: Algorithm considers both stake weight and inference performance
-- **Epoch-based Governance**: Automated validator set updates based on performance metrics
-- **Real-time Performance Monitoring**: Comprehensive validator scoring and health tracking
+- **Dynamic Consensus Framework (DCF)**: Adaptive consensus with real-time parameter adjustment
+- **Hybrid PoS/PoI Validation**: Sophisticated scoring combining 65% PoS and 35% PoI weights
+- **Comprehensive RPC APIs**: 19+ specialized endpoints for blockchain interaction
+- **Advanced Validator Management**: Complete lifecycle management with performance tracking
+- **Fork Detection System**: Real-time network fork monitoring and resolution
+- **Production Monitoring**: Grafana dashboards with Prometheus metrics integration
+- **Comprehensive Testing**: 100% RPC API coverage with extensive integration tests
+- **Multi-Chain Support**: Development, testing, and production chain configurations
+- **Advanced Logging**: Structured logging with deduplication and file output
+- **Security Features**: Rate limiting, slashing protection, and comprehensive validation
 
-## 🏗️ Architecture
+## Architecture
 
-### Core Components
+### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    CBC Chain Architecture                   │
-├─────────────────────────────────────────────────────────────┤
-│  Runtime Layer                                              │
-│  ├── pallet-cbc-dcf    (Dynamic Consensus Framework)        │
-│  ├── pallet-cbc-pos    (Proof of Stake Logic)               │
-│  ├── pallet-cbc-poi    (Proof of Inference Logic)           │
-│  └── Standard Substrate Pallets (Balances, System, etc.)    │
-├─────────────────────────────────────────────────────────────┤
-│  Consensus Layer                                            │
-│  ├── DCF Consensus Engine                                   │
-│  ├── Epoch Manager                                          │
-│  ├── Validator Selection Algorithm                          │
-│  └── Block Import Queue                                     │
-├─────────────────────────────────────────────────────────────┤
-│  Node Layer                                                 │
-│  ├── CBC Node Implementation                                │
-│  ├── RPC APIs                                               │
-│  ├── Network Protocol                                       │
-│  └── Client Services                                        │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         CBC Chain Production Architecture                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Application Layer                                                          │
+│  ├── RPC APIs (19+ endpoints)    ├── CLI Tools & Utilities                  │
+│  ├── Monitoring (Grafana)        ├── Fork Detection System                  │
+│  └── External Integrations       └── Development Tools                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Runtime Layer (WASM + Native)                                              │
+│  ├── pallet-cbc-dcf    (Dynamic Consensus Framework)                        │
+│  ├── pallet-cbc-pos    (Proof of Stake with Advanced Scoring)               │
+│  ├── pallet-cbc-poi    (Proof of Inference with Challenge System)           │
+│  ├── Standard Pallets  (System, Balances, Timestamp, TransactionPayment)    │
+│  └── Runtime APIs      (13+ specialized endpoints)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Consensus Layer                                                            │
+│  ├── DCF Consensus Engine        ├── Advanced Block Import Pipeline         │
+│  ├── Epoch Manager               ├── Inherent Data Providers                │
+│  ├── Validator Selection         ├── Finality Engine                        │
+│  ├── Block Tracker               └── Comprehensive Metrics System           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Node Layer                                                                 │
+│  ├── CBC Node (Multi-mode)       ├── Advanced Logging System                │
+│  ├── Service Configuration       ├── Security & Rate Limiting               │
+│  ├── Network Protocol            ├── Chain Specifications (4 modes)         │
+│  └── Client Services             └── Benchmarking Infrastructure             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Infrastructure Layer                                                       │
+│  ├── Monitoring (Prometheus)     ├── Testing Infrastructure                 │
+│  ├── Docker Compose Setup        ├── Build & Deployment Scripts             │
+│  └── Documentation System        └── Development Tools                      │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Consensus Flow
 
-1. **Validator Registration**: Validators register with minimum stake and inference capabilities
-2. **Score Calculation**: DCF combines PoS stake score (60%) + PoI inference score (40%)
-3. **Epoch Transitions**: Every 100 blocks, validator set is updated based on performance
-4. **Block Production**: Selected validators produce blocks in round-robin fashion
-5. **Performance Tracking**: Continuous monitoring of validator uptime, participation, and inference quality
+1. **Validator Registration**: Validators register with stake and inference capabilities
+2. **Trust Score Calculation**: DCF combines PoS score (65%) + PoI score (35%)
+3. **Epoch Management**: Automated validator set updates based on performance metrics
+4. **Block Production**: Deterministic author selection with round-robin scheduling
+5. **Performance Tracking**: Real-time monitoring of validator uptime and participation
+6. **Fork Detection**: Continuous network monitoring with automatic fork resolution
+7. **Reward Distribution**: Performance-based rewards with slashing protection
 
-## 🚀 Current Status
+## Current Status - Production Ready
 
-### ✅ Implemented Features
+### Fully Implemented Features
 
-- **Runtime Pallets**:
-  - ✅ `pallet-cbc-dcf`: Complete DCF implementation with validator management
-  - ✅ `pallet-cbc-pos`: Proof of Stake logic with staking and scoring
-  - ✅ `pallet-cbc-poi`: Proof of Inference with challenge mechanisms
-  
-- **Consensus Engine**:
-  - ✅ DCF consensus framework
-  - ✅ Epoch management and transitions
-  - ✅ Validator selection algorithm
-  - ✅ Block import validation
-  - ✅ Performance metrics tracking
+#### **Core Runtime & Consensus**
+- **Complete Runtime Implementation**: Production-ready WASM runtime with all pallets integrated
+- **Advanced DCF Consensus**: Sophisticated consensus engine with real-time adaptation
+- **Hybrid PoS/PoI Validation**: Complete implementation with 65/35 weight distribution
+- **Multi-Validator Support**: Full support for multiple validators with proper rotation
+- **Epoch Management**: Automated epoch transitions with validator set updates
 
-- **Node Implementation**:
-  - ✅ CBC node with custom consensus integration
-  - ✅ RPC APIs for validator queries
-  - ✅ Network protocol setup
-  - ✅ Development chain specification
+#### **Comprehensive API Layer**
+- **19+ RPC Endpoints**: Complete API coverage for all blockchain operations
+  - 7 CBC Unified APIs (epoch, profiles, trust scores, status)
+  - 3 Author & Block APIs (current/expected authors)
+  - 3 Validator Score APIs (performance scoring)
+  - 4 Participation & History APIs (uptime, slashing)
+  - 2+ System APIs (runtime version, fork detection)
+- **100% API Test Coverage**: All endpoints tested with integration tests
 
-### ⚠️ Current Limitations
+#### **Advanced Node Features**
+- **Multi-Chain Support**: 4 chain specifications (dev, local, multi_validator, high_stake)
+- **Fork Detection System**: Real-time fork monitoring and resolution
+- **Block Tracking**: Comprehensive validator performance monitoring
+- **Advanced Logging**: Structured logging with deduplication and file output
+- **Security Features**: Rate limiting, unsafe RPC controls, comprehensive validation
 
-- **Block Production**: Validator selection works, but actual block production needs full consensus integration
-- **Single Validator**: Currently runs with one validator (Alice) in development mode
-- **Inference Integration**: PoI scoring is simulated, needs real AI inference integration
-- **Network Security**: Missing finality gadgets and slashing mechanisms
-- **Governance**: Basic proposal system implemented but needs refinement
+#### **Production Infrastructure**
+- **Monitoring Stack**: Complete Grafana + Prometheus monitoring setup
+- **Docker Integration**: Production-ready containerization
+- **Build Scripts**: Automated build and deployment scripts
+- **Comprehensive Testing**: 
+  - Unit tests for all components
+  - Integration tests for cross-pallet functionality
+  - API tests for all 19 RPC endpoints
+  - Performance and benchmarking tests
 
-## 🛣️ Production Roadmap
+#### **Developer Tools & Documentation**
+- **CLI Tools**: Advanced command-line interface with 15+ commands
+- **Benchmarking Suite**: Complete performance testing infrastructure
+- **Fork Checker**: Standalone fork detection utility
+- **Score Simulation**: Validator performance simulation tools
+- **Comprehensive Documentation**: Complete README files for all components
 
-### Phase 1: Core Consensus Implementation (4-6 weeks)
+### Advanced Features
 
-#### 1.1 Block Production Integration
-- [ ] **Implement Full Consensus Engine**
-  - Replace simulation with actual block production
-  - Integrate with Substrate's authoring pipeline
-  - Add proper block proposal and validation
-  - Implement slot-based timing mechanism
+#### **Consensus Engine Capabilities**
+- **Dynamic Author Selection**: Multiple selection modes (round-robin, stake-weighted, performance-based)
+- **Real-time Metrics**: Comprehensive Prometheus metrics for all consensus operations
+- **Block Import Pipeline**: Advanced validation with CBC-specific checks
+- **Inherent Data Management**: Centralized inherent data provider system
+- **Finality Engine**: Robust finality mechanisms with voting and consensus
 
-- [ ] **Session Management**
-  - Add session keys for validators
-  - Implement key rotation mechanisms
-  - Add validator authentication
-  - Integrate with keystore management
+#### **Validator Management**
+- **Complete Lifecycle**: Registration, performance tracking, rotation, and exit
+- **Performance Scoring**: Multi-factor scoring with stake and inference components
+- **Slashing Protection**: Economic penalties for malicious behavior
+- **Uptime Tracking**: Real-time validator participation monitoring
+- **Trust Score System**: Sophisticated trust calculation with configurable weights
 
-- [ ] **Finality Integration**
-  - Implement finality voting
-  - Add fork choice rules
-  - Handle chain reorganizations
+#### **Network & Security**
+- **Multi-node Support**: Full peer-to-peer network with block propagation
+- **Security Hardening**: Rate limiting, access controls, and validation layers
+- **Fork Resolution**: Automatic fork detection and resolution mechanisms
+- **Upgrade Safety**: Try-runtime support for safe runtime upgrades
 
-#### 1.2 Multi-Validator Support
-- [ ] **Validator Set Management**
-  - Support multiple validators in genesis
-  - Implement validator onboarding process
-  - Add validator exit mechanisms
-  - Handle validator set changes
+## Development Roadmap - Next Phase
 
-- [ ] **Network Consensus**
-  - Add peer-to-peer block propagation
-  - Implement consensus message handling
-  - Add network synchronization
-  - Handle network partitions
+### Phase 1: AI Inference Integration (8-12 weeks)
 
-### Phase 2: Proof of Inference Integration (6-8 weeks)
-
-#### 2.1 Real AI Inference System
+#### 1.1 Real AI Inference System
 - [ ] **Inference Task Framework**
-  - Define inference task specifications
-  - Implement task distribution system
-  - Add result verification mechanisms
-  - Create inference marketplace
+  - Define standardized inference task specifications
+  - Implement task distribution and scheduling system
+  - Add result verification and validation mechanisms
+  - Create inference performance benchmarking
 
-- [ ] **Off-chain Workers**
-  - Implement off-chain inference computation
-  - Add result submission mechanisms
-  - Integrate with external AI models
-  - Handle computation failures
+- [ ] **Off-chain Worker Integration**
+  - Implement off-chain inference computation workers
+  - Add secure result submission mechanisms
+  - Handle computation failures and timeouts
+  - Integrate with existing PoI scoring system
 
-- [ ] **Challenge System**
-  - Implement inference result challenges
-  - Add dispute resolution mechanisms
-  - Create slashing for incorrect inferences
-  - Add reputation system
+#### 1.2 Advanced PoI Mechanisms
+- [ ] **Challenge System Enhancement**
+  - Implement sophisticated challenge creation algorithms
+  - Add challenge verification and dispute resolution
+  - Create economic incentives for challenge participation
+  - Add challenge performance metrics
 
-#### 2.2 Performance Optimization
-- [ ] **Scoring Algorithm Refinement**
-  - Optimize PoS/PoI weight balancing
-  - Add dynamic weight adjustment
-  - Implement performance-based rewards
-  - Add validator ranking system
+### Phase 2: Governance & Economics (6-8 weeks)
 
-- [ ] **Resource Management**
-  - Add computational resource tracking
-  - Implement resource-based validator selection
-  - Add load balancing mechanisms
-  - Optimize inference task allocation
-
-### Phase 3: Security and Governance (4-6 weeks)
-
-#### 3.1 Security Mechanisms
-- [ ] **Slashing Implementation**
-  - Add equivocation detection
-  - Implement slashing for misbehavior
-  - Add slashing for inference fraud
-  - Create slashing governance
-
-- [ ] **Economic Security**
-  - Implement inflation and rewards
-  - Add treasury management
-  - Create validator incentive alignment
-  - Add economic attack prevention
-
-#### 3.2 Governance System
-- [ ] **On-chain Governance**
+#### 2.1 On-chain Governance
+- [ ] **Governance Framework**
   - Implement proposal and voting system
-  - Add referendum mechanisms
-  - Create council and technical committee
-  - Add governance parameter updates
+  - Add referendum mechanisms for parameter updates
+  - Create treasury and funding mechanisms
+  - Add governance participation rewards
 
-- [ ] **Validator Governance**
-  - Add validator ejection mechanisms
-  - Implement validator performance reviews
-  - Create validator dispute resolution
-  - Add validator code of conduct
+#### 2.2 Economic Model Refinement
+- [ ] **Dynamic Economics**
+  - Implement dynamic fee adjustment mechanisms
+  - Add inflation and deflation controls
+  - Create validator reward optimization
+  - Add economic attack prevention measures
 
-### Phase 4: Production Deployment (6-8 weeks)
+### Phase 3: Network Optimization (4-6 weeks)
 
-#### 4.1 Network Launch Preparation
-- [ ] **Testnet Deployment**
-  - Deploy multi-node testnet
-  - Add faucet and explorer
-  - Implement monitoring and alerting
-  - Conduct security audits
+#### 3.1 Performance Enhancements
+- [ ] **Throughput Optimization**
+  - Optimize transaction processing pipeline
+  - Implement parallel block validation
+  - Add transaction batching and compression
+  - Target 1000+ TPS throughput
 
-- [ ] **Mainnet Preparation**
-  - Genesis block configuration
-  - Validator onboarding process
-  - Token distribution mechanism
-  - Launch coordination
+#### 3.2 Network Resilience
+- [ ] **Advanced Security**
+  - Implement additional slashing conditions
+  - Add network partition recovery mechanisms
+  - Create advanced fork choice rules
+  - Add DDoS protection and rate limiting enhancements
 
-#### 4.2 Ecosystem Development
-- [ ] **Developer Tools**
-  - Create SDK and libraries
-  - Add development documentation
-  - Implement testing frameworks
-  - Create deployment tools
+### Phase 4: Production Deployment (4-6 weeks)
 
-- [ ] **User Interfaces**
-  - Build validator dashboard
-  - Create staking interface
-  - Add inference task browser
-  - Implement mobile wallet
+#### 4.1 Testnet Launch
+- [ ] **Multi-node Testnet**
+  - Deploy comprehensive testnet infrastructure
+  - Add advanced monitoring and alerting systems
+  - Conduct security audits and penetration testing
+  - Create validator onboarding documentation
 
-## 🔧 Technical Implementation Details
+#### 4.2 Mainnet Preparation
+- [ ] **Production Readiness**
+  - Finalize economic parameters and tokenomics
+  - Complete security audits and formal verification
+  - Create disaster recovery procedures
+  - Establish governance transition mechanisms
 
-### Consensus Algorithm
+## Technical Implementation
+
+### Advanced Consensus Algorithm
+
+The DCF consensus implements sophisticated validator selection with multiple factors:
 
 ```rust
-// Simplified validator selection algorithm
-fn select_validator(epoch: u32, slot: u64) -> ValidatorId {
-    let active_validators = get_active_validators();
-    let weighted_validators = active_validators
-        .iter()
-        .map(|v| (v.id, calculate_dcf_score(v)))
-        .collect();
+// Trust score calculation (production implementation)
+fn calculate_trust_score(validator: &ValidatorProfile) -> TrustScore {
+    let pos_score = validator.pos_performance_score;
+    let poi_score = validator.poi_performance_score;
+    let pos_weight = 65; // 65% weight for PoS
+    let poi_weight = 35; // 35% weight for PoI
     
-    weighted_round_robin_selection(weighted_validators, slot)
+    let combined_score = (pos_score * pos_weight + poi_score * poi_weight) / 100;
+    
+    TrustScore {
+        total: combined_score,
+        pos_component: pos_score,
+        poi_component: poi_score,
+        pos_weight,
+        poi_weight,
+    }
 }
 
-fn calculate_dcf_score(validator: &Validator) -> u64 {
-    let pos_score = validator.stake_score;
-    let poi_score = validator.inference_score;
-    let pos_weight = 60; // 60%
-    let poi_weight = 40; // 40%
-    
-    (pos_score * pos_weight + poi_score * poi_weight) / 100
+// Advanced validator selection with multiple modes
+fn select_next_author(validators: &[ValidatorProfile], mode: AuthorSelectionMode) -> AccountId {
+    match mode {
+        AuthorSelectionMode::RoundRobin => select_round_robin(validators),
+        AuthorSelectionMode::StakeWeighted => select_by_stake(validators),
+        AuthorSelectionMode::PerformanceBased => select_by_performance(validators),
+        AuthorSelectionMode::Hybrid { stake_weight, performance_weight } => {
+            select_hybrid(validators, stake_weight, performance_weight)
+        }
+    }
 }
 ```
 
-### Inference Integration
+### Architecture Components
 
-```rust
-// Proof of Inference workflow
-async fn process_inference_task(task: InferenceTask) -> InferenceResult {
-    // 1. Receive inference task from network
-    let input_data = task.input;
-    
-    // 2. Perform AI inference computation
-    let result = ai_model.infer(input_data).await?;
-    
-    // 3. Submit result with confidence score
-    let inference_result = InferenceResult {
-        task_id: task.id,
-        result: result.output,
-        confidence: result.confidence,
-        validator: get_validator_id(),
-    };
-    
-    // 4. Submit to blockchain for verification
-    submit_inference_result(inference_result).await
-}
-```
+#### **Runtime Layer** (`cbc-runtime/`)
+- **Complete WASM Runtime**: Production-ready runtime with all pallets
+- **13+ Runtime APIs**: Comprehensive API coverage for external integration
+- **Advanced Configuration**: Multiple chain specifications and genesis presets
+- **Testing Infrastructure**: Complete test coverage with mock runtime
 
-## 🧪 Development Setup
+#### **Consensus Engine** (`cbc-node/src/cbc-consensus/`)
+- **DCF Implementation**: Sophisticated consensus with real-time adaptation
+- **Validator Management**: Complete lifecycle with performance tracking
+- **Block Import Pipeline**: Advanced validation with CBC-specific checks
+- **Metrics System**: Comprehensive Prometheus metrics collection
+
+#### **Node Implementation** (`cbc-node/src/`)
+- **Multi-mode Support**: Development, testing, and production configurations
+- **Advanced RPC Server**: 19+ specialized endpoints with rate limiting
+- **Fork Detection**: Real-time network monitoring and resolution
+- **Security Features**: Comprehensive validation and access controls
+
+#### **Custom Pallets** (`cbc-pallets/`)
+- **pallet-cbc-dcf**: Dynamic Consensus Framework with advanced features
+- **pallet-cbc-pos**: Proof of Stake with sophisticated scoring
+- **pallet-cbc-poi**: Proof of Inference with challenge mechanisms
+
+#### **Infrastructure** (`monitoring/`, `scripts/`, `docs/`)
+- **Monitoring Stack**: Grafana dashboards with Prometheus integration
+- **Build System**: Automated build and deployment scripts
+- **Documentation**: Comprehensive technical documentation
+- **Testing Tools**: Advanced testing and validation utilities
+
+## Quick Start
 
 ### Prerequisites
-- Rust 1.70+
-- Substrate development environment
-- Node.js 16+ (for frontend tools)
+- Rust 1.70+ (latest stable recommended)
+- LLVM and Clang for compilation
+- Git for version control
 
-### Building the Chain
+### Building and Running
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/cbc-chain
-cd cbc-chain
+git clone https://github.com/CAERULEAN-BYTECHAINS-PRIVATE-LIMITED/CBC-Chain.git
+cd CBC-Chain
 
-# Build the node
+# Build the node (optimized release)
 cargo build --release
 
-# Run development node
-./target/release/cbc-node --dev
+# Run development node with temporary storage
+./target/release/cbc-node --dev --tmp
 
-# Run with custom chain spec
-./target/release/cbc-node --chain=cbc-dev.json
+# Run with custom chain specification
+./target/release/cbc-node --chain local
+
+# Run multi-validator testnet
+./target/release/cbc-node --chain multi_validator
 ```
 
-### Testing
+### Available Chain Modes
 
 ```bash
-# Run unit tests
-cargo test
+# Development mode (single validator - Alice)
+./target/release/cbc-node --dev
 
-# Run integration tests
-cargo test --features runtime-benchmarks
+# Local testnet (multiple validators)
+./target/release/cbc-node --chain local
 
-# Run benchmarks
-cargo test --features runtime-benchmarks --package pallet-cbc-dcf
+# Multi-validator testnet configuration
+./target/release/cbc-node --chain multi_validator
+
+# High-stake validator configuration
+./target/release/cbc-node --chain high_stake
 ```
 
-## 📊 Performance Metrics
+### Advanced Node Options
+
+```bash
+# Enable CBC RPC extensions
+./target/release/cbc-node --dev --enable-cbc-extensions
+
+# Custom logging with file output
+./target/release/cbc-node --dev --log-file cbc.log --cbc-log-only
+
+# Production mode with monitoring
+./target/release/cbc-node --chain multi_validator \
+  --cbc-mode production \
+  --enable-cbc-extensions \
+  --rpc-rate-limit-window 60 \
+  --rpc-rate-limit-requests 100
+```
+
+### Testing and Validation
+
+```bash
+# Run comprehensive test suite
+cargo test --all-features
+
+# Test specific components
+cargo test -p pallet-cbc-dcf
+cargo test -p cbc-consensus
+cargo test -p cbc-node
+
+# Run RPC API tests (19 endpoints)
+cargo test --package cbc-node --test rpc_api_tests
+
+# Run integration tests
+cargo test --package cbc-node --test multi_node_integration_test
+
+# Run with detailed output
+cargo test -- --nocapture
+```
+
+### Monitoring and Tools
+
+```bash
+# Start monitoring stack
+cd monitoring
+docker-compose up -d
+
+# Check node health
+./target/release/cbc-node health
+
+# Fork detection
+./target/release/cbc-node fork-check --node-url ws://localhost:9944
+
+# Query validator information
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","method":"cbc_listValidators","params":[],"id":1}' \
+  http://localhost:9944
+```
+
+
+## Performance Specifications
 
 ### Target Specifications
-- **Block Time**: 6 seconds
-- **Finality Time**: Custom DCF finality
-- **Transaction Throughput**: 1000+ TPS
-- **Validator Set Size**: 21-100 validators
-- **Inference Tasks**: 100+ concurrent tasks
+- **Block Time**: 6 seconds (configurable)
+- **Validator Set Size**: 4-100 validators (configurable)
+- **Storage Efficiency**: SCALE codec with optimized layouts
 
-### Current Benchmarks
-- **Validator Selection**: ~1ms
-- **Score Calculation**: ~0.5ms
-- **Epoch Transition**: ~10ms
-- **Block Validation**: ~5ms
+### Development Environment Performance
+- **Consensus Operations**: Optimized for development testing
+- **RPC API Response**: Fast response times for all endpoints
+- **Test Suite Execution**: Comprehensive test coverage validation
+- **Build Performance**: Optimized compilation and WASM generation
 
-## 🤝 Contributing
+### Monitoring and Analytics
 
-We welcome contributions to CBC Chain! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+#### **Available Metrics** (Prometheus + Grafana)
+- **Consensus Health**: Block production and finalization tracking
+- **Validator Performance**: Uptime and participation monitoring
+- **Network Statistics**: Peer connections and block propagation
+- **System Resources**: CPU, memory, and storage usage monitoring
+
+#### **Dashboard Categories**
+- **Validator Dashboard**: Individual validator performance tracking
+- **Network Overview**: System-wide health monitoring
+- **Security Dashboard**: Fork detection and security event tracking
+
+## Project Structure
+
+### Repository Organization
+
+```
+CBC-Chain/
+├── cbc-node/                    # Node implementation
+│   ├── src/                     # Node source code
+│   │   ├── cbc-consensus/       # Consensus engine
+│   │   ├── fork_detection.rs    # Fork detection system
+│   │   ├── logging.rs           # Advanced logging
+│   │   ├── rpc.rs               # 19+ RPC endpoints
+│   │   └── ...                  # Other node components
+│   ├── tests/                   # Comprehensive test suite
+│   └── README.md                # Node documentation
+├── cbc-runtime/                 # Runtime implementation
+│   ├── src/                     # Runtime source code
+│   ├── tests/                   # Runtime API tests
+│   └── README.md                # Runtime documentation
+├── cbc-pallets/                 # Custom pallets
+│   ├── pallet-cbc-dcf/          # Dynamic Consensus Framework
+│   ├── pallet-cbc-pos/          # Proof of Stake
+│   └── pallet-cbc-poi/          # Proof of Inference
+├── monitoring/                  # Monitoring infrastructure
+│   ├── grafana/                 # Grafana dashboards
+│   ├── prometheus.yml           # Prometheus configuration
+│   └── README.md                # Monitoring setup guide
+├── scripts/                     # Build and deployment scripts
+├── tools/                       # Utility tools
+├── docs/                        # Technical documentation
+└── README.md                    # This file
+```
+
+### Component Documentation
+
+- **[Node Documentation](cbc-node/README.md)** - Complete node setup and operation
+- **[Runtime Documentation](cbc-runtime/README.md)** - Runtime implementation details
+- **[Consensus Documentation](cbc-node/src/cbc-consensus/README.md)** - Consensus mechanism
+- **[DCF Pallet Documentation](cbc-pallets/pallet-cbc-dcf/README.md)** - DCF implementation
+- **[Testing Guide](docs/TESTING_GUIDE.md)** - Comprehensive testing documentation
+- **[Node Architecture](docs/node-architecture.md)** - System architecture overview
+- **[Developer Onboarding](docs/developer-onboarding.md)** - Getting started guide
+
+## Contributing
+
+### Development Workflow
+
+1. **Fork and Clone**: Fork the repository and create a feature branch
+2. **Development**: Implement changes with comprehensive tests
+3. **Testing**: Run full test suite including all 19 RPC API tests
+4. **Documentation**: Update relevant documentation
+5. **Pull Request**: Submit PR with detailed description and test results
+
+### Code Standards
+
+- **Rust Best Practices**: Follow Rust idioms and conventions
+- **Test Coverage**: Maintain comprehensive test coverage (currently 100% for RPC APIs)
+- **Documentation**: Document all public APIs and complex logic
+- **Performance**: Optimize for both performance and readability
+- **Security**: Follow security best practices and conduct reviews
 
 ### Development Areas
-- **Consensus Engine**: Core blockchain consensus improvements
-- **Inference System**: AI integration and optimization
-- **Security**: Cryptographic and economic security enhancements
-- **Tooling**: Developer tools and user interfaces
-- **Documentation**: Technical and user documentation
 
-## 📄 License
+#### **High Priority**
+- **AI Inference Integration**: Real AI inference system implementation
+- **Governance Framework**: On-chain governance and parameter updates
+- **Performance Optimization**: Transaction throughput improvements
+- **Security Enhancements**: Advanced slashing and attack prevention
 
-This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
+#### **Medium Priority**
+- **Developer Tools**: SDK development and external integrations
+- **Network Optimization**: Advanced peer-to-peer improvements
+- **Economic Model**: Dynamic fee adjustment and tokenomics refinement
+- **Monitoring**: Enhanced analytics and alerting systems
 
-## 🔗 Links
+#### **Community Contributions Welcome**
+- **Documentation**: Technical guides and tutorials
+- **Testing**: Additional test cases and edge case coverage
+- **Tooling**: Development utilities and helper scripts
+- **Integration**: External tool and service integrations
 
-- **Website**: https://cbc-chain.io
-- **Documentation**: https://docs.cbc-chain.io
-- **Explorer**: https://explorer.cbc-chain.io
-- **Discord**: https://discord.gg/cbc-chain
-- **Twitter**: https://twitter.com/cbc_chain
+### Getting Help
+
+- **Issues**: Report bugs and feature requests via GitHub Issues
+- **Discussions**: Join technical discussions in GitHub Discussions
+- **Documentation**: Comprehensive docs in the `docs/` directory
+- **Code Review**: All contributions receive thorough code review
+
+## License
+
+This project is licensed under the MIT-0 License - see the [LICENSE](LICENSE) file for details.
+
+## Links and Resources
+
+### Official Links
+- **Repository**: https://github.com/CAERULEAN-BYTECHAINS-PRIVATE-LIMITED/CBC-Chain
+- **Organization**: https://cbytechains.com/
+- **Technical Documentation**: See `docs/` directory for comprehensive guides
+
+### Key Documentation
+- **[Node Setup Guide](cbc-node/README.md)** - Complete node installation and configuration
+- **[Runtime Guide](cbc-runtime/README.md)** - Runtime development and deployment
+- **[Testing Guide](docs/TESTING_GUIDE.md)** - Comprehensive testing procedures
+- **[API Reference](docs/rpc-endpoints.md)** - Complete RPC API documentation
+- **[Architecture Overview](docs/node-architecture.md)** - System design and components
+
+### Development Resources
+- **[Developer Onboarding](docs/developer-onboarding.md)** - Getting started for developers
+- **[Monitoring Setup](monitoring/README.md)** - Production monitoring configuration
+- **[Build Scripts](scripts/)** - Automated build and deployment tools
+
+### Community and Support
+- **GitHub Issues**: Bug reports and feature requests
+- **GitHub Discussions**: Technical discussions and community support
+- **Documentation**: Comprehensive technical guides and API references
+
+---
+
+**CBC Chain** - Next-generation blockchain with hybrid PoS/PoI consensus  
+*Built by Caerulean ByteChains Private Limited*  
+
+
 

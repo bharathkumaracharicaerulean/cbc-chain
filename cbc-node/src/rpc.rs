@@ -17,6 +17,24 @@ use jsonrpsee::proc_macros::rpc;
 use pallet_cbc_pos::PosApi;
 use cbc_runtime::pallet_cbc_poi::PoiApi;
 use pallet_cbc_dcf::DcfApi;
+use crate::fork_detection::ForkReport;
+
+type FullBackend = sc_service::TFullBackend<Block>;
+
+/// Helper macro to time RPC method calls and record metrics
+macro_rules! time_rpc_call {
+    ($metrics:expr, $method:expr, $call:expr) => {{
+        let start = std::time::Instant::now();
+        let result = $call;
+        let duration = start.elapsed();
+        
+        if let Some(ref metrics) = $metrics {
+            metrics.record_rpc_request_duration($method, duration.as_secs_f64());
+        }
+        
+        result
+    }};
+}
 
 #[derive(Clone)]
 pub struct RateLimiter {
@@ -171,10 +189,12 @@ impl Default for RpcSecurityConfig {
     }
 }
 
-pub struct FullDeps<C, P> {
+pub struct FullDeps<C, P, B> {
     pub client: Arc<C>,
     pub pool: Arc<P>,
     pub rpc_config: RpcSecurityConfig,
+    pub consensus_metrics: Option<cbc_consensus::metrics::ConsensusMetrics>,
+    pub backend: Arc<B>,
 }
 
 #[rpc(server)]
@@ -214,11 +234,22 @@ pub trait PosRpcApi {
 
 pub struct PosRpcApiImpl<C> {
     client: Arc<C>,
+    consensus_metrics: Option<cbc_consensus::metrics::ConsensusMetrics>,
 }
 
 impl<C> PosRpcApiImpl<C> {
     pub fn new(client: Arc<C>) -> Self {
-        Self { client }
+        Self { 
+            client,
+            consensus_metrics: None,
+        }
+    }
+    
+    pub fn new_with_metrics(client: Arc<C>, consensus_metrics: cbc_consensus::metrics::ConsensusMetrics) -> Self {
+        Self { 
+            client,
+            consensus_metrics: Some(consensus_metrics),
+        }
     }
 }
 
@@ -228,71 +259,79 @@ where
     C::Api: pallet_cbc_pos::PosApi<Block, AccountId, Balance>,
 {
     fn get_validator_score(&self, validator: AccountId) -> RpcResult<u32> {
-        let api = self.client.runtime_api();
-        let best_hash = self.client.info().best_hash;
-        
-        api.get_validator_score(best_hash, validator)
-            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
-                -32000,
-                format!("Runtime API call failed: {:?}", e),
-                None::<()>
-            ))
+        time_rpc_call!(self.consensus_metrics, "pos_getValidatorScore", {
+            let api = self.client.runtime_api();
+            let best_hash = self.client.info().best_hash;
+            
+            api.get_validator_score(best_hash, validator)
+                .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                    -32000,
+                    format!("Runtime API call failed: {:?}", e),
+                    None::<()>
+                ))
+        })
     }
     
     fn get_validator_stake(&self, validator: AccountId) -> RpcResult<Balance> {
-        let api = self.client.runtime_api();
-        let best_hash = self.client.info().best_hash;
-        
-        api.get_validator_stake(best_hash, validator)
-            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
-                -32000,
-                format!("Runtime API call failed: {:?}", e),
-                None::<()>
-            ))
+        time_rpc_call!(self.consensus_metrics, "pos_getValidatorStake", {
+            let api = self.client.runtime_api();
+            let best_hash = self.client.info().best_hash;
+            
+            api.get_validator_stake(best_hash, validator)
+                .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                    -32000,
+                    format!("Runtime API call failed: {:?}", e),
+                    None::<()>
+                ))
+        })
     }
     
     fn get_slashing_count(&self, validator: AccountId) -> RpcResult<u32> {
-        let api = self.client.runtime_api();
-        let best_hash = self.client.info().best_hash;
-        
-        api.get_slashing_count(best_hash, validator)
-            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
-                -32000,
-                format!("Runtime API call failed: {:?}", e),
-                None::<()>
-            ))
+        time_rpc_call!(self.consensus_metrics, "pos_getSlashingCount", {
+            let api = self.client.runtime_api();
+            let best_hash = self.client.info().best_hash;
+            
+            api.get_slashing_count(best_hash, validator)
+                .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                    -32000,
+                    format!("Runtime API call failed: {:?}", e),
+                    None::<()>
+                ))
+        })
     }
     
     fn get_validator_status(&self, validator: AccountId) -> RpcResult<ValidatorStatus> {
-        let api = self.client.runtime_api();
-        let best_hash = self.client.info().best_hash;
-        
-        // Get active validators list
-        let active_validators = api.get_active_validators(best_hash)
-            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
-                -32000,
-                format!("Runtime API call failed: {:?}", e),
-                None::<()>
-            ))?;
-        
-        // Check if validator is in active list
-        if !active_validators.contains(&validator) {
-            return Ok(ValidatorStatus::Inactive);
-        }
-        
-        // Check slashing count to determine if slashed
-        let slashing_count = api.get_slashing_count(best_hash, validator.clone())
-            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
-                -32000,
-                format!("Runtime API call failed: {:?}", e),
-                None::<()>
-            ))?;
-        
-        if slashing_count > 0 {
-            Ok(ValidatorStatus::Slashed)
-        } else {
-            Ok(ValidatorStatus::Active)
-        }
+        time_rpc_call!(self.consensus_metrics, "pos_getValidatorStatus", {
+            let api = self.client.runtime_api();
+            let best_hash = self.client.info().best_hash;
+            
+            // Get active validators list
+            let active_validators = api.get_active_validators(best_hash)
+                .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                    -32000,
+                    format!("Runtime API call failed: {:?}", e),
+                    None::<()>
+                ))?;
+            
+            // Check if validator is in active list
+            if !active_validators.contains(&validator) {
+                return Ok(ValidatorStatus::Inactive);
+            }
+            
+            // Check slashing count to determine if slashed
+            let slashing_count = api.get_slashing_count(best_hash, validator.clone())
+                .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                    -32000,
+                    format!("Runtime API call failed: {:?}", e),
+                    None::<()>
+                ))?;
+            
+            if slashing_count > 0 {
+                Ok(ValidatorStatus::Slashed)
+            } else {
+                Ok(ValidatorStatus::Active)
+            }
+        })
     }
 }
 
@@ -911,6 +950,19 @@ where
                 params: vec![],
                 returns: "ConsensusWeights".to_string(),
             },
+            // Fork Detection methods
+            RpcMethodDescription {
+                name: "fork_checkPeers".to_string(),
+                description: "Check for forks by comparing local and peer states".to_string(),
+                params: vec!["Vec<String>".to_string(), "u32".to_string()],
+                returns: "Vec<ForkReport>".to_string(),
+            },
+            RpcMethodDescription {
+                name: "fork_getStatus".to_string(),
+                description: "Get fork detection service status".to_string(),
+                params: vec![],
+                returns: "HashMap<String, Value>".to_string(),
+            },
         ];
         
         Ok(methods)
@@ -1055,8 +1107,148 @@ where
     }
 }
 
-pub fn create_full<C, P>(
-    deps: FullDeps<C, P>,
+// Fork Detection RPC API
+#[rpc(server)]
+pub trait ForkDetectionRpcApi {
+    #[method(name = "fork_checkPeers")]
+    async fn check_peers(&self, peer_endpoints: Vec<String>, threshold: u32) -> RpcResult<Vec<ForkReport>>;
+    
+    #[method(name = "fork_getStatus")]
+    async fn get_status(&self) -> RpcResult<std::collections::HashMap<String, serde_json::Value>>;
+}
+
+pub struct ForkDetectionRpcApiImpl<C, B> {
+    client: Arc<C>,
+    security_config: RpcSecurityConfig,
+    _backend: std::marker::PhantomData<B>,
+}
+
+impl<C, B> ForkDetectionRpcApiImpl<C, B> {
+    pub fn new(client: Arc<C>, security_config: RpcSecurityConfig) -> Self {
+        Self { 
+            client, 
+            security_config,
+            _backend: std::marker::PhantomData,
+        }
+    }
+    
+    fn check_cbc_extensions_enabled(&self) -> RpcResult<()> {
+        if !self.security_config.enable_cbc_extensions {
+            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
+                -32001,
+                "CBC RPC extensions are disabled. Use --enable-cbc-extensions flag.".to_string(),
+                None::<()>
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[jsonrpsee::core::async_trait]
+impl<C, B> ForkDetectionRpcApiServer for ForkDetectionRpcApiImpl<C, B>
+where
+    C: ProvideRuntimeApi<Block> + HeaderBackend<Block> + Send + Sync + 'static,
+    B: sc_client_api::Backend<Block> + Send + Sync + 'static,
+{
+    async fn check_peers(&self, peer_endpoints: Vec<String>, threshold: u32) -> RpcResult<Vec<ForkReport>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        if peer_endpoints.is_empty() {
+            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
+                -32602,
+                "At least one peer endpoint must be provided".to_string(),
+                None::<()>
+            ));
+        }
+        
+        // Use the standalone fork checker approach for RPC
+        use jsonrpsee::{
+            core::client::ClientT,
+            http_client::HttpClientBuilder,
+            rpc_params,
+        };
+        use std::time::Duration;
+        use tokio::time::timeout;
+        
+        let timeout_duration = Duration::from_secs(30);
+        let mut fork_reports = Vec::new();
+        
+        // Get local block info
+        let local_info = self.client.info();
+        let local_number = local_info.best_number;
+        
+        // Check each peer
+        for (index, peer_rpc) in peer_endpoints.iter().enumerate() {
+            match async {
+                let peer_client = HttpClientBuilder::default()
+                    .request_timeout(timeout_duration)
+                    .build(peer_rpc)?;
+                
+                let peer_header: serde_json::Value = timeout(
+                    timeout_duration,
+                    peer_client.request("chain_getHeader", rpc_params![])
+                ).await??;
+                
+                let peer_number = peer_header["number"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid peer block number format"))?;
+                let peer_number = u32::from_str_radix(peer_number.trim_start_matches("0x"), 16)?;
+                
+                Ok::<u32, anyhow::Error>(peer_number)
+            }.await {
+                Ok(peer_number) => {
+                    let divergence = if local_number > peer_number {
+                        local_number - peer_number
+                    } else {
+                        peer_number - local_number
+                    };
+                    
+                    let peer_id = format!("peer-{}", index);
+                    
+                    let report = ForkReport {
+                        peer_id: peer_id.clone(),
+                        local_best: local_number,
+                        peer_best: peer_number,
+                        divergence,
+                    };
+                    
+                    if divergence > threshold {
+                        log::warn!(
+                            "WARNING: Fork detected with {} - Local: {}, Peer: {}, Divergence: {}",
+                            peer_id, local_number, peer_number, divergence
+                        );
+                    }
+                    
+                    fork_reports.push(report);
+                }
+                Err(e) => {
+                    log::error!("Failed to connect to peer {}: {}", peer_rpc, e);
+                }
+            }
+        }
+        
+        Ok(fork_reports)
+    }
+    
+    async fn get_status(&self) -> RpcResult<std::collections::HashMap<String, serde_json::Value>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let mut status = std::collections::HashMap::new();
+        status.insert("service".to_string(), serde_json::Value::String("fork-detection".to_string()));
+        status.insert("version".to_string(), serde_json::Value::String(env!("CARGO_PKG_VERSION").to_string()));
+        
+        // Get local node info
+        let client_info = self.client.info();
+        status.insert("local_best_block".to_string(), serde_json::Value::Number(client_info.best_number.into()));
+        status.insert("local_finalized_block".to_string(), serde_json::Value::Number(client_info.finalized_number.into()));
+        status.insert("local_best_hash".to_string(), serde_json::Value::String(client_info.best_hash.to_string()));
+        
+        Ok(status)
+    }
+}
+
+pub fn create_full<C, P, B>(
+    deps: FullDeps<C, P, B>,
 ) -> Result<RpcModule<()>, Box<dyn std::error::Error + Send + Sync>>
 where
     C: ProvideRuntimeApi<Block>,
@@ -1069,12 +1261,13 @@ where
     C::Api: cbc_runtime::pallet_cbc_poi::PoiApi<Block, AccountId>,
     C::Api: pallet_cbc_dcf::DcfApi<Block, AccountId, Balance, u32>,
     P: TransactionPool + 'static,
+    B: sc_client_api::Backend<Block> + Send + Sync + 'static,
 {
     use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer};
     use substrate_frame_rpc_system::{System, SystemApiServer};
 
     let mut module = RpcModule::new(());
-    let FullDeps { client, pool, rpc_config } = deps;
+    let FullDeps { client, pool, rpc_config, consensus_metrics, backend: _ } = deps;
 
     let _rate_limiter = RateLimiter::new(
         rpc_config.rate_limit_window,
@@ -1089,7 +1282,11 @@ where
         module.merge(ChainApiServer::into_rpc(chain_api))?;
         
         // Register PoS RPC handler
-        let pos_api = PosRpcApiImpl::new(client.clone());
+        let pos_api = if let Some(ref metrics) = consensus_metrics {
+            PosRpcApiImpl::new_with_metrics(client.clone(), metrics.clone())
+        } else {
+            PosRpcApiImpl::new(client.clone())
+        };
         module.merge(PosRpcApiServer::into_rpc(pos_api))?;
         
         // Register PoI RPC handler
@@ -1103,6 +1300,10 @@ where
         // Register CBC Unified RPC handler
         let cbc_api = CbcRpcApiImpl::new(client.clone(), rpc_config.clone());
         module.merge(CbcRpcApiServer::into_rpc(cbc_api))?;
+        
+        // Register Fork Detection RPC handler
+        let fork_api = ForkDetectionRpcApiImpl::<C, FullBackend>::new(client.clone(), rpc_config.clone());
+        module.merge(ForkDetectionRpcApiServer::into_rpc(fork_api))?;
     }
 
     if rpc_config.expose_unsafe_methods {

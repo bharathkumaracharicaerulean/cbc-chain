@@ -1,7 +1,6 @@
 //! Cross-pallet integration tests for DCF, PoS, and PoI interactions
 
-use super::*;
-use crate::{mock::*, Error, Event};
+use crate::{mock::*, Error};
 use frame_support::{
     assert_noop, assert_ok,
     traits::{Get, OnFinalize, OnInitialize, Currency},
@@ -12,7 +11,7 @@ use frame_support::{
 fn dcf_pos_integration_validator_lifecycle() {
     new_test_ext().execute_with(|| {
         let validator = 10u64;
-        let stake_amount = 5000u128;
+        let _stake_amount = 5000u128;
         
         // Setup validator with balance
         Balances::make_free_balance_be(&validator, 50000);
@@ -99,7 +98,7 @@ fn three_way_pallet_integration() {
     new_test_ext().execute_with(|| {
         let validator = 11u64;
         let challenger = 12u64;
-        let stake_amount = 8000u128;
+        let _stake_amount = 8000u128;
         
         // Setup validators with balances
         Balances::make_free_balance_be(&validator, 50000);
@@ -273,7 +272,7 @@ fn cross_pallet_epoch_transitions() {
         
         // Record initial states
         let initial_dcf_epoch = DcfPallet::current_epoch();
-        let initial_poi_epoch = PalletCbcPoi::current_epoch();
+        let _initial_poi_epoch = PalletCbcPoi::current_epoch();
         
         // Register validator in PoS
         assert_ok!(PalletCbcPos::register_validator(

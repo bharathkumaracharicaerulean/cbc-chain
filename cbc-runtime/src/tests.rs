@@ -467,8 +467,8 @@ mod runtime_api_tests {
             let validator = funded_account_id(1);
             
             // Test getting validator stake
-            let stake = DcfPallet::validator_stake(&validator);
-            assert!(stake >= 0);
+            let _stake = DcfPallet::validator_stake(&validator);
+            // stake is u128, always >= 0
             
             // Test getting active validators
             let validators = DcfPallet::active_validators();
@@ -488,8 +488,8 @@ mod runtime_api_tests {
             let validator = funded_account_id(1);
             
             // Test getting current epoch
-            let epoch = DcfPallet::current_epoch();
-            assert!(epoch >= 0);
+            let _epoch = DcfPallet::current_epoch();
+            // epoch is u32, always >= 0
             
             // Test getting inference result (should be None initially)
             let _result = PalletCbcPoi::inference_results(&validator);

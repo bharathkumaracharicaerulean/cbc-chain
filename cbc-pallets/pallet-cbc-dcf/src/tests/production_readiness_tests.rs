@@ -1,11 +1,7 @@
 //! Production readiness tests
 
-use super::*;
-use crate::{mock::*, Error, Event};
-use frame_support::{
-    assert_noop, assert_ok,
-    traits::{Get, OnFinalize, OnInitialize},
-};
+use crate::mock::*;
+use frame_support::traits::{Get, OnFinalize, OnInitialize};
 
 /// Tests production-level stability
 #[test]

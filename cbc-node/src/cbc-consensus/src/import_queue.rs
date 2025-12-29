@@ -10,7 +10,7 @@ use log::{info, error, debug, warn};
 use sp_runtime::traits::{Block as BlockTrait, SaturatedConversion, Header as HeaderT, NumberFor};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sc_consensus::{BlockImport, BlockImportParams, BlockCheckParams, ImportResult};
+use sc_consensus::{BlockImport, BlockImportParams, BlockCheckParams, ImportResult, Verifier};
 use sp_consensus::Error;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use cbc_runtime::AccountId;
@@ -172,6 +172,11 @@ where
             .map_err(|e| sp_consensus::Error::ClientImport(format!("Failed to get expected author: {:?}", e)))?;
         
         if Some(author.clone()) != expected_author {
+            // Task 8 requirement: Record author mismatch metric
+            if let Some(ref metrics) = self.consensus_metrics {
+                metrics.record_author_mismatch();
+            }
+            
             // Report author mismatch via runtime API for event emission
             if let Err(e) = api.report_author_mismatch(best_hash, block_number, expected_author.clone(), author.clone()) {
                 warn!("DCF ImportQueue: Failed to report author mismatch: {:?}", e);
@@ -305,5 +310,59 @@ where
         
         // Return Ok() as requested - no actual justification processing
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl<B, C, BE> Verifier<B> for DcfImportQueue<B, C, BE>
+where
+    B: BlockTrait,
+    C: ProvideRuntimeApi<B> + HeaderBackend<B> + Send + Sync + 'static,
+    C::Api: RuntimeDcfApi<B, AccountId, u128, NumberFor<B>>,
+    BE: Backend<B>,
+{
+    async fn verify(
+        &self,
+        block: BlockImportParams<B>,
+    ) -> Result<BlockImportParams<B>, String> {
+        let block_number = (*block.header.number()).saturated_into::<u32>();
+        
+        debug!("DCF Verifier: Verifying block #{}", block_number);
+        
+        // Perform the same validation as in check_block
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        let active_validators = api.get_active_validators(best_hash)
+            .map_err(|e| format!("Failed to get active validators: {:?}", e))?;
+        
+        if active_validators.is_empty() {
+            return Err(format!("Block verification failed for block #{}: No active validators", block_number));
+        }
+        
+        // Extract and validate block author
+        let author = self.extract_block_author(&block.header)
+            .map_err(|e| format!("Failed to extract block author: {:?}", e))?;
+        
+        // Validate block author using runtime API
+        let expected_author = api.get_expected_author(best_hash, block_number)
+            .map_err(|e| format!("Failed to get expected author: {:?}", e))?;
+        
+        if Some(author.clone()) != expected_author {
+            // Record author mismatch metric
+            if let Some(ref metrics) = self.consensus_metrics {
+                metrics.record_author_mismatch();
+            }
+            
+            return Err(format!(
+                "Block author mismatch: expected {:?}, got {:?} for block {}",
+                expected_author, author, block_number
+            ));
+        }
+        
+        info!("DCF Verifier: Block #{} verification passed", block_number);
+        
+        // Return the verified block
+        Ok(block)
     }
 }

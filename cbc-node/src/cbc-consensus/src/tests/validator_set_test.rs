@@ -95,7 +95,7 @@ mod tests {
                 assert!(state.current.final_score > 0);
                 
                 // Test score bounds
-                let max_score = 100u64; // MaxValidatorScore constant value
+                let max_score = <Test as pallet_cbc_dcf::Config>::MaxValidatorScore::get();
                 assert!(state.current.final_score <= max_score);
                 
                 // Test participation rate bounds

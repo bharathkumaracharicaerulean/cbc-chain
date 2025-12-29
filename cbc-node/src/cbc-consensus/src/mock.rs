@@ -451,9 +451,9 @@ pub fn setup_consensus_test(config: MockConsensusConfig) -> sp_io::TestExternali
                 last_active_epoch: 0,
                 current: pallet_cbc_dcf::EpochStats {
                     epoch: 0,
-                    stake_score: 1000,
-                    inference_score: 800,
-                    final_score: 900,
+                    stake_score: 80,
+                    inference_score: 70,
+                    final_score: 75,
                     authored_blocks: 0,
                     missed_blocks: 0,
                 },
@@ -482,6 +482,10 @@ pub fn setup_consensus_test(config: MockConsensusConfig) -> sp_io::TestExternali
             min_stake: 1000,
             max_validators: 100,
         });
+        
+        // Initialize consensus weights
+        pallet_cbc_dcf::PosWeight::<Test>::put(60u64);
+        pallet_cbc_dcf::PoiWeight::<Test>::put(40u64);
     });
     
     ext

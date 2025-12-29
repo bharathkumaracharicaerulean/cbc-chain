@@ -12,8 +12,9 @@ use std::time::Instant;
 use std::sync::Arc;
 use parking_lot::RwLock;
 use prometheus::{
-    Registry, Counter, Gauge, Histogram, HistogramOpts, Opts,
+    Registry, Counter, Gauge, GaugeVec, Histogram, HistogramVec, HistogramOpts, Opts,
     register_counter_with_registry, register_gauge_with_registry, register_histogram_with_registry,
+    register_gauge_vec_with_registry, register_histogram_vec_with_registry,
 };
 use pallet_cbc_dcf::DcfApi;
 // Remove unused imports - we'll use the runtime types directly in the trait bound
@@ -150,6 +151,16 @@ pub struct ConsensusMetrics {
     pub total_rewards_distributed: Counter,
     /// Total amount slashed from validators
     pub total_slashed_amount: Counter,
+    /// Author mismatch counter (Task 8 requirement)
+    pub author_mismatch_total: Counter,
+    /// Epoch transitions counter (Task 8 requirement)
+    pub epoch_transitions_total: Counter,
+    /// Validator score gauge vector (Task 8 requirement)
+    pub validator_score_gauge: GaugeVec,
+    /// Block production time histogram (Task 8 requirement)
+    pub block_production_time: Histogram,
+    /// RPC request duration histogram vector (Task 8 requirement)
+    pub rpc_request_duration: HistogramVec,
 }
 
 impl ConsensusMetrics {
@@ -174,6 +185,35 @@ impl ConsensusMetrics {
             )?,
             total_slashed_amount: register_counter_with_registry!(
                 Opts::new("cbc_consensus_total_slashed_amount", "Total amount slashed from validators"),
+                registry
+            )?,
+            // Task 8 requirement: Register author_mismatch_total counter
+            author_mismatch_total: register_counter_with_registry!(
+                Opts::new("cbc_author_mismatch_total", "Total number of author mismatch events"),
+                registry
+            )?,
+            // Task 8 requirement: Register epoch_transitions_total counter
+            epoch_transitions_total: register_counter_with_registry!(
+                Opts::new("cbc_epoch_transitions_total", "Total number of epoch transitions"),
+                registry
+            )?,
+            // Task 8 requirement: Register validator_score_gauge gauge vector
+            validator_score_gauge: register_gauge_vec_with_registry!(
+                Opts::new("cbc_validator_score", "Current validator trust scores"),
+                &["validator_id"],
+                registry
+            )?,
+            // Task 8 requirement: Register block_production_time histogram
+            block_production_time: register_histogram_with_registry!(
+                HistogramOpts::new("cbc_block_production_time_seconds", "Time taken to produce blocks")
+                    .buckets(vec![0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]),
+                registry
+            )?,
+            // Task 8 requirement: Register rpc_request_duration histogram vector
+            rpc_request_duration: register_histogram_vec_with_registry!(
+                HistogramOpts::new("cbc_rpc_request_duration_seconds", "Duration of RPC requests")
+                    .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0]),
+                &["method"],
                 registry
             )?,
         })
@@ -208,6 +248,11 @@ impl ConsensusMetrics {
         }
         self.total_reserved_stake.set(total_stake as f64);
 
+        // Task 8 requirement: Update validator scores
+        if let Err(e) = self.update_validator_scores(client) {
+            log::warn!("Failed to update validator score metrics: {}", e);
+        }
+
         Ok(())
     }
 
@@ -234,6 +279,60 @@ impl ConsensusMetrics {
     /// Update current epoch manually
     pub fn update_current_epoch(&self, epoch: u32) {
         self.current_epoch.set(epoch as f64);
+    }
+
+    // Task 8 requirement: Methods to update new metrics on relevant events
+
+    /// Record author mismatch event
+    pub fn record_author_mismatch(&self) {
+        self.author_mismatch_total.inc();
+    }
+
+    /// Record epoch transition event
+    pub fn record_epoch_transition(&self) {
+        self.epoch_transitions_total.inc();
+    }
+
+    /// Update validator score gauge
+    pub fn update_validator_score(&self, validator_id: &str, score: f64) {
+        self.validator_score_gauge
+            .with_label_values(&[validator_id])
+            .set(score);
+    }
+
+    /// Update validator scores for all validators
+    pub fn update_validator_scores<B, C>(&self, client: &Arc<C>) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    where
+        B: BlockTrait,
+        C: ProvideRuntimeApi<B> + HeaderBackend<B>,
+        C::Api: DcfApi<B, sp_runtime::AccountId32, u128, u32>,
+    {
+        let best_hash = client.info().best_hash;
+        let api = client.runtime_api();
+
+        // Get validator scores from runtime
+        let validator_scores = api.get_validator_scores(best_hash)
+            .map_err(|e| format!("Failed to get validator scores: {:?}", e))?;
+
+        // Update gauge for each validator
+        for (validator, score) in validator_scores {
+            let validator_id = format!("{:?}", validator);
+            self.update_validator_score(&validator_id, score as f64);
+        }
+
+        Ok(())
+    }
+
+    /// Record block production time
+    pub fn record_block_production_time(&self, duration_seconds: f64) {
+        self.block_production_time.observe(duration_seconds);
+    }
+
+    /// Record RPC request duration
+    pub fn record_rpc_request_duration(&self, method: &str, duration_seconds: f64) {
+        self.rpc_request_duration
+            .with_label_values(&[method])
+            .observe(duration_seconds);
     }
 }
 

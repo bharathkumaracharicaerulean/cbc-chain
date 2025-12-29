@@ -9,12 +9,12 @@ description = "Tools for CBC-Chain development and maintenance"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.132"
 tokio = { version = "1.44.2", features = ["full"] }
-jsonrpsee = { version = "0.24.8", features = ["ws-client"] }
+jsonrpsee = { version = "0.24.8", features = ["ws-client", "http-client", "server"] }
 clap = { version = "4.5.13", features = ["derive"] }
 anyhow = "1.0.86"
 rand = "0.8.5"
 csv = "1.1.6"
-sp-core = { version = "36.1.0", default-features = false }
+env_logger = "0.10"
 
 [[bin]]
 name = "score-checker"
@@ -23,3 +23,7 @@ path = "score-checker.rs"
 [[bin]]
 name = "simulate_scores"
 path = "simulate_scores.rs"
+
+[[bin]]
+name = "fork-checker"
+path = "fork-checker.rs"

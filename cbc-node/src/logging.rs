@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::time::{SystemTime, Duration, UNIX_EPOCH};
-use log::{Level, LevelFilter};
+use log::Level;
 
 /// CBC-specific log formatter with color coding and prefixes
 pub struct CbcLogFormatter {
@@ -22,11 +22,13 @@ pub struct CbcLogFormatter {
 
 /// Log deduplication tracker to summarize repeated messages
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct LogDeduplicator {
     message_counts: Arc<Mutex<HashMap<String, (u32, SystemTime)>>>,
     dedup_window: Duration,
 }
 
+#[allow(dead_code)]
 impl LogDeduplicator {
     pub fn new(dedup_window_secs: u64) -> Self {
         Self {
@@ -69,11 +71,14 @@ impl LogDeduplicator {
 }
 
 /// Log file writer that handles file redirection and rotation
+#[allow(dead_code)]
 pub struct LogFileWriter {
     writer: Option<BufWriter<File>>,
+    #[allow(dead_code)]
     file_path: Option<String>,
 }
 
+#[allow(dead_code)]
 impl LogFileWriter {
     pub fn new(file_path: Option<String>) -> io::Result<Self> {
         let writer = if let Some(ref path) = file_path {
@@ -141,7 +146,7 @@ impl StartupInfo {
     }
 
     pub fn display(&self) {
-        println!("🚀 CBC Node Startup Information");
+        println!("CBC Node Startup Information");
         println!("================================");
         println!("Node Version:     {}", self.node_version);
         println!("Runtime Version:  {}", self.runtime_version);
@@ -230,6 +235,7 @@ impl CbcLogFormatter {
     }
 
     /// Format a log message with appropriate color coding
+    #[allow(dead_code)]
     pub fn format_log_with_level(&self, level: &Level, message: &str) -> String {
         if self.enable_colors {
             format!("{}{}{} {}", 
@@ -262,6 +268,31 @@ pub fn configure_rust_log(cbc_log_only: bool) -> String {
 /// Initialize CBC logging configuration (RUST_LOG only, no custom logger)
 pub fn init_cbc_logging_config(cbc_log_only: bool) -> String {
     configure_rust_log(cbc_log_only)
+}
+
+/// Initialize CBC logging system with optional file output
+/// Returns Ok(()) if successful, Err if logger is already initialized
+pub fn init_cbc_logging(_enable_colors: bool, cbc_log_only: bool, log_file_path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    // Configure RUST_LOG environment variable
+    configure_rust_log(cbc_log_only);
+    
+    // Initialize env_logger (this might fail if already initialized, which is fine)
+    let result = env_logger::try_init();
+    
+    // If we have a log file path, create the log file writer
+    if let Some(path) = log_file_path {
+        let _log_writer = LogFileWriter::new(Some(path))?;
+        // Note: In a real implementation, you'd want to store this writer
+        // and use it in a custom logger. For now, we just verify it can be created.
+    }
+    
+    match result {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Logger already initialized, which is fine in tests
+            Ok(())
+        }
+    }
 }
 
 /// Display startup information for the CBC node

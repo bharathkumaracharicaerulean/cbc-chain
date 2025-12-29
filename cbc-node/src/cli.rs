@@ -1,6 +1,7 @@
 use sc_cli::RunCmd;
 use clap::Parser;
 use clap::Args;
+use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -64,6 +65,21 @@ pub enum Subcommand {
     Benchmark(frame_benchmarking_cli::BenchmarkCmd),
 
     ChainInfo(sc_cli::ChainInfoCmd),
+
+    /// Display node information
+    Info(InfoCmd),
+
+    /// Display node health status
+    Health(HealthCmd),
+
+    /// Perform runtime upgrade
+    RuntimeUpgrade(RuntimeUpgradeCmd),
+
+    /// Fork detection tool
+    ForkCheck(ForkCheckCmd),
+
+    /// Query upcoming block authors
+    QueryAuthors(QueryAuthorsCmd),
 }
 
 #[derive(Debug, Args)]
@@ -73,4 +89,95 @@ pub struct FaucetCmd {
 
     #[clap(long)]
     pub amount: u128,
+}
+
+/// Output format for CLI commands
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum OutputFormat {
+    /// JSON format
+    Json,
+    /// Plain text format
+    Plain,
+}
+
+impl Default for OutputFormat {
+    fn default() -> Self {
+        OutputFormat::Plain
+    }
+}
+
+/// Display node information
+#[derive(Debug, Args)]
+pub struct InfoCmd {
+    /// Output format (json or plain)
+    #[clap(long, value_enum, default_value = "plain")]
+    pub format: OutputFormat,
+}
+
+/// Display node health status
+#[derive(Debug, Args)]
+pub struct HealthCmd {
+    /// Output format (json or plain)
+    #[clap(long, value_enum, default_value = "plain")]
+    pub format: OutputFormat,
+}
+
+/// Perform runtime upgrade
+#[derive(Debug, Args)]
+pub struct RuntimeUpgradeCmd {
+    /// Path to new runtime WASM file
+    #[clap(long)]
+    pub wasm: PathBuf,
+    
+    /// Poll interval in seconds
+    #[clap(long, default_value = "6")]
+    pub poll_interval: u64,
+    
+    /// Output format (json or plain)
+    #[clap(long, value_enum, default_value = "plain")]
+    pub format: OutputFormat,
+}
+
+/// Fork detection tool
+#[derive(Debug, Args)]
+pub struct ForkCheckCmd {
+    /// Local node RPC endpoint
+    #[clap(long, default_value = "http://127.0.0.1:9944")]
+    pub local_rpc: String,
+    
+    /// Peer RPC endpoints (comma-separated)
+    #[clap(long, value_delimiter = ',')]
+    pub peer_rpc: Vec<String>,
+    
+    /// Divergence threshold for warnings
+    #[clap(long, default_value = "10")]
+    pub threshold: u32,
+    
+    /// Request timeout in seconds
+    #[clap(long, default_value = "30")]
+    pub timeout: u64,
+    
+    /// Output format (json or plain)
+    #[clap(long, value_enum, default_value = "plain")]
+    pub format: OutputFormat,
+}
+
+/// Query upcoming block authors
+#[derive(Debug, Args)]
+pub struct QueryAuthorsCmd {
+    /// Number of future blocks to query
+    #[clap(long, short = 'n', default_value = "10")]
+    pub blocks: u32,
+    
+    /// RPC endpoint to query
+    #[clap(long, default_value = "http://127.0.0.1:9944")]
+    pub rpc_url: String,
+    
+    /// Output format (json or plain)
+    #[clap(long, value_enum, default_value = "plain")]
+    pub format: OutputFormat,
+    
+    /// Starting block number (default: current + 1)
+    #[clap(long)]
+    pub start_block: Option<u32>,
 }

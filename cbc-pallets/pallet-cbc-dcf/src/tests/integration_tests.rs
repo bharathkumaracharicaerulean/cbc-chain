@@ -1,10 +1,9 @@
 //! Basic integration tests for DCF pallet
 
-use super::*;
-use crate::{mock::*, Error, Event};
+use crate::{mock::*, Error};
 use frame_support::{
     assert_noop, assert_ok, 
-    traits::{Get, OnFinalize, OnInitialize},
+    traits::Get,
 };
 
 /// Tests basic validator set initialization from genesis
@@ -115,7 +114,6 @@ fn storage_version_is_set() {
 // Additional Unit Tests for Individual Function Coverage
 // ================================================================================================
 
-use frame_support::traits::Currency;
 
 /// Tests update_consensus_weights function
 #[test]

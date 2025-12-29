@@ -3,12 +3,8 @@
 //! This module implements property-based testing and fuzz testing to ensure
 //! the DCF pallet behaves correctly under all possible inputs and conditions.
 
-use super::*;
-use crate::{mock::*, Error, Event};
-use frame_support::{
-    assert_noop, assert_ok,
-    traits::{Get, OnFinalize, OnInitialize, Currency},
-};
+use crate::mock::*;
+use frame_support::traits::{Get, OnFinalize, OnInitialize, Currency};
 
 /// Property test for validator set invariants
 #[test]

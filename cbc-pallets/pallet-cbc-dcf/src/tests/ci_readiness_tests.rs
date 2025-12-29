@@ -1,11 +1,7 @@
 //! CI readiness and automated testing
 
-use super::*;
-use crate::{mock::*, Error, Event};
-use frame_support::{
-    assert_noop, assert_ok,
-    traits::{Get, OnFinalize, OnInitialize},
-};
+use crate::mock::*;
+use frame_support::traits::{Get, OnFinalize, OnInitialize};
 
 /// Tests that all basic functionality works for CI
 #[test]
@@ -212,7 +208,7 @@ fn ci_storage_limits_validation() {
         assert!(active_validators.len() <= max_validators as usize);
         
         // History size should not exceed limits
-        for validator in &active_validators {
+        for _validator in &active_validators {
             let history = DcfPallet::validator_set();
             assert!(history.len() <= max_history as usize);
         }
@@ -518,8 +514,8 @@ fn ci_error_recovery_test() {
         
         // Test extreme values
         let extreme_amounts = vec![u128::MAX, 0, 1];
-        for amount in extreme_amounts {
-            let validator_id = 1u64;
+        for _amount in extreme_amounts {
+            let _validator_id = 1u64;
             // Note: These functions are internal and not exposed in the public API
             // They are tested through the economic bounds module tests
         }

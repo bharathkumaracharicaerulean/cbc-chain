@@ -2,3 +2,4 @@
 // This allows tests to access internal modules
 
 pub mod logging;
+pub mod fork_detection;

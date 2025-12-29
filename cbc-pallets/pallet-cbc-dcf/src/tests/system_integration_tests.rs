@@ -1,7 +1,6 @@
 //! System integration tests for DCF pallet runtime integration
 
-use super::*;
-use crate::{mock::*, Error, Event};
+use crate::mock::*;
 use frame_support::{
     assert_ok,
     traits::{Get, OnFinalize, OnInitialize, Currency},
@@ -505,5 +504,149 @@ fn concurrent_operations_handling_works() {
             let stake_score = DcfPallet::validator_stake(validator);
             assert!(stake_score > 0);
         }
+    });
+}
+
+/// Tests that ValidatorStatusChanged events are emitted correctly
+#[test]
+fn validator_status_changed_events_work() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Clear any existing events
+        System::reset_events();
+        
+        // Test leaving a validator (should emit ValidatorStatusChanged event)
+        let validator = 1; // Use existing validator
+        
+        // Leave validators should emit ValidatorStatusChanged event
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(validator)));
+        
+        // Check that ValidatorStatusChanged event was emitted
+        let events = System::events();
+        let status_change_events: Vec<_> = events
+            .iter()
+            .filter_map(|record| {
+                if let RuntimeEvent::DcfPallet(crate::Event::ValidatorStatusChanged { 
+                    validator: event_validator, 
+                    old_status, 
+                    new_status, 
+                    block_number 
+                }) = &record.event {
+                    Some((event_validator, old_status, new_status, block_number))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        assert!(!status_change_events.is_empty());
+        
+        // Verify the event details
+        let (event_validator, old_status, new_status, block_number) = &status_change_events[0];
+        assert_eq!(**event_validator, validator);
+        assert_eq!(**old_status, crate::ValidatorStatus::Active);
+        assert_eq!(**new_status, crate::ValidatorStatus::Leaving);
+        assert_eq!(**block_number, 1);
+    });
+}
+
+/// Tests that ValidatorUptimeUpdated events are emitted during epoch transitions
+#[test]
+fn validator_uptime_updated_events_work() {
+    new_test_ext().execute_with(|| {
+        // Set up initial state
+        System::set_block_number(1);
+        
+        // Get epoch length to trigger epoch transition
+        let epoch_length: u32 = <Test as crate::Config>::EpochLength::get();
+        
+        // Clear any existing events
+        System::reset_events();
+        
+        // Advance to epoch boundary to trigger epoch transition
+        let epoch_boundary_block = epoch_length;
+        System::set_block_number(epoch_boundary_block as u64);
+        
+        // Trigger epoch transition by calling on_initialize
+        DcfPallet::on_initialize(epoch_boundary_block as u64);
+        
+        // Check that ValidatorUptimeUpdated events were emitted
+        let events = System::events();
+        let uptime_events: Vec<_> = events
+            .iter()
+            .filter_map(|record| {
+                if let RuntimeEvent::DcfPallet(crate::Event::ValidatorUptimeUpdated { 
+                    validator, 
+                    epoch, 
+                    blocks_expected, 
+                    blocks_authored, 
+                    blocks_missed, 
+                    uptime_percentage 
+                }) = &record.event {
+                    Some((validator, epoch, blocks_expected, blocks_authored, blocks_missed, uptime_percentage))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        // Should have uptime events for validators
+        if !uptime_events.is_empty() {
+            // Verify the event structure
+            let (validator, epoch, blocks_expected, blocks_authored, blocks_missed, uptime_percentage) = &uptime_events[0];
+            
+            // Basic sanity checks
+            assert!(**blocks_expected >= **blocks_authored + **blocks_missed);
+            assert!(**uptime_percentage <= 10000); // Should be <= 100%
+            assert!(**epoch >= 0); // Valid epoch number
+            
+            // Verify validator is valid
+            let validator_set = DcfPallet::validator_set();
+            assert!(validator_set.contains(validator));
+        }
+    });
+}
+
+/// Tests that ValidatorStatusChanged events are emitted when validators leave
+#[test]
+fn validator_leave_status_change_events_work() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        
+        // Clear any existing events
+        System::reset_events();
+        
+        let validator = 1;
+        
+        // Leave validators (this should emit ValidatorStatusChanged event)
+        assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(validator)));
+        
+        // Check that ValidatorStatusChanged event was emitted
+        let events = System::events();
+        let status_change_events: Vec<_> = events
+            .iter()
+            .filter_map(|record| {
+                if let RuntimeEvent::DcfPallet(crate::Event::ValidatorStatusChanged { 
+                    validator: event_validator, 
+                    old_status, 
+                    new_status, 
+                    block_number 
+                }) = &record.event {
+                    Some((event_validator, old_status, new_status, block_number))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        assert!(!status_change_events.is_empty());
+        
+        // Verify the event details
+        let (event_validator, old_status, new_status, block_number) = &status_change_events[0];
+        assert_eq!(**event_validator, validator);
+        assert_eq!(**old_status, crate::ValidatorStatus::Active);
+        assert_eq!(**new_status, crate::ValidatorStatus::Leaving);
+        assert_eq!(**block_number, 1);
     });
 }

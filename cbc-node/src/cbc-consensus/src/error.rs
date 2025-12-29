@@ -72,4 +72,8 @@ pub enum ConsensusError {
         /// Actual block author found
         actual: cbc_runtime::AccountId,
     },
+
+    /// Runtime API error
+    #[error("Runtime API error: {0}")]
+    RuntimeApiError(String),
 }

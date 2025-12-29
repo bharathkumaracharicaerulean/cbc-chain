@@ -5656,6 +5656,65 @@ pub mod pallet {
             validator: T::AccountId,
         },
 
+        /// Emitted when a validator's status changes from one state to another.
+        /// 
+        /// This event tracks all validator status transitions including:
+        /// - Active to Inactive (due to poor performance or voluntary withdrawal)
+        /// - Inactive to Active (when performance improves or rejoining)
+        /// - Active/Inactive to Leaving (when requesting to leave the network)
+        /// - Any status to Ejected (when forcibly removed for misbehavior)
+        /// 
+        /// Status changes are critical for monitoring validator lifecycle and
+        /// ensuring proper network participation tracking.
+        /// 
+        /// # Usage
+        /// - Validator lifecycle monitoring and analytics
+        /// - Status change audit trails and compliance
+        /// - Network participation tracking
+        /// - Validator management system integration
+        ValidatorStatusChanged {
+            /// The validator whose status changed
+            validator: T::AccountId,
+            /// Previous status before the change
+            old_status: ValidatorStatus,
+            /// New status after the change
+            new_status: ValidatorStatus,
+            /// Block number when the status change occurred
+            block_number: u32,
+        },
+
+        /// Emitted at epoch transitions with uptime information for each validator.
+        /// 
+        /// This event provides comprehensive uptime tracking for all validators
+        /// during epoch transitions. It includes detailed metrics about validator
+        /// performance and participation during the completed epoch.
+        /// 
+        /// Uptime metrics help assess validator reliability and are used for:
+        /// - Performance-based reward calculations
+        /// - Validator ranking and selection
+        /// - Network health assessment
+        /// - Slashing and penalty decisions
+        /// 
+        /// # Usage
+        /// - Validator performance analytics and reporting
+        /// - Reward distribution calculations
+        /// - Network reliability monitoring
+        /// - Validator health assessment
+        ValidatorUptimeUpdated {
+            /// The validator whose uptime was updated
+            validator: T::AccountId,
+            /// Epoch number for which uptime is being reported
+            epoch: u32,
+            /// Number of blocks the validator was expected to author
+            blocks_expected: u32,
+            /// Number of blocks the validator successfully authored
+            blocks_authored: u32,
+            /// Number of blocks the validator missed when selected
+            blocks_missed: u32,
+            /// Uptime percentage for this epoch (0-10000 representing 0-100%)
+            uptime_percentage: u32,
+        },
+
     }
 
     /// Errors that can occur during replay validation.
@@ -7393,6 +7452,15 @@ pub mod pallet {
                 stake_amount: min_stake,
             });
 
+            // Emit validator status change event (from not being a validator to Active)
+            let current_block = frame_system::Pallet::<T>::block_number().saturated_into::<u32>();
+            Self::deposit_event(Event::ValidatorStatusChanged {
+                validator: who.clone(),
+                old_status: ValidatorStatus::Inactive, // Assume they were inactive before joining
+                new_status: ValidatorStatus::Active,
+                block_number: current_block,
+            });
+
             // Record the operation for rate limiting
             Self::record_operation(&who, DispatchableType::JoinValidators);
 
@@ -7452,6 +7520,14 @@ pub mod pallet {
                 active_validators.remove(pos);
                 ActiveValidators::<T>::put(active_validators);
             }
+
+            // Emit validator status change event (from Active to Leaving)
+            Self::deposit_event(Event::ValidatorStatusChanged {
+                validator: who.clone(),
+                old_status: ValidatorStatus::Active,
+                new_status: ValidatorStatus::Leaving,
+                block_number: current_block,
+            });
 
             // Emit event to indicate leave request has been made
             Self::deposit_event(Event::ValidatorLeaveRequested {
@@ -8639,6 +8715,21 @@ pub mod pallet {
                 active_validators.remove(pos);
                 ActiveValidators::<T>::put(active_validators);
             }
+
+            // Emit validator status change event (from Active/Inactive to Ejected)
+            let current_block = frame_system::Pallet::<T>::block_number().saturated_into::<u32>();
+            let old_status = if Self::is_validator_active(validator) {
+                ValidatorStatus::Active
+            } else {
+                ValidatorStatus::Inactive
+            };
+            Self::deposit_event(Event::ValidatorStatusChanged {
+                validator: validator.clone(),
+                old_status,
+                new_status: ValidatorStatus::Ejected,
+                block_number: current_block,
+            });
+
             Self::deposit_event(Event::ValidatorEjected {
                 validator: validator.clone(),
                 reason,
@@ -9270,6 +9361,31 @@ pub mod pallet {
                 total_rewards_distributed,
                 total_slashed_amount,
             });
+
+            // Emit ValidatorUptimeUpdated events for each validator at epoch transition
+            for validator in ValidatorSet::<T>::get().iter() {
+                if let Some(state) = ValidatorStates::<T>::get(validator) {
+                    let blocks_authored = state.current.authored_blocks;
+                    let blocks_missed = state.current.missed_blocks;
+                    let blocks_expected = blocks_authored + blocks_missed;
+                    
+                    // Calculate uptime percentage (0-10000 representing 0-100%)
+                    let uptime_percentage = if blocks_expected > 0 {
+                        (blocks_authored * 10000) / blocks_expected
+                    } else {
+                        10000 // 100% if no blocks were expected
+                    };
+                    
+                    Self::deposit_event(Event::ValidatorUptimeUpdated {
+                        validator: validator.clone(),
+                        epoch: current_epoch, // Report for the completed epoch
+                        blocks_expected,
+                        blocks_authored,
+                        blocks_missed,
+                        uptime_percentage,
+                    });
+                }
+            }
 
 
 
@@ -11342,7 +11458,11 @@ pub mod pallet {
             // Calculate epoch metrics
             let current_epoch = Self::current_epoch();
             let epoch_config = Self::epoch_config();
-            let blocks_in_current_epoch = current_block_u32 % epoch_config.blocks_per_epoch;
+            let blocks_in_current_epoch = if epoch_config.blocks_per_epoch > 0 {
+                current_block_u32 % epoch_config.blocks_per_epoch
+            } else {
+                0
+            };
             let epoch_progress_percentage = if epoch_config.blocks_per_epoch > 0 {
                 (blocks_in_current_epoch * 100) / epoch_config.blocks_per_epoch
             } else {
@@ -15703,7 +15823,7 @@ pub enum SlashReason {
 /// Validator status determines what actions are available to the validator
 /// and how they are treated by the consensus mechanism. Status changes
 /// are tracked through events and affect validator participation rights.
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum ValidatorStatus {
     /// Validator is active and participating in consensus operations.
     /// 

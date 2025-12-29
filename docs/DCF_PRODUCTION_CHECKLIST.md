@@ -197,10 +197,10 @@ The DCF system maintains critical invariants that must never be violated:
 - Document breaking changes
 
 ### Unsafe Operations
-- ❌ Changing field types without migration
-- ❌ Removing required fields without migration
-- ❌ Changing storage key structures
-- ❌ Modifying enum variant discriminants
+- Changing field types without migration
+- Removing required fields without migration
+- Changing storage key structures
+- Modifying enum variant discriminants
 
 ### Migration Best Practices
 - Always increment storage version

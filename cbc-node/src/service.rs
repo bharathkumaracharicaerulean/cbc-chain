@@ -6,166 +6,10 @@ use sc_telemetry::TelemetryWorker;
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use cbc_runtime::{self, apis::RuntimeApi, opaque::Block};
 use std::{sync::Arc};
-use sc_consensus::import_queue::{ImportQueueService, Link};
-use std::pin::Pin;
-use std::future::Future;
 use cbc_consensus::{ConsensusParams, AuthorSelectionMode};
-use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::traits::{SaturatedConversion, Header as HeaderT};
-use sp_consensus::BlockOrigin;
-use pallet_cbc_dcf::DcfApi;
 use crate::block_tracker::{BlockTracker, BlockTrackerConfig};
-
-/// DCF-integrated import queue that validates blocks through the DCF runtime
-pub struct DcfImportQueue {
-    client: Arc<FullClient>,
-}
-
-impl DcfImportQueue {
-    pub fn new(client: Arc<FullClient>) -> Self {
-        Self { client }
-    }
-}
-
-impl sc_service::ImportQueue<Block> for DcfImportQueue {
-    fn poll_actions(&mut self, _cx: &mut std::task::Context<'_>, _link: &dyn Link<Block>) {
-        // Poll for any pending import actions
-        // In a full implementation, this would handle queued block imports
-    }
-    
-    fn service(&self) -> Box<(dyn ImportQueueService<Block> + 'static)> {
-        Box::new(DcfImportQueueService {
-            client: self.client.clone(),
-        })
-    }
-    
-    fn service_ref(&mut self) -> &mut dyn ImportQueueService<Block> {
-        // Create a static service instance for the lifetime of the import queue
-        static mut SERVICE: Option<DcfImportQueueService> = None;
-        unsafe {
-            if SERVICE.is_none() {
-                SERVICE = Some(DcfImportQueueService {
-                    client: self.client.clone(),
-                });
-            }
-            SERVICE.as_mut().unwrap()
-        }
-    }
-    
-    fn run<'life0, 'async_trait>(
-        self,
-        _link: &'life0 (dyn Link<Block> + 'life0),
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
-        Box::pin(async {
-            log::info!("DCF Import Queue: Starting import queue service");
-            // In a full implementation, this would run the import queue loop
-            // For now, we just keep it running
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-        })
-    }
-}
-
-/// DCF import queue service that handles block imports with DCF validation
-struct DcfImportQueueService {
-    client: Arc<FullClient>,
-}
-
-impl ImportQueueService<Block> for DcfImportQueueService {
-    fn import_blocks(&mut self, origin: BlockOrigin, blocks: Vec<sc_consensus::IncomingBlock<Block>>) {
-        log::info!("DCF Import Queue: Importing {} blocks from {:?}", blocks.len(), origin);
-        
-        for block in blocks {
-            if let Err(e) = self.validate_and_import_block(block) {
-                log::error!("DCF Import Queue: Failed to import block: {:?}", e);
-            }
-        }
-    }
-    
-    fn import_justifications(
-        &mut self, 
-        _peer_id: sc_network::PeerId, 
-        hash: <Block as sp_runtime::traits::Block>::Hash, 
-        number: <<Block as sp_runtime::traits::Block>::Header as sp_runtime::traits::Header>::Number, 
-        _justifications: sp_runtime::Justifications
-    ) {
-        log::debug!("DCF Import Queue: Importing justifications for block #{} ({:?})", number, hash);
-        // In a full implementation, this would validate and store justifications
-    }
-}
-
-impl DcfImportQueueService {
-    /// Validate and import a block using DCF rules
-    fn validate_and_import_block(&self, block: sc_consensus::IncomingBlock<Block>) -> Result<(), String> {
-        // Extract block information
-        let block_header = block.header.ok_or("Missing block header")?;
-        let block_number = (*block_header.number()).saturated_into::<u32>();
-        let block_hash = block_header.hash();
-        
-        log::info!("DCF Import Queue: Validating block #{} ({:?})", block_number, block_hash);
-        
-        // Get the runtime API
-        let api = self.client.runtime_api();
-        let best_hash = self.client.info().best_hash;
-        
-        // Extract block author from the block header
-        if let Some(author) = self.extract_block_author(&block_header) {
-            log::info!("DCF Import Queue: Block author: {:?}", author);
-            
-            // Validate expected author and emit AuthorMismatch event if needed
-            match api.validate_expected_author(best_hash, block_number, author.clone()) {
-                Ok(is_valid) => {
-                    if !is_valid {
-                        // AuthorMismatch event was already emitted by the runtime method
-                        log::error!("DCF Import Queue: Author mismatch for block #{} with author {:?}", 
-                                   block_number, author);
-                        
-                        // Reject the block due to author mismatch
-                        return Err(format!("Author mismatch for block #{} with author {:?}", block_number, author));
-                    } else {
-                        log::info!("DCF Import Queue: Block author validation passed for {:?}", author);
-                    }
-                }
-                Err(e) => {
-                    log::error!("DCF Import Queue: Failed to validate expected author for block #{}: {:?}", block_number, e);
-                    return Err(format!("Failed to validate expected author: {:?}", e));
-                }
-            }
-            
-            // Check if the author is in the active validator set
-            match api.get_active_validators(best_hash) {
-                Ok(active_validators) => {
-                    if !active_validators.contains(&author) {
-                        log::error!("DCF Import Queue: Author {:?} is not in active validator set", author);
-                        return Err("Author not in active validator set".to_string());
-                    }
-                }
-                Err(e) => {
-                    log::error!("DCF Import Queue: Failed to get active validators: {:?}", e);
-                    return Err(format!("Failed to get active validators: {:?}", e));
-                }
-            }
-        } else {
-            log::warn!("DCF Import Queue: Could not extract block author from block #{}", block_number);
-        }
-        
-        log::info!("DCF Import Queue: Block #{} validation completed successfully", block_number);
-        Ok(())
-    }
-    
-    /// Extract the block author from the block header
-    fn extract_block_author(&self, header: &<Block as sp_runtime::traits::Block>::Header) -> Option<cbc_runtime::AccountId> {
-        // For now, using  default author for testing
-        // this would extract the author from block digest
-        Some(cbc_runtime::AccountId::from([0u8; 32]))
-    }
-}
+use cbc_consensus::import_queue::DcfImportQueue;
 
 pub(crate) type FullClient = sc_service::TFullClient<
     Block,
@@ -180,7 +24,7 @@ pub type Service = sc_service::PartialComponents<
     FullClient,
     FullBackend,
     FullSelectChain,
-    DcfImportQueue,
+    sc_consensus::BasicQueue<Block>,
     sc_transaction_pool::TransactionPoolHandle<Block, FullClient>,
     (), 
 >;
@@ -234,8 +78,39 @@ pub fn new_partial(
         .build(),
     );
 
-    // Use our DCF import queue for validation, but we'll also need direct client access for real imports
-    let import_queue = DcfImportQueue::new(client.clone());
+    // Initialize Prometheus metrics for consensus monitoring
+    let consensus_metrics = if let Some(registry) = config.prometheus_registry() {
+        match cbc_consensus::metrics::ConsensusMetrics::new(registry) {
+            Ok(metrics) => {
+                log::info!("CBC: Consensus metrics initialized successfully in new_partial");
+                Some(metrics)
+            }
+            Err(e) => {
+                log::error!("CBC: Failed to initialize consensus metrics in new_partial: {:?}", e);
+                None
+            }
+        }
+    } else {
+        log::warn!("CBC: No Prometheus registry available in new_partial, metrics disabled");
+        None
+    };
+
+ 
+    let import_queue = {
+        let dcf_verifier: DcfImportQueue<Block, FullClient, FullBackend> = if let Some(ref consensus_metrics) = consensus_metrics {
+            DcfImportQueue::new_with_metrics(client.clone(), consensus_metrics.clone())
+        } else {
+            DcfImportQueue::new(client.clone())
+        };
+        
+        sc_consensus::BasicQueue::new(
+            dcf_verifier,
+            Box::new(client.clone()),
+            None,
+            &task_manager.spawn_essential_handle(),
+            None,
+        )
+    };
 
     Ok(sc_service::PartialComponents {
         client,
@@ -397,7 +272,7 @@ where
     }
 
     // Start metrics update task if metrics are available
-    if let Some(metrics) = consensus_metrics {
+    if let Some(metrics) = consensus_metrics.clone() {
         let metrics_client = client.clone();
         task_manager.spawn_handle().spawn(
             "consensus-metrics-updater",
@@ -447,12 +322,16 @@ where
         let client = client.clone();
         let pool = transaction_pool.clone();
         let rpc_config = node_config.rpc_config.clone();
+        let rpc_consensus_metrics = consensus_metrics.clone(); // Clone for RPC use
+        let rpc_backend = backend.clone();
 
         Box::new(move |_| {
             let deps = crate::rpc::FullDeps {
                 client: client.clone(),
                 pool: pool.clone(),
                 rpc_config: rpc_config.clone(),
+                consensus_metrics: rpc_consensus_metrics.clone(),
+                backend: rpc_backend.clone(),
             };
             crate::rpc::create_full(deps).map_err(Into::into)
         })
@@ -512,9 +391,9 @@ where
                     Some(latency),
                 );
                 
-                log::info!("🌐 Network initialization complete");
-                log::info!("📡 RPC endpoints available");
-                log::info!("⚡ Node is ready to process transactions");
+                log::info!("Network initialization complete");
+                log::info!("RPC endpoints available");
+                log::info!("Node is ready to process transactions");
             },
         );
     }

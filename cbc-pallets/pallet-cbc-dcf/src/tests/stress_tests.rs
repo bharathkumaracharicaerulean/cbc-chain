@@ -1,9 +1,8 @@
 //! Stress tests for concurrent validator operations and epoch transitions
 
-use super::*;
-use crate::{mock::*, Error, Event};
+use crate::mock::*;
 use frame_support::{
-    assert_noop, assert_ok,
+    assert_ok,
     traits::{Get, OnFinalize, OnInitialize, Currency},
 };
 
@@ -28,7 +27,7 @@ fn stress_test_concurrent_validator_lifecycle() {
             
             for i in start_idx..=end_idx {
                 let validator = 1000 + i;
-                let stake_amount = 5000 + (i * 100);
+                let _stake_amount = 5000 + (i * 100);
                 
                 assert_ok!(DcfPallet::join_validators(
                     RuntimeOrigin::signed(validator),

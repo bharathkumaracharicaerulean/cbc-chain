@@ -17,3 +17,6 @@ pub mod header_parameter_order_test;
 
 /// Proposer factory integration tests
 pub mod proposer_integration_test;
+
+/// Task 8 Prometheus metrics tests
+pub mod task8_metrics_test;

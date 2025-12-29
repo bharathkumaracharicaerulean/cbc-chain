@@ -73,8 +73,8 @@ parameter_types! {
     pub const MaxInferenceResults: u32 = 1000;
     pub const ChallengePeriod: u32 = 10;
     pub const MaxChallenges: u32 = 100;
-    pub const PosWeight: u64 = 60;
-    pub const PoiWeight: u64 = 40;
+    pub const PosWeight: u64 = 6000;  // 60% weight for PoS (6000/10000)
+    pub const PoiWeight: u64 = 4000;  // 40% weight for PoI (4000/10000)
     pub const ValidatorScoreDecay: u32 = 5;  // 5% score decay per inactive epoch
 
     // New parameters for governance

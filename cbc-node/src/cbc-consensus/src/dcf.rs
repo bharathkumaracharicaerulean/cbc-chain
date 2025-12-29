@@ -262,6 +262,11 @@ where
                 info!("DCF: Confirmed epoch transition {} -> {} at block {}", 
                       old_epoch, new_epoch, transition_block);
                 
+                // Task 8 requirement: Record epoch transition metric
+                if let Some(ref metrics) = self.consensus_metrics {
+                    metrics.record_epoch_transition();
+                }
+                
                 // Update our internal epoch tracking
                 self.last_epoch_transition_block = Some(transition_block);
                 
@@ -649,6 +654,9 @@ where
 
     /// Produce a new block with DCF validation
     async fn produce_block_with_validation(&mut self, author: &Public) -> ConsensusResult<()> {
+        // Task 8 requirement: Record block production time
+        let production_start = std::time::Instant::now();
+        
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         let best_number = self.client.info().best_number;
@@ -697,7 +705,13 @@ where
         // 3. Update consensus state after successful block production
         self.update_consensus_state(block_number, &author_account_id).await?;
         
-        debug!("Block #{} produced by {:?}", block_number, author_account_id);
+        // Task 8 requirement: Record block production time metric
+        let production_duration = production_start.elapsed();
+        if let Some(ref metrics) = self.consensus_metrics {
+            metrics.record_block_production_time(production_duration.as_secs_f64());
+        }
+        
+        debug!("Block #{} produced by {:?} in {:?}", block_number, author_account_id, production_duration);
         Ok(())
     }
 
@@ -1240,7 +1254,7 @@ mod tests {
             assert!(initial_score > 0);
             
             // Test score bounds
-            let max_score = 100u64; // MaxValidatorScore constant value
+            let max_score = <Test as pallet_cbc_dcf::Config>::MaxValidatorScore::get();
             assert!(initial_score <= max_score);
         });
     }

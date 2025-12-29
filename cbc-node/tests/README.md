@@ -94,7 +94,7 @@ cargo test --package cbc-node -- --show-output
 
 ### API Coverage: 19/19 (100%)
 
-✅ **CBC Unified APIs (7/7)**
+**CBC Unified APIs (7/7)**
 1. `cbc_getCurrentEpoch` - Get current epoch number
 2. `cbc_getValidatorProfile` - Get comprehensive validator profile
 3. `cbc_getTrustScore` - Get validator trust score with components
@@ -103,36 +103,36 @@ cargo test --package cbc-node -- --show-output
 6. `cbc_describe` - List all available CBC RPC methods
 7. `cbc_health` - Get health check status
 
-✅ **Author & Block APIs (3/3)**
+**Author & Block APIs (3/3)**
 8. `dcf_getCurrentAuthor` - Get current block author
 9. `dcf_getExpectedAuthor` - Get expected author for specific block
 10. `dcf_getBlockAuthor` - Same as getCurrentAuthor
 
-✅ **Validator Score APIs (3/3)**
+**Validator Score APIs (3/3)**
 11. `pos_getValidatorScore` - Get validator PoS performance score
 12. `pos_getValidatorStatus` - Get validator status (Active/Inactive/Slashed)
 13. Score breakdown - Available via DCF runtime API
 
-✅ **Participation & History APIs (4/4)**
+**Participation & History APIs (4/4)**
 14. Epoch participation - Available via DCF runtime API
 15. Validator uptime - Available via DCF runtime API
 16. Slashing history - Available via DCF runtime API
 17. Is validator - Available via DCF runtime API
 
-✅ **System APIs (2/2)**
+**System APIs (2/2)**
 18. Runtime version - Standard Substrate API
 19. Check fork - Available via DCF runtime API validation
 
 ### Test Type Coverage
 
-- ✅ Unit Tests (30+ tests)
-- ✅ Integration Tests (25+ tests)
-- ✅ Error Handling Tests
-- ✅ Security Tests
-- ✅ Performance Tests
-- ✅ Concurrent Request Tests
-- ✅ Edge Case Tests
-- ✅ Scenario Tests
+- Unit Tests (30+ tests)
+- Integration Tests (25+ tests)
+- Error Handling Tests
+- Security Tests
+- Performance Tests
+- Concurrent Request Tests
+- Edge Case Tests
+- Scenario Tests
 
 ## Test Features
 
@@ -209,6 +209,5 @@ These tests are designed to run in CI/CD pipelines:
 ## Documentation
 
 For more information:
-- [RPC API Documentation](../../docs/rpc-endpoints.md)
-- [Runtime API Documentation](../../docs/runtime-apis.md)
+- [API Documentation](../../docs/rpc-endpoints.md)
 - [Testing Guide](../../docs/TESTING_GUIDE.md)

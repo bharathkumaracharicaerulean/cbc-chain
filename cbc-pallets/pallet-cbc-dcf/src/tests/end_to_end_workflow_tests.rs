@@ -1,9 +1,8 @@
 //! End-to-end tests for complete validator workflows
 
-use super::*;
-use crate::{mock::*, Error, Event};
+use crate::mock::*;
 use frame_support::{
-    assert_noop, assert_ok,
+    assert_ok,
     traits::{Get, OnFinalize, OnInitialize, Currency},
 };
 
@@ -97,7 +96,7 @@ fn end_to_end_validator_complete_lifecycle() {
         assert!(DcfPallet::current_epoch() > 0);
         
         // Phase 8: Leave validator set
-        let pre_leave_stake = DcfPallet::validator_stake(&validator);
+        let _pre_leave_stake = DcfPallet::validator_stake(&validator);
         assert_ok!(DcfPallet::leave_validators(RuntimeOrigin::signed(validator)));
         
         // Phase 9: Wait for cooldown period
@@ -121,7 +120,7 @@ fn end_to_end_validator_with_challenges_and_slashing() {
     new_test_ext().execute_with(|| {
         let validator = 101u64;
         let challenger = 102u64;
-        let stake_amount = 8000u128;
+        let _stake_amount = 8000u128;
         
         // Setup both accounts
         Balances::make_free_balance_be(&validator, 50000);
@@ -222,10 +221,10 @@ fn end_to_end_validator_with_challenges_and_slashing() {
 fn end_to_end_multi_validator_competition() {
     new_test_ext().execute_with(|| {
         let validators = vec![201u64, 202u64, 203u64, 204u64, 205u64];
-        let stake_amounts = vec![5000u128, 6000u128, 7000u128, 8000u128, 9000u128];
+        let _stake_amounts = vec![5000u128, 6000u128, 7000u128, 8000u128, 9000u128];
         
         // Setup all validators
-        for (i, validator) in validators.iter().enumerate() {
+        for (_i, validator) in validators.iter().enumerate() {
             Balances::make_free_balance_be(validator, 50000);
             
             // Join with different stake amounts

@@ -59,24 +59,64 @@ The CBC runtime implements a blockchain system with a combination of Proof of St
 - Useful for runtime upgrades and testing.
 - Pallet Index: 4
 
-### **Pallet-cbc-PoI**
+### **PalletCbcPoi (`pallet_cbc_poi`)**
 - Implements Proof of Inference consensus mechanism.
 - Manages inference results and challenges.
 - Pallet Index: 6
 
-### **Pallet-cbc-PoS**
+### **PalletCbcPos (`pallet_cbc_pos`)**
 - Implements Proof of Stake consensus mechanism.
 - Manages validator stakes and scores.
 - Pallet Index: 7
 
-### **Pallet-cbc-Dcf**
+### **Dcf (`pallet_cbc_dcf`)**
 - Combines PoS and PoI scores with configurable weights.
 - Provides governance mechanisms for validator management.
 - Pallet Index: 8
 
 ---
 
-## 5. Key Constants
+## 5. Detailed Pallet Descriptions
+
+### **PalletCbcPoi (`pallet_cbc_poi`)**
+- **Purpose**: The Proof of Inference pallet manages inference results submitted by validators and allows challenges to be raised against these results. It incentivizes validators to submit accurate inference results and penalizes invalid submissions.
+
+- **Key Parameters**:
+  - **MinInferenceConfidence**: 80 (minimum confidence score required)
+  - **MaxInferenceAge**: 10 blocks (maximum age for inference results)
+  - **ChallengeWindow**: 5 blocks (time window for challenges)
+  - **InferenceReward**: 1000 units (reward for valid inference)
+  - **ChallengeReward**: 500 units (reward for successful challenge)
+
+### **PalletCbcPos (`pallet_cbc_pos`)**
+- **Purpose**: The Proof of Stake pallet manages validator registration, stake management, and score calculation based on staked tokens.
+
+- **Key Parameters**:
+  - **MinValidatorScore**: 50 (minimum score to remain active)
+  - **MinActiveValidators**: 3 (minimum number of active validators)
+  - **MaxValidators**: 100 (maximum number of validators)
+  - **ValidatorScoreDecay**: 10 (score decay per epoch)
+  - **MaxSlashingCount**: 3 (maximum slashes before removal)
+  - **MinStake**: 1000 DOLLARS (minimum stake required)
+
+### **Dcf (`pallet_cbc_dcf`)**
+- **Purpose**: The Dynamic Consensus Framework combines PoS and PoI scores to create a hybrid consensus mechanism. It manages validator selection, epoch transitions, and consensus weight configuration.
+
+- **Key Parameters**:
+  - **DcfMaxValidators**: 100 (maximum validators in DCF)
+  - **DefaultPosWeight**: 60% (weight assigned to PoS scores)
+  - **DefaultPoiWeight**: 40% (weight assigned to PoI scores)
+  - **MaxValidatorsPerEpoch**: 50 (maximum validators per epoch)
+  - **MaxValidatorScore**: 100 (maximum possible validator score)
+  - **BlockAuthorshipBoost**: 10 (score boost for authoring blocks)
+  - **MissedBlockPenalty**: 5 (penalty for missing block production)
+  - **InferenceBoostLow**: 2 (low confidence inference boost)
+  - **InferenceBoostMedium**: 5 (medium confidence inference boost)
+  - **InferenceBoostHigh**: 10 (high confidence inference boost)
+
+---
+
+## 6. Key Constants
 
 ### **Time Constants**
 - **MINUTES**: 10 blocks (60 seconds)
@@ -97,7 +137,7 @@ The CBC runtime implements a blockchain system with a combination of Proof of St
 
 ---
 
-## 6. Runtime Types
+## 7. Runtime Types
 
 ### **Basic Types**
 - **Signature**: MultiSignature
@@ -117,14 +157,14 @@ The CBC runtime implements a blockchain system with a combination of Proof of St
 
 ---
 
-## 7. Session Keys
+## 8. Session Keys
 
 The runtime uses ed25519 keys for DCF consensus:
 - **DcfPublic**: ed25519 application-specific public key
 
 ---
 
-## 8. Runtime APIs
+## 9. Runtime APIs
 
 The runtime exposes several APIs for external interaction:
 - Runtime API versions defined in `apis::RUNTIME_API_VERSIONS`
@@ -132,7 +172,7 @@ The runtime exposes several APIs for external interaction:
 
 ---
 
-## 9. Runtime Executive
+## 10. Runtime Executive
 
 The runtime uses FRAME's Executive module for:
 - Dispatching calls to appropriate pallets
@@ -142,7 +182,7 @@ The runtime uses FRAME's Executive module for:
 
 ---
 
-## 10. Genesis Configuration
+## 11. Genesis Configuration
 
 The runtime supports genesis configuration presets for:
 - Initial validator set
@@ -152,7 +192,7 @@ The runtime supports genesis configuration presets for:
 
 ---
 
-## 11. Transaction Processing
+## 12. Transaction Processing
 
 The runtime uses the following transaction extensions:
 - CheckNonZeroSender
@@ -168,7 +208,7 @@ The runtime uses the following transaction extensions:
 
 ---
 
-## 12. Security Considerations
+## 13. Security Considerations
 
 1. **Block Time**: Fixed at 6 seconds to ensure consistent block production
 2. **Balance Parameters**: Secure existential deposit to prevent dust accounts
@@ -178,7 +218,7 @@ The runtime uses the following transaction extensions:
 
 ---
 
-## 13. Future Enhancements
+## 14. Future Enhancements
 
 1. **Runtime Upgrades**: Support for runtime versioning
 2. **Consensus Improvements**: Potential for additional consensus mechanisms
@@ -188,88 +228,8 @@ The runtime uses the following transaction extensions:
 
 ---
 
-## 14. Conclusion
+## 15. Conclusion
 
 The CBC runtime implements a robust blockchain system with a unique combination of PoS and PoI consensus mechanisms. It provides a secure and efficient platform for blockchain operations while maintaining flexibility through its modular pallet architecture and configurable parameters.
-  
-- **Key Features**:
-  - **Validator Registration**: Allows accounts to register as validators, provided the maximum validator limit has not been reached.
-  - **Score Submission**: Validators can submit their scores, which are used to determine their eligibility for block production.
-  - **Slashing**: Validators can be slashed for misbehavior, and if their slashing count exceeds the maximum allowed, they are removed from the validator set.
-  - **Epoch Management**: Tracks the current epoch and applies score decay to validators over time.
-
-- **Key Storage**:
-  - `Validators`: Tracks registered validators and their active status.
-  - `ValidatorScores`: Stores the scores of validators.
-  - `CurrentEpoch`: Tracks the current epoch or round.
-  - `SlashingCount`: Tracks the number of times a validator has been slashed.
-
-- **Key Events**:
-  - `ValidatorRegistered`: Emitted when a new validator is registered.
-  - `ScoreSubmitted`: Emitted when a validator submits a score.
-  - `ValidatorSlashed`: Emitted when a validator is slashed.
-  - `ValidatorRemoved`: Emitted when a validator is removed due to exceeding the maximum slashing count.
-
----
-
-### **Pallet-cbc-PoI**
-- **Purpose**:  
-  The `pallet-cbc-poi` (Proof of Inference) manages inference results submitted by validators and allows challenges to be raised against these results. It incentivizes validators to submit accurate inference results and penalizes invalid submissions.
-
-- **Key Features**:
-  - **Inference Submission**: Validators can submit inference results along with a confidence score. The results are stored with the current epoch.
-  - **Challenges**: Validators can challenge the inference results of others within a specified challenge window.
-  - **Epoch Management**: Tracks the current epoch and ensures that inference results and challenges are valid within the allowed time frame.
-
-- **Key Storage**:
-  - `InferenceResults`: Stores inference results submitted by validators, along with the epoch in which they were submitted.
-  - `Challenges`: Tracks challenges raised against inference results, including the challenger, challenged account, and the result.
-  - `CurrentEpoch`: Tracks the current epoch or round.
-
-- **Key Events**:
-  - `InferenceSubmitted`: Emitted when a validator submits an inference result.
-  - `InferenceChallenged`: Emitted when a validator challenges an inference result.
-  - `ChallengeResolved`: Emitted when a challenge is resolved, indicating whether it was successful or not.
-
----
-
-## 2. Key Constants
-
-### **Time Constants**
-- `MINUTES`: Number of blocks in a minute (`60_000 / MILLI_SECS_PER_BLOCK`).
-- `HOURS`: Number of blocks in an hour (`MINUTES * 60`).
-- `DAYS`: Number of blocks in a day (`HOURS * 24`).
-
-### **Balance Constants**
-- `UNIT`: Base unit for balances (`1_000_000_000_000`).
-- `MILLI_UNIT`: Milli unit for balances (`1_000_000_000`).
-- `MICRO_UNIT`: Micro unit for balances (`1_000_000`).
-- `EXISTENTIAL_DEPOSIT`: Minimum balance required to keep an account alive (`MILLI_UNIT`).
-
-### **Blockchain Parameters**
-- `BLOCK_HASH_COUNT`: Number of recent blocks to store in the block hash map (`2400`).
-
----
-
-## 3. Genesis Default Accounts
-
-### **Development Configuration**
-- **Authorities**:
-  - Alice 
-- **Endowed Accounts**:
-  - Alice: Pre-funded with a large balance.
-  - Bob: Pre-funded with a large balance.
-- **Sudo Key**:
-  - Alice: Assigned as the sudo (root) key.
-
-### **Local Testnet Configuration**
-- **Authorities**:
-  - Alice and Bob 
-- **Endowed Accounts**:
-  - All keyring accounts except "One" and "Two" are pre-funded.
-- **Sudo Key**:
-  - Alice: Assigned as the sudo (root) key.
-
----
 
 This document summarizes the runtime's structure and configuration. For more details, refer to the source code in the `cbc-runtime` directory.

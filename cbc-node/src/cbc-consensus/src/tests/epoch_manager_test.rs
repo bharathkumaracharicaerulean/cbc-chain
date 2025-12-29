@@ -212,7 +212,7 @@ mod tests {
                 let performance_score = state.current.final_score;
                 
                 // Calculate performance-based reward multiplier
-                let max_score = 100u64; // MaxValidatorScore constant value
+                let max_score = <Test as pallet_cbc_dcf::Config>::MaxValidatorScore::get();
                 let performance_ratio = performance_score as f64 / max_score as f64;
                 
                 assert!(performance_ratio >= 0.0);

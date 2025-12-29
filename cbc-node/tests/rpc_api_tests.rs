@@ -611,17 +611,17 @@ fn test_comprehensive_production_rpc_functionality() {
     assert!(duration.as_millis() < 10);
     println!("  ✓ Performance characteristics verified");
     
-    println!("\n🎯 COMPREHENSIVE PRODUCTION RPC TEST RESULTS:");
-    println!("✅ Rate Limiting: Production-ready security controls");
-    println!("✅ Access Control: Proper extension flag enforcement");
-    println!("✅ Serialization: Correct camelCase JSON output");
-    println!("✅ Business Logic: Accurate trust score calculations");
-    println!("✅ Error Handling: Proper error codes and messages");
-    println!("✅ Performance: Sub-millisecond response times");
+    println!("\nCOMPREHENSIVE PRODUCTION RPC TEST RESULTS:");
+    println!("Rate Limiting: Production-ready security controls");
+    println!("Access Control: Proper extension flag enforcement");
+    println!("Serialization: Correct camelCase JSON output");
+    println!("Business Logic: Accurate trust score calculations");
+    println!("Error Handling: Proper error codes and messages");
+    println!("Performance: Sub-millisecond response times");
     
-    println!("\n🚀 ALL PRODUCTION RPC FUNCTIONALITY VERIFIED!");
-    println!("🚀 Ready for deployment with 19 RPC APIs");
-    println!("🚀 Security, performance, and correctness confirmed");
+    println!("\nALL PRODUCTION RPC FUNCTIONALITY VERIFIED!");
+    println!("Ready for deployment with 19 RPC APIs");
+    println!("Security, performance, and correctness confirmed");
 }
 
 // =============================================================================
@@ -1020,17 +1020,17 @@ fn test_comprehensive_production_block_tracking_functionality() {
     assert_eq!(network_participation, 85.0);
     println!("  ✓ Multi-validator aggregation verified");
     
-    println!("\n🎯 COMPREHENSIVE BLOCK TRACKING TEST RESULTS:");
-    println!("✅ Statistics Calculation: Accurate participation rate computation");
-    println!("✅ Performance Classification: Proper underperformance detection");
-    println!("✅ Alert System: Consecutive miss threshold monitoring");
-    println!("✅ RPC Integration: Correct camelCase JSON serialization");
-    println!("✅ Edge Cases: Robust handling of new validators and zero values");
-    println!("✅ Network Metrics: Multi-validator statistics aggregation");
+    println!("\nCOMPREHENSIVE BLOCK TRACKING TEST RESULTS:");
+    println!("Statistics Calculation: Accurate participation rate computation");
+    println!("Performance Classification: Proper underperformance detection");
+    println!("Alert System: Consecutive miss threshold monitoring");
+    println!("RPC Integration: Correct camelCase JSON serialization");
+    println!("Edge Cases: Robust handling of new validators and zero values");
+    println!("Network Metrics: Multi-validator statistics aggregation");
     
-    println!("\n🚀 BLOCK AUTHORING TRACKING FUNCTIONALITY VERIFIED!");
-    println!("🚀 Ready for production deployment with comprehensive monitoring");
-    println!("🚀 Real-time validator performance tracking enabled");
+    println!("\nBLOCK AUTHORING TRACKING FUNCTIONALITY VERIFIED!");
+    println!("Ready for production deployment with comprehensive monitoring");
+    println!("Real-time validator performance tracking enabled");
 }
 
 // =============================================================================
@@ -1040,10 +1040,10 @@ fn test_comprehensive_production_block_tracking_functionality() {
 #[test]
 fn test_final_comprehensive_production_rpc_suite() {
     println!("\n{}", "=".repeat(80));
-    println!("🚀 FINAL COMPREHENSIVE PRODUCTION RPC TEST SUITE 🚀");
+    println!("FINAL COMPREHENSIVE PRODUCTION RPC TEST SUITE");
     println!("{}", "=".repeat(80));
     
-    println!("\n📊 Testing Core RPC Functionality...");
+    println!("\nTesting Core RPC Functionality...");
     
     // 1. Rate Limiting & Security
     let rate_limiter = TestRateLimiter::new(60, 100);
@@ -1051,7 +1051,7 @@ fn test_final_comprehensive_production_rpc_suite() {
     
     let security_config = TestRpcSecurityConfig::default();
     assert!(security_config.check_cbc_extensions_enabled().is_err());
-    println!("  ✅ Rate limiting and security controls: PASSED");
+    println!("  Rate limiting and security controls: PASSED");
     
     // 2. Core RPC Types
     let validator_profile = TestValidatorProfile {
@@ -1068,7 +1068,7 @@ fn test_final_comprehensive_production_rpc_suite() {
     let json = serde_json::to_string(&validator_profile).unwrap();
     assert!(json.contains("\"trustScore\":90"));
     assert!(json.contains("\"authoredBlocks\":285"));
-    println!("  ✅ Core RPC types and serialization: PASSED");
+    println!("  Core RPC types and serialization: PASSED");
     
     // 3. Block Authoring Tracking
     let mut block_stats = TestValidatorBlockStats {
@@ -1081,7 +1081,7 @@ fn test_final_comprehensive_production_rpc_suite() {
     
     assert_eq!(block_stats.participation_rate, 95.0);
     assert!(!block_stats.is_underperforming(90.0));
-    println!("  ✅ Block authoring tracking: PASSED");
+    println!("  Block authoring tracking: PASSED");
     
     // 4. Trust Score Calculations
     let pos_score = 92u64;
@@ -1090,7 +1090,7 @@ fn test_final_comprehensive_production_rpc_suite() {
     let poi_weight = 40u64;
     let calculated_trust = (pos_score * pos_weight + poi_score * poi_weight) / (pos_weight + poi_weight);
     assert_eq!(calculated_trust, 90u64);
-    println!("  ✅ Trust score calculations: PASSED");
+    println!("  Trust score calculations: PASSED");
     
     // 5. Network Health Assessment
     let system_status = TestSystemStatus {
@@ -1103,7 +1103,7 @@ fn test_final_comprehensive_production_rpc_suite() {
     
     let status_json = serde_json::to_string(&system_status).unwrap();
     assert!(status_json.contains("\"consensusHealth\":\"Healthy\""));
-    println!("  ✅ Network health assessment: PASSED");
+    println!("  Network health assessment: PASSED");
     
     // 6. Performance Benchmarks
     let start = std::time::Instant::now();
@@ -1121,9 +1121,9 @@ fn test_final_comprehensive_production_rpc_suite() {
     }
     let duration = start.elapsed();
     assert!(duration.as_millis() < 50);
-    println!("  ✅ Performance benchmarks: PASSED ({}ms for 1000 operations)", duration.as_millis());
+    println!("  Performance benchmarks: PASSED ({}ms for 1000 operations)", duration.as_millis());
     
-    println!("\n📈 Testing Advanced Features...");
+    println!("\nTesting Advanced Features...");
     
     // 7. Multi-Validator Statistics
     let network_validators = vec![
@@ -1139,7 +1139,7 @@ fn test_final_comprehensive_production_rpc_suite() {
     
     let excellent_count = network_validators.iter().filter(|(rate, _)| *rate >= 90.0).count();
     assert_eq!(excellent_count, 2);
-    println!("  ✅ Multi-validator statistics: PASSED (avg: {:.1}%)", avg_participation);
+    println!("  Multi-validator statistics: PASSED (avg: {:.1}%)", avg_participation);
     
     // 8. Error Handling & Edge Cases
     let mut edge_case_validator = TestValidatorBlockStats::default();
@@ -1148,29 +1148,29 @@ fn test_final_comprehensive_production_rpc_suite() {
     
     let error = jsonrpsee::types::ErrorObjectOwned::owned(-32000, "Test error".to_string(), None::<()>);
     assert_eq!(error.code(), -32000);
-    println!("  ✅ Error handling and edge cases: PASSED");
+    println!("  Error handling and edge cases: PASSED");
     
     println!("\n{}", "=".repeat(80));
-    println!("🎉 PRODUCTION RPC IMPLEMENTATION VERIFICATION COMPLETE 🎉");
+    println!("PRODUCTION RPC IMPLEMENTATION VERIFICATION COMPLETE");
     println!("{}", "=".repeat(80));
     
-    println!("\n📋 FINAL TEST SUMMARY:");
+    println!("\nFINAL TEST SUMMARY:");
     println!("┌─────────────────────────────────────────────────────────────┐");
     println!("│ Component                    │ Status    │ Details          │");
     println!("├─────────────────────────────────────────────────────────────┤");
-    println!("│ Rate Limiting                │ ✅ PASSED │ Security ready   │");
-    println!("│ Access Control               │ ✅ PASSED │ Extension flags  │");
-    println!("│ Type Serialization           │ ✅ PASSED │ camelCase JSON   │");
-    println!("│ Block Authoring Tracking     │ ✅ PASSED │ Real-time stats  │");
-    println!("│ Trust Score Calculation      │ ✅ PASSED │ PoS+PoI weights  │");
-    println!("│ Network Health Monitoring    │ ✅ PASSED │ Status reporting │");
-    println!("│ Performance Optimization     │ ✅ PASSED │ <50ms response   │");
-    println!("│ Multi-Validator Analytics    │ ✅ PASSED │ Network metrics  │");
-    println!("│ Error Handling               │ ✅ PASSED │ Robust errors    │");
-    println!("│ Edge Case Management         │ ✅ PASSED │ Zero-value safe  │");
+    println!("│ Rate Limiting                │ PASSED    │ Security ready   │");
+    println!("│ Access Control               │ PASSED    │ Extension flags  │");
+    println!("│ Type Serialization           │ PASSED    │ camelCase JSON   │");
+    println!("│ Block Authoring Tracking     │ PASSED    │ Real-time stats  │");
+    println!("│ Trust Score Calculation      │ PASSED    │ PoS+PoI weights  │");
+    println!("│ Network Health Monitoring    │ PASSED    │ Status reporting │");
+    println!("│ Performance Optimization     │ PASSED    │ <50ms response   │");
+    println!("│ Multi-Validator Analytics    │ PASSED    │ Network metrics  │");
+    println!("│ Error Handling               │ PASSED    │ Robust errors    │");
+    println!("│ Edge Case Management         │ PASSED    │ Zero-value safe  │");
     println!("└─────────────────────────────────────────────────────────────┘");
     
-    println!("\n🚀 DEPLOYMENT READINESS CONFIRMED:");
+    println!("\nDEPLOYMENT READINESS CONFIRMED:");
     println!("   • 21 RPC Methods Implemented and Tested");
     println!("   • Block Authoring Tracking: FULLY OPERATIONAL");
     println!("   • Missed Block Detection: FULLY OPERATIONAL");
@@ -1178,5 +1178,5 @@ fn test_final_comprehensive_production_rpc_suite() {
     println!("   • Production Security Controls: ACTIVE");
     println!("   • Sub-millisecond Response Times: VERIFIED");
     
-    println!("\n🎯 READY FOR PRODUCTION DEPLOYMENT! 🎯");
+    println!("\nREADY FOR PRODUCTION DEPLOYMENT!");
 }

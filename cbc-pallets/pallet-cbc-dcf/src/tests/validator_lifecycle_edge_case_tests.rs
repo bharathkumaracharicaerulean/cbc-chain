@@ -1,11 +1,7 @@
 //! Validator lifecycle and edge case tests
 
-use super::*;
-use crate::{mock::*, Error, Event};
-use frame_support::{
-    assert_ok,
-    traits::{Get, Currency},
-};
+use crate::mock::*;
+use frame_support::traits::Get;
 
 /// Tests validator joining process
 #[test]

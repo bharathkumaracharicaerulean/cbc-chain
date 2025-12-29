@@ -1,0 +1,447 @@
+{
+  "types": {
+    "ValidatorStatus": {
+      "_enum": ["Active", "Inactive", "Slashed"]
+    },
+    "InferenceResult": {
+      "result": "u32",
+      "confidence": "u32"
+    },
+    "ChallengeWindow": {
+      "startBlock": "u32",
+      "endBlock": "u32"
+    },
+    "InferenceStatus": {
+      "_enum": ["Pending", "Submitted", "Challenged", "Verified"]
+    },
+    "ConsensusWeights": {
+      "posWeight": "u64",
+      "poiWeight": "u64"
+    },
+    "ValidatorProfile": {
+      "account": "AccountId",
+      "stake": "Balance",
+      "posScore": "u32",
+      "poiScore": "u64",
+      "trustScore": "u64",
+      "status": "ValidatorStatus",
+      "authoredBlocks": "u32",
+      "missedBlocks": "u32"
+    },
+    "TrustScore": {
+      "total": "u64",
+      "posComponent": "u64",
+      "poiComponent": "u64"
+    },
+    "SystemStatus": {
+      "currentEpoch": "u32",
+      "activeValidators": "u32",
+      "totalValidators": "u32",
+      "lastFinalizedBlock": "u32",
+      "consensusHealth": "ConsensusHealth"
+    },
+    "ConsensusHealth": {
+      "_enum": ["Healthy", "Degraded", "Critical"]
+    },
+    "RpcMethodDescription": {
+      "name": "Text",
+      "description": "Text",
+      "params": "Vec<Text>",
+      "returns": "Text"
+    },
+    "HealthStatus": {
+      "isHealthy": "bool",
+      "issues": "Vec<Text>"
+    },
+    "BlockAuthoringStats": {
+      "authoredBlocks": "u32",
+      "missedBlocks": "u32",
+      "expectedBlocks": "u32",
+      "participationRate": "f64",
+      "consecutiveMisses": "u32",
+      "lastAuthoredBlock": "Option<u32>"
+    },
+    "ForkReport": {
+      "peerId": "Text",
+      "localBest": "u32",
+      "peerBest": "u32",
+      "divergence": "u32"
+    }
+  },
+  "rpc": {
+    "pos": {
+      "getValidatorScore": {
+        "description": "Get validator PoS performance score",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "u32"
+      },
+      "getValidatorStake": {
+        "description": "Get validator staked amount",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "Balance"
+      },
+      "getSlashingCount": {
+        "description": "Get number of times validator has been slashed",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "u32"
+      },
+      "getValidatorStatus": {
+        "description": "Get validator status (Active/Inactive/Slashed)",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "ValidatorStatus"
+      }
+    },
+    "poi": {
+      "getInferenceResult": {
+        "description": "Get validator inference result and confidence",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "Option<InferenceResult>"
+      },
+      "getInferenceConfidence": {
+        "description": "Get inference confidence score",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "Option<u32>"
+      },
+      "getChallengeWindow": {
+        "description": "Get current challenge window parameters",
+        "params": [],
+        "type": "ChallengeWindow"
+      },
+      "getInferenceStatus": {
+        "description": "Get inference submission status",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "InferenceStatus"
+      }
+    },
+    "dcf": {
+      "getCurrentAuthor": {
+        "description": "Get current block author",
+        "params": [],
+        "type": "Option<AccountId>"
+      },
+      "getExpectedAuthor": {
+        "description": "Get expected author for a specific block",
+        "params": [
+          {
+            "name": "blockNumber",
+            "type": "u32"
+          }
+        ],
+        "type": "Option<AccountId>"
+      },
+      "getValidatorScores": {
+        "description": "Get trust scores for all active validators",
+        "params": [],
+        "type": "Vec<(AccountId, u64)>"
+      },
+      "getConsensusWeights": {
+        "description": "Get current PoS and PoI weight distribution",
+        "params": [],
+        "type": "ConsensusWeights"
+      }
+    },
+    "cbc": {
+      "getCurrentEpoch": {
+        "description": "Get the current epoch number",
+        "params": [],
+        "type": "u32"
+      },
+      "getValidatorProfile": {
+        "description": "Get comprehensive validator profile including stake, scores, and status",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "ValidatorProfile"
+      },
+      "getTrustScore": {
+        "description": "Get validator trust score with PoS and PoI components",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "TrustScore"
+      },
+      "listValidators": {
+        "description": "Get list of all active validators",
+        "params": [],
+        "type": "Vec<AccountId>"
+      },
+      "getStatus": {
+        "description": "Get system-wide status including epoch, validators, and health",
+        "params": [],
+        "type": "SystemStatus"
+      },
+      "describe": {
+        "description": "List all available CBC RPC methods",
+        "params": [],
+        "type": "Vec<RpcMethodDescription>"
+      },
+      "health": {
+        "description": "Get health check status for monitoring",
+        "params": [],
+        "type": "HealthStatus"
+      },
+      "getBlockAuthoringStats": {
+        "description": "Get block authoring statistics for a specific validator",
+        "params": [
+          {
+            "name": "validator",
+            "type": "AccountId"
+          }
+        ],
+        "type": "BlockAuthoringStats"
+      },
+      "getAllBlockAuthoringStats": {
+        "description": "Get block authoring statistics for all active validators",
+        "params": [],
+        "type": "Vec<(AccountId, BlockAuthoringStats)>"
+      }
+    },
+    "fork": {
+      "checkPeers": {
+        "description": "Check for forks by comparing local and peer states",
+        "params": [
+          {
+            "name": "peerEndpoints",
+            "type": "Vec<Text>"
+          },
+          {
+            "name": "threshold",
+            "type": "u32"
+          }
+        ],
+        "type": "Vec<ForkReport>"
+      },
+      "getStatus": {
+        "description": "Get fork detection service status",
+        "params": [],
+        "type": "BTreeMap<Text, Json>"
+      }
+    },
+    "chain": {
+      "getChainName": {
+        "description": "Get the chain name",
+        "params": [],
+        "type": "Text"
+      }
+    }
+  },
+  "runtime": {
+    "DcfApi": [
+      {
+        "methods": {
+          "get_api_version": {
+            "description": "Get DCF API version",
+            "params": [],
+            "type": "u32"
+          },
+          "get_validator_scores": {
+            "description": "Get validator trust scores",
+            "params": [],
+            "type": "Vec<(AccountId, u64)>"
+          },
+          "get_current_epoch": {
+            "description": "Get current epoch number",
+            "params": [],
+            "type": "u32"
+          },
+          "get_validator_stake_score": {
+            "description": "Get validator stake-based score",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "u64"
+          },
+          "get_validator_inference_score": {
+            "description": "Get validator inference score",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "u64"
+          },
+          "get_consensus_weights": {
+            "description": "Get consensus weight configuration",
+            "params": [],
+            "type": "(u64, u64)"
+          },
+          "is_validator_active": {
+            "description": "Check if validator is active",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "bool"
+          },
+          "get_expected_author": {
+            "description": "Get expected block author",
+            "params": [
+              {
+                "name": "blockNumber",
+                "type": "u32"
+              }
+            ],
+            "type": "Option<AccountId>"
+          },
+          "get_validator_score_history": {
+            "description": "Get validator score history",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "Vec<u64>"
+          },
+          "get_validator_participation": {
+            "description": "Get validator participation stats",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "(u32, u32)"
+          },
+          "get_active_validators": {
+            "description": "Get list of active validators",
+            "params": [],
+            "type": "Vec<AccountId>"
+          },
+          "get_validator_last_active": {
+            "description": "Get validator's last active block",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "u32"
+          }
+        },
+        "version": 1
+      }
+    ],
+    "PosApi": [
+      {
+        "methods": {
+          "get_validator_score": {
+            "description": "Get validator PoS score",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "u32"
+          },
+          "get_validator_stake": {
+            "description": "Get validator stake amount",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "Balance"
+          },
+          "get_slashing_count": {
+            "description": "Get validator slashing count",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "u32"
+          },
+          "get_active_validators": {
+            "description": "Get active validators list",
+            "params": [],
+            "type": "Vec<AccountId>"
+          }
+        },
+        "version": 1
+      }
+    ],
+    "PoiApi": [
+      {
+        "methods": {
+          "get_inference_result": {
+            "description": "Get inference result for validator",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "Option<(u32, u32)>"
+          },
+          "get_challenge": {
+            "description": "Get challenge for validator",
+            "params": [
+              {
+                "name": "validator",
+                "type": "AccountId"
+              }
+            ],
+            "type": "Option<Vec<u8>>"
+          },
+          "get_current_epoch": {
+            "description": "Get current PoI epoch",
+            "params": [],
+            "type": "u32"
+          }
+        },
+        "version": 1
+      }
+    ]
+  }
+}

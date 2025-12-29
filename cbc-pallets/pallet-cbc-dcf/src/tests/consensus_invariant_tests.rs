@@ -1,7 +1,6 @@
 //! Property-based tests for consensus invariants and economic bounds
 
-use super::*;
-use crate::{mock::*, Error, Event};
+use crate::{mock::*, Error};
 use frame_support::{
     assert_noop, assert_ok,
     traits::{Get, OnFinalize, OnInitialize, Currency},
@@ -124,8 +123,8 @@ fn property_score_mathematical_bounds() {
             let active_validators = DcfPallet::active_validators();
             
             for validator in &active_validators {
-                let stake_score = DcfPallet::validator_stake_score(validator);
-                let inference_score = DcfPallet::validator_inference_score(validator);
+                let _stake_score = DcfPallet::validator_stake_score(validator);
+                let _inference_score = DcfPallet::validator_inference_score(validator);
                 let stake_score = DcfPallet::validator_stake_score(validator);
                 let inference_score = DcfPallet::validator_inference_score(validator);
                 let (pos_weight, poi_weight) = DcfPallet::consensus_weights();
@@ -197,7 +196,7 @@ fn property_epoch_transitions_preserve_invariants() {
 fn property_slashing_economic_security() {
     new_test_ext().execute_with(|| {
         let validator = 1u64;
-        let initial_stake = DcfPallet::validator_stake(&validator);
+        let _initial_stake = DcfPallet::validator_stake(&validator);
         let min_stake = <Test as crate::Config>::MinStake::get();
         
         // Test various slashing amounts
