@@ -271,7 +271,13 @@ pub fn init_cbc_logging_config(cbc_log_only: bool) -> String {
 }
 
 /// Initialize CBC logging system with optional file output
+/// 
+/// **WARNING**: This function should only be used in tests!
+/// In production, Substrate handles logger initialization automatically.
+/// Use `init_cbc_logging_config()` instead to just configure RUST_LOG.
+/// 
 /// Returns Ok(()) if successful, Err if logger is already initialized
+#[cfg(test)]
 pub fn init_cbc_logging(_enable_colors: bool, cbc_log_only: bool, log_file_path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     // Configure RUST_LOG environment variable
     configure_rust_log(cbc_log_only);
