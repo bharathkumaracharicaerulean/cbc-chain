@@ -10687,6 +10687,13 @@ pub mod pallet {
             let block_number = now.saturated_into::<u32>();
             let current_epoch = Self::current_epoch();
             
+            // Skip state mutations for the first few blocks to prevent storage root mismatch
+            // This allows the chain to bootstrap properly before DCF starts managing consensus
+            if block_number <= 3 {
+                log::debug!("DCF: Skipping state mutations for block #{} during chain bootstrap", block_number);
+                return weight;
+            }
+            
             // Reset per-block rate limiting counters at the beginning of each block
             Self::reset_block_counters();
             weight = weight.saturating_add(Weight::from_parts(10_000, 0)); // Small weight for counter reset
@@ -10714,6 +10721,15 @@ pub mod pallet {
 
         /// Called at the end of each block.
         fn on_finalize(_n: BlockNumberFor<T>) {
+            let block_number = _n.saturated_into::<u32>();
+            
+            // Skip state mutations for the first few blocks to prevent storage root mismatch
+            // This allows the chain to bootstrap properly before DCF starts managing consensus
+            if block_number <= 3 {
+                log::debug!("DCF: Skipping on_finalize state mutations for block #{} during chain bootstrap", block_number);
+                return;
+            }
+            
             let validators = ValidatorSet::<T>::get();
             for validator in validators.iter() {
                 let _ = Self::update_final_score(validator);
