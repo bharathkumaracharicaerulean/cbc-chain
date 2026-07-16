@@ -19,3 +19,9 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 QODER.md
+
+# node logs
+
+.node_output_alice.log
+.node_output_bob.log
+.node_output_charlie.log

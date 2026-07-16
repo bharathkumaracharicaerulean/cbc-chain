@@ -250,7 +250,7 @@ impl_runtime_apis! {
 		}
 
 		fn get_validator_profile(validator: AccountId) -> Option<pallet_cbc_dcf::ValidatorProfile<AccountId, Balance, BlockNumber>> {
-			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_profile_new(validator)
+			pallet_cbc_dcf::Pallet::<Runtime>::get_validator_profile(validator)
 		}
 
 		fn get_validator_score_breakdown(validator: AccountId) -> Option<pallet_cbc_dcf::ScoreBreakdown> {

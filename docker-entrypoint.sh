@@ -42,24 +42,36 @@ fi
 # ── Derive Alice's peer-id ───────────────────────────────────────────────────
 # Prefer the baked key (always available); fall back to Alice's live key
 # (useful in docker-compose where all nodes share a network volume).
-if [ -f "$ALICE_BAKED_KEY" ]; then
+if [ "$NODE_ROLE" = "alice" ]; then
+    ALICE_PEER_ID=$(cbc-node key inspect-node-key --file "$NETWORK_KEY_PATH" 2>/dev/null | tail -n 1)
+elif [ -f "$ALICE_BAKED_KEY" ]; then
     ALICE_PEER_ID=$(cbc-node key inspect-node-key --file "$ALICE_BAKED_KEY" 2>/dev/null | tail -n 1)
 else
-    # docker-compose local mode: wait for Alice's key to appear on the shared volume
-    ALICE_LIVE_KEY="${ALICE_DATA_PATH:-/data-alice}/chains/cbc_local/network/secret_ed25519"
-    MAX_RETRIES=15
+    ALICE_RPC_URL="http://${ALICE_HOST}:${ALICE_RPC_PORT:-9944}"
+    MAX_RETRIES=30
     RETRY=0
-    echo "Waiting for Alice's network key at $ALICE_LIVE_KEY..."
-    while [ ! -f "$ALICE_LIVE_KEY" ] && [ $RETRY -lt $MAX_RETRIES ]; do
+    echo "Waiting for Alice's RPC endpoint at $ALICE_RPC_URL..."
+    while [ $RETRY -lt $MAX_RETRIES ]; do
+        RESPONSE=$(curl -s -H "Content-Type: application/json" -d '{"id":1,"jsonrpc":"2.0","method":"system_localPeerId","params":[]}' "$ALICE_RPC_URL" 2>/dev/null || true)
+        if [ -n "$RESPONSE" ] && echo "$RESPONSE" | grep -q "result"; then
+            ALICE_PEER_ID=$(echo "$RESPONSE" | grep -oE '"result":"[^"]+"' | cut -d'"' -f4)
+            if [ -n "$ALICE_PEER_ID" ]; then
+                echo "Derived Alice's Peer ID dynamically via RPC: $ALICE_PEER_ID"
+                break
+            fi
+        fi
         sleep 2
         RETRY=$((RETRY + 1))
         echo "  ...attempt $RETRY/$MAX_RETRIES"
     done
-    if [ ! -f "$ALICE_LIVE_KEY" ]; then
-        echo "ERROR: Alice's network key not found after $MAX_RETRIES attempts."
-        exit 1
+
+    if [ -z "$ALICE_PEER_ID" ]; then
+        ALICE_LIVE_KEY="${ALICE_DATA_PATH:-/data-alice}/chains/cbc_local/network/secret_ed25519"
+        echo "RPC resolution timed out. Checking shared volume for network key at $ALICE_LIVE_KEY..."
+        if [ -f "$ALICE_LIVE_KEY" ]; then
+            ALICE_PEER_ID=$(cbc-node key inspect-node-key --file "$ALICE_LIVE_KEY" 2>/dev/null | tail -n 1)
+        fi
     fi
-    ALICE_PEER_ID=$(cbc-node key inspect-node-key --file "$ALICE_LIVE_KEY" 2>/dev/null | tail -n 1)
 fi
 
 if [ -z "$ALICE_PEER_ID" ]; then

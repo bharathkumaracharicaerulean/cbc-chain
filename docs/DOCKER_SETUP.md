@@ -21,13 +21,9 @@ This document covers everything you need to run, develop, and maintain the CBC C
 ├── Dockerfile              # 3-stage build: deps cache → builder → runtime image
 ├── docker-entrypoint.sh    # Entrypoint: handles key setup and node startup per role
 ├── docker-compose.yml      # Local 3-node network (alice + bob + charlie)
-├── keys/
-│   └── alice/
-│       └── secret_ed25519  # Alice's fixed network key — baked into image for deterministic peer-id
-└── .dockerignore           # Excludes target/, logs, docs from build context
+├── .dockerignore           # Excludes target/, logs, docs from build context
+└── ...
 ```
-
----
 
 ## Node Layout
 
@@ -37,9 +33,7 @@ This document covers everything you need to run, develop, and maintain the CBC C
 | Bob     | Validator          | 9945     | 30334    | 9616       |
 | Charlie | Validator          | 9946     | 30335    | 9617       |
 
-Bob and Charlie connect to Alice as their bootnode. Alice's peer-id is deterministic
-because her network key (`keys/alice/secret_ed25519`) is baked into the image at build
-time. Bob and Charlie auto-generate their own keys on first boot.
+Bob and Charlie connect to Alice as their bootnode. All nodes (Alice, Bob, and Charlie) auto-generate their own network keys dynamically. At startup, Bob and Charlie query Alice's RPC endpoint dynamically to resolve her Peer ID.
 
 ---
 
@@ -239,22 +233,13 @@ docker volume inspect cbc-chain_alice-data
 
 ---
 
-## Alice's Network Key
+## Dynamic Network Keys
 
-Alice's P2P identity is fixed via `keys/alice/secret_ed25519`. This file is committed
-to the repo and baked into the Docker image so her peer-id never changes between
-rebuilds or deployments.
+Alice's network key (and thus her P2P identity) is generated dynamically on first boot. 
+When Bob and Charlie containers start, they automatically call Alice's RPC endpoint (`system_localPeerId`) to retrieve her dynamic Peer ID.
 
-Bob and Charlie derive Alice's peer-id from this baked key at startup — no manual
-configuration needed.
+This dynamic mechanism avoids the security risk of committing private keys to the repository or baking them into the Docker image, enabling a fully cloud-native, secure production network.
 
-If you ever need to regenerate Alice's key (this will change her peer-id and break
-existing bootnodes pointing to her):
-```bash
-./target/release/cbc-node key generate-node-key --file keys/alice/secret_ed25519
-```
-
-Then rebuild the image.
 
 ---
 

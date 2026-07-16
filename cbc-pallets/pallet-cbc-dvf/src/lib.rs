@@ -558,62 +558,6 @@ sp_api::decl_runtime_apis! {
             Ok(())
         }
 
-        /// Request to join the validator set (opt-in, effective next epoch).
-        #[pallet::call_index(2)]
-        #[pallet::weight(Weight::from_parts(50_000, 0))]
-        pub fn join_validator_set(origin: OriginFor<T>) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-
-            // Already pending join or already active
-            ensure!(
-                !Self::active_validators().contains(&who),
-                Error::<T>::NotAllowedInGovernanceMode 
-            );
-            ensure!(
-                PendingValidatorActions::<T>::get(&who) != Some(pallet_cbc_dcf::ValidatorAction::Join),
-                Error::<T>::NotAllowedInGovernanceMode
-            );
-
-            // Check minimum stake and score now, but actual addition is at epoch
-            let stake = pallet_cbc_pos::Pallet::<T>::stake(&who);
-            ensure!(
-                stake >= T::MinStake::get(),
-                Error::<T>::NotEnoughValidators
-            );
-            let state = ValidatorStates::<T>::get(&who).ok_or(Error::<T>::ValidatorNotFound)?;
-            ensure!(
-                state.current.final_score >= T::MinValidatorScore::get() as u64,
-                Error::<T>::NotValidator
-            );
-
-            PendingValidatorActions::<T>::insert(&who, pallet_cbc_dcf::ValidatorAction::Join);
-            Self::deposit_event(Event::ValidatorJoined { 
-                validator: who,
-                stake_amount: T::MinStake::get(),
-            });
-            Ok(())
-        }
-
-        /// Request to leave the validator set (opt-out, effective next epoch).
-        #[pallet::call_index(3)]
-        #[pallet::weight(Weight::from_parts(50_000, 0))]
-        pub fn leave_validator_set(origin: OriginFor<T>) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-
-            // Already pending leave or not active
-            ensure!(
-                Self::active_validators().contains(&who),
-                Error::<T>::NotValidator
-            );
-            ensure!(
-                PendingValidatorActions::<T>::get(&who) != Some(pallet_cbc_dcf::ValidatorAction::Leave),
-                Error::<T>::NotAllowedInGovernanceMode
-            );
-
-            PendingValidatorActions::<T>::insert(&who, pallet_cbc_dcf::ValidatorAction::Leave);
-            Self::deposit_event(Event::ValidatorLeft { validator: who });
-            Ok(())
-        }
 
         #[pallet::call_index(4)]
         #[pallet::weight(Weight::from_parts(50_000, 0))]

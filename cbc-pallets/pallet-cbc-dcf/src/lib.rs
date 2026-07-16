@@ -2518,7 +2518,7 @@ pub mod pallet {
     /// maintenance, or other reasons).
     /// 
     /// Maximum size is bounded by `T::MaxValidators` to prevent unbounded growth.
-    /// New validators are added through `join_validator_set` or `join_validators` calls.
+    /// New validators are added through `join_validators` calls.
     /// 
     /// # Value: BoundedVec<T::AccountId, T::MaxValidators> - List of all registered validator accounts
     // Wrapped struct redirecting to T::ValidatorRegistry
@@ -2765,8 +2765,8 @@ pub mod pallet {
     /// - Leave requests from existing validators wanting to exit
     /// 
     /// Actions are submitted through:
-    /// - `join_validator_set`: Request to join (requires meeting minimum requirements)
-    /// - `leave_validator_set`: Request to leave (subject to cooldown periods)
+    /// - `join_validators`: Request to join (requires meeting minimum requirements)
+    /// - `leave_validators`: Request to leave (subject to cooldown periods)
     /// 
     /// Pending actions are processed during epoch transitions by:
     /// - Validating that join requests still meet requirements
@@ -3220,7 +3220,7 @@ pub mod pallet {
     /// is used for various temporal calculations and historical analysis.
     /// 
     /// The timestamp is set when a validator:
-    /// - Successfully completes the `join_validator_set` process
+    /// - Successfully completes the `join_validators` process
     /// - Meets all minimum requirements (stake, performance, etc.)
     /// - Is officially added to the validator registry
     /// 
@@ -6368,7 +6368,7 @@ pub mod pallet {
             Ok(())
         }
 
-        // join_validator_set moved to pallet-cbc-dvf.
+        // join_validators moved to pallet-cbc-dvf.
 
         /// Validate a genesis configuration without applying it.
         /// 
@@ -8414,35 +8414,6 @@ pub mod pallet {
             Ok(weight)
         }
         
-        /// Validate that all required storage items are accessible.
-        /// 
-        /// This function checks that all critical storage items can be read
-        /// without errors, ensuring the storage layer is functioning correctly.
-        /// 
-        /// # Returns
-        /// - `Ok(Weight)`: All storage items are accessible
-        /// - `Err(MigrationError)`: Storage access failed
-        #[cfg(any(feature = "runtime-benchmarks", test))]
-        pub fn validate_storage_accessibility() -> Result<Weight, MigrationError> {
-            let weight = <T as Config>::WeightInfo::on_initialize();
-            
-            // Test access to critical storage items
-            let _ = CurrentEpoch::<T>::get();
-            let _ = ActiveValidators::<T>::get();
-            let _ = ValidatorSet::<T>::get();
-            let _ = EpochConfigStorage::<T>::get();
-            let _ = PosWeight::<T>::get();
-            let _ = PoiWeight::<T>::get();
-            let _ = GovernanceModeEnabled::<T>::get();
-            let _ = StorageVersion::<T>::get();
-            
-            // Test that we can write to storage version (this is critical for migration tracking)
-            let current_version = StorageVersion::<T>::get();
-            StorageVersion::<T>::put(current_version); // Write back the same value
-            
-            log::debug!("DCF: Storage accessibility validation passed");
-            Ok(weight)
-        }
         
         /// Validate governance configuration for consistency and safety.
         /// 
@@ -9084,44 +9055,6 @@ pub mod pallet {
             Self::remove_from_validator_allowlist(validator).map_err(Into::into)
         }
 
-        /// Test EVM event compatibility (Root only).
-        /// 
-        /// This dispatchable tests the EVM event compatibility system by
-        /// emitting a test event and validating its EVM compatibility.
-        /// 
-        /// # Requirements
-        /// - Root origin required
-        /// 
-        /// # Effects
-        /// - Emits test event with EVM compatibility validation
-        /// - Returns error if EVM compatibility validation fails
-        pub fn test_evm_event_compatibility_internal() -> DispatchResult {
-            // Get a validator from the validator set for testing, or skip if none exist
-            let validator_set = ValidatorSet::<T>::get();
-            if let Some(validator) = validator_set.first() {
-                // Create a test event
-                let test_event: Event<T> = Event::ValidatorJoined {
-                    validator: validator.clone(),
-                    stake_amount: MinStakeOf::<T>::get(),
-                };
-                
-                // Validate EVM compatibility
-                evm_compatibility::EvmEventValidator::convert_to_evm_format(&test_event)
-                    .map_err(|_| Error::<T>::InvalidEpochConfig)?;
-                
-                // Emit the test event
-                Self::deposit_event(Event::EvmCompatibilityTested {
-                    success: true,
-                });
-            } else {
-                // No validators available for testing, but that's okay
-                Self::deposit_event(Event::EvmCompatibilityTested {
-                    success: true,
-                });
-            }
-            
-            Ok(())
-        }
 
         /// Query EVM events for a block range (Root only).
         /// 
@@ -11273,69 +11206,13 @@ pub mod pallet {
             proposals
         }
 
-        /// Get validator profile information with fresh PoS and PoI scores.
-        /// Returns: (combined_score, pos_score, poi_score, trust_score, uptime, inference_count, participation_rate, missed_blocks)
-        pub fn get_validator_profile(account_id: T::AccountId) -> Option<(u64, u64, u64, u64, u32, u32, u32, u32)> {
-            ValidatorStates::<T>::get(&account_id).map(|state| {
-                // Fetch fresh PoS (stake) score from the PoS pallet
-                let stake = pos::Pallet::<T>::stake(&account_id);
-                let pos_score = stake.saturated_into::<u64>();
-                
-                // Fetch fresh PoI score from the PoI pallet
-                let poi_score = if let Some((result, _)) = poi::Pallet::<T>::inference_results(&account_id) {
-                    result as u64
-                } else {
-                    // Fallback to stored inference score if no fresh result available
-                    state.current.inference_score
-                };
-                
-                // Get current weights for score calculation
-                let pos_weight = if !PosWeight::<T>::exists() {
-                    T::DefaultPosWeight::get()
-                } else {
-                    PosWeight::<T>::get()
-                };
-                let poi_weight = if !PoiWeight::<T>::exists() {
-                    T::DefaultPoiWeight::get()
-                } else {
-                    PoiWeight::<T>::get()
-                };
-                
-                // Calculate combined score using configured weights
-                let mut combined_score = (pos_score.saturating_mul(pos_weight) + poi_score.saturating_mul(poi_weight)) / T::PercentagePrecision::get() as u64;
-                
-                // Cap the combined score at maximum allowed
-                if combined_score > T::MaxValidatorScore::get() {
-                    combined_score = T::MaxValidatorScore::get();
-                }
-                
-                // Get trust score (use stored value or calculate fresh)
-                let trust_score = ValidatorTrustScores::<T>::get(&account_id);
-                
-                // Get additional profile information
-                let uptime = Self::validator_uptime(&account_id);
-                let inference_count = pallet_cbc_poi::Pallet::<T>::validator_inference_count(&account_id) as u32;
-                
-                (
-                    combined_score,      // Fresh calculated combined score
-                    pos_score,          // Fresh PoS (stake) score
-                    poi_score,          // Fresh PoI score
-                    trust_score,        // Current trust score
-                    uptime,             // Validator uptime
-                    inference_count,    // Number of inferences
-                    state.participation_rate, // Participation rate
-                    state.current.missed_blocks, // Missed blocks count
-                )
-            })
-        }
-
         /// Get validator name
         pub fn get_validator_name(account_id: &T::AccountId) -> Option<Vec<u8>> {
             Self::validator_names(account_id).map(|name| name.into_inner())
         }
 
-        /// Get comprehensive validator profile information (new API)
-        pub fn get_validator_profile_new(validator: T::AccountId) -> Option<ValidatorProfile<T::AccountId, <T as pallet::Config>::Balance, BlockNumberFor<T>>> {
+        /// Get comprehensive validator profile information
+        pub fn get_validator_profile(validator: T::AccountId) -> Option<ValidatorProfile<T::AccountId, <T as pallet::Config>::Balance, BlockNumberFor<T>>> {
             let state = Self::validator_states(&validator)?;
             let stake = pos::Stake::<T>::get(&validator);
             let poi_score = state.current.inference_score;

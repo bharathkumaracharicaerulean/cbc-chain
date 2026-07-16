@@ -332,20 +332,11 @@ mod tests {
                 let profile = DcfPallet::get_validator_profile(*validator);
                 assert!(profile.is_some());
                 
-                if let Some((combined_score, pos_score, poi_score, trust_score, uptime, inference_count, participation_rate, missed_blocks)) = profile {
+                if let Some(profile_data) = profile {
                     // Scores should be reasonable
-                    assert!(combined_score <= pallet_cbc_dcf::MaxValidatorScore::<Runtime>::get());
-                    assert!(pos_score <= pallet_cbc_dcf::MaxValidatorScore::<Runtime>::get());
-                    assert!(poi_score <= pallet_cbc_dcf::MaxValidatorScore::<Runtime>::get());
-                    assert!(trust_score <= pallet_cbc_dcf::MaxTrustScore::<Runtime>::get());
-                    
-                    // Participation rate should be valid percentage
-                    assert!(participation_rate <= 100);
-                    
-                    // Counts should be non-negative
-                    assert!(uptime <= 100);
-                    assert!(inference_count >= 0);
-                    assert!(missed_blocks >= 0);
+                    assert!(profile_data.final_score <= pallet_cbc_dcf::MaxValidatorScore::<Runtime>::get());
+                    assert!(profile_data.poi_score as u64 <= pallet_cbc_dcf::MaxValidatorScore::<Runtime>::get());
+                    assert!(profile_data.trust_score <= pallet_cbc_dcf::MaxTrustScore::<Runtime>::get());
                 }
             }
         });

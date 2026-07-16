@@ -222,7 +222,7 @@ pub struct GenesisConfig<T: Config> {
 
 ```rust
 // Join validator set
-assert_ok!(PalletCbcDcf::join_validator_set(Origin::signed(validator_account)));
+assert_ok!(PalletCbcDcf::join_validators(Origin::signed(validator_account), None));
 
 // Submit governance proposal
 assert_ok!(PalletCbcDcf::submit_proposal(

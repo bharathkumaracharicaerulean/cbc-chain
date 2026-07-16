@@ -2,10 +2,9 @@
 # CBC Chain — 3-validator network on Render
 #
 # How it works:
-#   - Alice's network key is baked into the Docker image (keys/alice/secret_ed25519)
-#     so her peer-id is fixed and known at build time.
-#   - Bob and Charlie derive Alice's peer-id from the baked key at startup.
-#     No manual peer-id copy-paste required.
+#   - Alice (bootnode) auto-generates a dynamic network key at startup.
+#   - Bob and Charlie dynamically query Alice's RPC endpoint to retrieve
+#     her Peer ID before starting. No manual peer-id copy-paste required.
 #   - The entrypoint (docker-entrypoint.sh) reads NODE_ROLE and starts the
 #     correct validator automatically. All key/directory setup is automatic.
 #
