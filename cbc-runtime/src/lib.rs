@@ -19,7 +19,7 @@ use alloc::vec::Vec; // Import the `Vec` type for dynamic arrays.
 
 use sp_runtime::{
     generic, impl_opaque_keys,
-    traits::{BlakeTwo256, IdentifyAccount, Verify, ConstU32},
+    traits::{BlakeTwo256, IdentifyAccount, Verify},
     MultiAddress, MultiSignature,
 };
 
@@ -228,123 +228,6 @@ mod runtime {
     #[runtime::pallet_index(10)]
     pub type Dvf = pallet_cbc_dvf::Pallet<Runtime>;
 }
-use sp_runtime::traits::parameter_types;
-
-parameter_types! {
-	pub const EnterDuration: BlockNumber = 4 * HOURS;
-	pub const EnterDepositAmount: Balance = 2_000_000 * CBC;
-	pub const ExtendDuration: BlockNumber = 2 * HOURS;
-	pub const ExtendDepositAmount: Balance = 1_000_000 * CBC;
-	pub const ReleaseDelay: u32 = 2 * DAYS;
-
-    // Validator parameters
-    pub const MinValidatorScore: u32 = 50;
-    pub const MinActiveValidators: u32 = 3;
-    pub const MaxValidators: u32 = 100;
-    pub const ValidatorScoreDecay: u32 = 10;
-    pub const MaxSlashingCount: u32 = 3;
-   
-
-    // Inference parameters
-    pub const MinInferenceConfidence: u32 = 80;
-    pub const MaxInferenceAge: u32 = 10;
-    pub const ChallengeWindow: u32 = 5;
-    pub const InferenceReward: u128 = 1000;
-    pub const ChallengeReward: u128 = 500;
-
-    // DCF parameters
-    pub const DcfMaxValidators: u32 = 100;
-    // TODO(PoI): Restore to 6000/4000 when AI inference integration is complete.
-    // The PoI weight is set to 0 now because inference_score is always 0 (no AI layer yet).
-    // Having poi_weight=4000 with poi_score=0 permanently deflates all validator scores by 40%
-    // relative to pure PoS. When PoI goes live, raise poi_weight via update_consensus_weights.
-    pub const DefaultPosWeight: u64 = 10000; // 100% PoS — pure PoS until PoI integration complete
-    pub const DefaultPoiWeight: u64 = 0;     // 0% PoI — AI inference not yet integrated
-    pub const MinStake: Balance = 1000 * CBC; // Minimum stake required
-    pub const MaxValidatorsPerEpoch: u32 = 50; // Maximum validators per epoch
-    pub const MaxValidatorScore: u64 = 100;
-
-    // Block authorship and inference boosting parameters
-    pub const BlockAuthorshipBoost: u64 = 10;
-    pub const MissedBlockPenalty: u64 = 5;
-    pub const InferenceBoostLow: u64 = 2;
-    pub const InferenceBoostMedium: u64 = 5;
-    pub const InferenceBoostHigh: u64 = 10;
-    pub const InferencePenaltyLow: u64 = 1;
-    pub const InferencePenaltyMedium: u64 = 3;
-    pub const InferencePenaltyHigh: u64 = 7;
-
-    pub const MaxEpochHistory: u32 = 24;
-    
-    // Performance thresholds
-    pub const MinPerformanceScore: u64 = 30;
-    pub const HighPerformanceScore: u64 = 80;
-    pub const MinParticipationRate: u32 = 50;
-    pub const HighParticipationRate: u32 = 90;
-    pub const MaxMissedBlocks: u32 = 10;
-    pub const MaxMissedBlocksHigh: u32 = 2;
-    pub const HealthyValidatorScore: u64 = 50;
-    pub const HealthyParticipationRate: u32 = 80;
-    pub const HealthyMissedBlocksMax: u32 = 5;
-    
-    // Score calculation thresholds
-    pub const ScoreChangeThreshold: u64 = 1000;
-    pub const ScoreChangePercentage: u32 = 10;
-    pub const ScoreImprovementThreshold: u64 = 1000;
-    pub const ScoreImprovementPercentage: u32 = 10;
-    
-    // Contribution balance thresholds
-    pub const MaxPosContribution: u32 = 90;
-    pub const MaxPoiContribution: u32 = 90;
-    pub const ImbalanceWarningThreshold: u32 = 85;
-    
-    // Block processing intervals
-    pub const LeaveRequestCheckInterval: u32 = 10;
-    pub const MetricsUpdateInterval: u32 = 10;
-    pub const ScoreRefreshInterval: u32 = 50;
-    pub const DetailedLoggingInterval: u32 = 100;
-    pub const ImbalanceCheckInterval: u32 = 500;
-    
-    // Validator set limits
-    pub const TopValidatorsDisplayCount: u32 = 5;
-    pub const HealthCheckSampleSize: u32 = 5;
-    
-    // Percentage constants
-    pub const FullPercentage: u32 = 100;
-    pub const HighPerformancePercentage: u32 = 80;
-    pub const TopPerformerPercentage: u32 = 20;
-    
-    // Misbehavior reporting
-    pub const MaxEvidenceLength: u32 = 1000;
-    pub const MisbehaviorSlashThreshold: u32 = 3;
-}
-
 pub use pallet_cbc_poi;
 pub use pallet_cbc_pos;
 pub use pallet_todo;
-
-parameter_types! {
-    pub const StakeWeightFactor: u128 = 1;
-    pub const ScoreWeightFactor: u128 = 1000;
-    pub const ScoreBoostCap: u128 = 100_000;
-    pub const FinalityThreshold: sp_runtime::Perbill = sp_runtime::Perbill::from_percent(67);
-    pub const FinalityCheckpointInterval: u32 = 10;
-    pub const VoteRetentionRounds: u32 = 20;
-}
-
-impl pallet_cbc_dvf::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type Signature = Signature;
-    type Signer = <Signature as Verify>::Signer;
-    type StakeWeightFactor = StakeWeightFactor;
-    type ScoreWeightFactor = ScoreWeightFactor;
-    type ScoreBoostCap = ScoreBoostCap;
-    type FinalityThreshold = FinalityThreshold;
-    type FinalityCheckpointInterval = FinalityCheckpointInterval;
-    type VoteRetentionRounds = VoteRetentionRounds;
-    type MaxValidators = ConstU32<100>;
-    type MaxInactiveEpochs = ConstU32<5>;
-    type UnderperformanceCheckInterval = ConstU32<50>;
-    type MaxValidatorHistorySize = ConstU32<100>;
-    type MaxValidatorNameSize = ConstU32<32>;
-}

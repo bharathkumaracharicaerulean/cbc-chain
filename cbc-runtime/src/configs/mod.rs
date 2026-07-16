@@ -21,27 +21,7 @@ use sp_version::RuntimeVersion;
 use super::{
     AccountId, Balance, Balances, Block, BlockNumber, Hash, Nonce, PalletInfo, Runtime,
     RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
-    System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION,
-};
-
-use crate::{
-    MinValidatorScore, MaxValidatorScore, MinActiveValidators, MaxSlashingCount,
-    MinInferenceConfidence, MaxInferenceAge, ChallengeWindow, InferenceReward, ChallengeReward,
-    // Performance thresholds
-    MinPerformanceScore, HighPerformanceScore, MinParticipationRate, HighParticipationRate,
-    MaxMissedBlocks, MaxMissedBlocksHigh, HealthyValidatorScore, HealthyParticipationRate, HealthyMissedBlocksMax,
-    // Score calculation thresholds
-    ScoreChangeThreshold, ScoreChangePercentage, ScoreImprovementThreshold, ScoreImprovementPercentage,
-    // Contribution balance thresholds
-    MaxPosContribution, MaxPoiContribution, ImbalanceWarningThreshold,
-    // Block processing intervals
-    LeaveRequestCheckInterval, MetricsUpdateInterval, ScoreRefreshInterval, DetailedLoggingInterval, ImbalanceCheckInterval,
-    // Validator set limits
-    TopValidatorsDisplayCount, HealthCheckSampleSize,
-    // Percentage constants
-    FullPercentage, HighPerformancePercentage, TopPerformerPercentage,
-    // Misbehavior reporting
-    MaxEvidenceLength, MisbehaviorSlashThreshold,
+    System, EXISTENTIAL_DEPOSIT, SLOT_DURATION, VERSION, Signature, CBC,
 };
 
 // === Constants ===
@@ -65,7 +45,7 @@ parameter_types! {
     pub const SS58Prefix: u8 = 42;
 
     pub const MaxValidators: u32 = 100;
-    pub const MinStake: u128 = 1000;
+    pub const MinStake: Balance = 1000 * CBC;
     pub const MaxStake: u128 = 1000000;
     pub const EpochDuration: u32 = 100;
     pub const SlashingPenalty: u32 = 10;
@@ -87,8 +67,87 @@ parameter_types! {
     pub const ValidatorUptimeRequirement: u32 = 90; // 90% uptime requirement
     pub const MaxMissedBlocksPerEpoch: u32 = 50;
     pub const InactivityEjectionBlocks: u32 = 1000;
-    
 
+    // --- Consolidated Validator & Consensus Parameters ---
+    pub const MinValidatorScore: u32 = 50;
+    pub const MinActiveValidators: u32 = 3;
+    pub const MaxSlashingCount: u32 = 3;
+
+    // Inference parameters
+    pub const MinInferenceConfidence: u32 = 80;
+    pub const MaxInferenceAge: u32 = 10;
+    pub const ChallengeWindow: u32 = 5;
+    pub const InferenceReward: u128 = 1000;
+    pub const ChallengeReward: u128 = 500;
+
+    // DCF parameters
+    pub const DcfMaxValidators: u32 = 100;
+    pub const DefaultPosWeight: u64 = 10000; 
+    pub const DefaultPoiWeight: u64 = 0;     
+    pub const MaxValidatorsPerEpoch: u32 = 50; 
+    pub const MaxValidatorScore: u64 = 100;
+
+    // Block authorship and inference boosting parameters
+    pub const BlockAuthorshipBoost: u64 = 10;
+    pub const MissedBlockPenalty: u64 = 5;
+    pub const InferenceBoostLow: u64 = 2;
+    pub const InferenceBoostMedium: u64 = 5;
+    pub const InferenceBoostHigh: u64 = 10;
+    pub const InferencePenaltyLow: u64 = 1;
+    pub const InferencePenaltyMedium: u64 = 3;
+    pub const InferencePenaltyHigh: u64 = 7;
+
+    pub const MaxEpochHistory: u32 = 24;
+    
+    // Performance thresholds
+    pub const MinPerformanceScore: u64 = 30;
+    pub const HighPerformanceScore: u64 = 80;
+    pub const MinParticipationRate: u32 = 50;
+    pub const HighParticipationRate: u32 = 90;
+    pub const MaxMissedBlocks: u32 = 10;
+    pub const MaxMissedBlocksHigh: u32 = 2;
+    pub const HealthyValidatorScore: u64 = 50;
+    pub const HealthyParticipationRate: u32 = 80;
+    pub const HealthyMissedBlocksMax: u32 = 5;
+    
+    // Score calculation thresholds
+    pub const ScoreChangeThreshold: u64 = 1000;
+    pub const ScoreChangePercentage: u32 = 10;
+    pub const ScoreImprovementThreshold: u64 = 1000;
+    pub const ScoreImprovementPercentage: u32 = 10;
+    
+    // Contribution balance thresholds
+    pub const MaxPosContribution: u32 = 90;
+    pub const MaxPoiContribution: u32 = 90;
+    pub const ImbalanceWarningThreshold: u32 = 85;
+    
+    // Block processing intervals
+    pub const LeaveRequestCheckInterval: u32 = 10;
+    pub const MetricsUpdateInterval: u32 = 10;
+    pub const ScoreRefreshInterval: u32 = 50;
+    pub const DetailedLoggingInterval: u32 = 100;
+    pub const ImbalanceCheckInterval: u32 = 500;
+    
+    // Validator set limits
+    pub const TopValidatorsDisplayCount: u32 = 5;
+    pub const HealthCheckSampleSize: u32 = 5;
+    
+    // Percentage constants
+    pub const FullPercentage: u32 = 100;
+    pub const HighPerformancePercentage: u32 = 80;
+    pub const TopPerformerPercentage: u32 = 20;
+    
+    // Misbehavior reporting
+    pub const MaxEvidenceLength: u32 = 1000;
+    pub const MisbehaviorSlashThreshold: u32 = 3;
+
+    // DVF parameters
+    pub const StakeWeightFactor: u128 = 1;
+    pub const ScoreWeightFactor: u128 = 1000;
+    pub const ScoreBoostCap: u128 = 100_000;
+    pub const FinalityThreshold: sp_runtime::Perbill = sp_runtime::Perbill::from_percent(67);
+    pub const FinalityCheckpointInterval: u32 = 10;
+    pub const VoteRetentionRounds: u32 = 20;
 }
 
 // === FRAME System Configuration ===
@@ -217,7 +276,7 @@ impl pallet_cbc_pos::Config for Runtime {
     type MaxValidators = MaxValidators;
     type ValidatorScoreDecay = ValidatorScoreDecay;
     type MaxSlashingCount = MaxSlashingCount;
-    type MinStake = ConstU128<1000>; // Minimum stake of 1000 units
+    type MinStake = MinStake; // Minimum stake of 1000 tokens
     type Balance = Balance;
     type Currency = Balances;
     type LeaveCooldown = ConstU32<1000>;
@@ -350,8 +409,26 @@ impl pallet_cbc_dcf::Config for Runtime {
     type ValidatorRegistry = pallet_cbc_dvf::Pallet<Runtime>;
 }
 
+// === CBC DVF Pallet Configuration ===
+impl pallet_cbc_dvf::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Signature = Signature;
+    type Signer = <Signature as sp_runtime::traits::Verify>::Signer;
+    type StakeWeightFactor = StakeWeightFactor;
+    type ScoreWeightFactor = ScoreWeightFactor;
+    type ScoreBoostCap = ScoreBoostCap;
+    type FinalityThreshold = FinalityThreshold;
+    type FinalityCheckpointInterval = FinalityCheckpointInterval;
+    type VoteRetentionRounds = VoteRetentionRounds;
+    type MaxValidators = ConstU32<100>;
+    type MaxInactiveEpochs = ConstU32<5>;
+    type UnderperformanceCheckInterval = ConstU32<50>;
+    type MaxValidatorHistorySize = ConstU32<100>;
+    type MaxValidatorNameSize = ConstU32<32>;
+}
 
 // ── Todo pallet runtime configuration ────────────────────────
+
 use frame_support::traits::ConstU32 as TodoConstU32;
 
 impl pallet_todo::Config for Runtime {
