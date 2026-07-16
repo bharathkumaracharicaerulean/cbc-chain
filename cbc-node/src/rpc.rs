@@ -460,6 +460,18 @@ pub trait DcfRpcApi {
     
     #[method(name = "dcf_getConsensusWeights")]
     fn get_consensus_weights(&self) -> RpcResult<ConsensusWeights>;
+
+    #[method(name = "dcf_validateEpochReplay")]
+    fn validate_epoch_replay(&self, epoch: u32) -> RpcResult<Result<(), String>>;
+    
+    #[method(name = "dcf_queryEvmEvents")]
+    fn query_evm_events(&self, event_type: Option<u32>, from_block: u32, to_block: u32) -> RpcResult<Vec<pallet_cbc_dcf::evm_compatibility::EvmCompatibleEvent>>;
+    
+    #[method(name = "dcf_validateCurrentInvariants")]
+    fn validate_current_invariants(&self) -> RpcResult<Result<(), Vec<String>>>;
+    
+    #[method(name = "dcf_generateValidatorProposals")]
+    fn generate_validator_proposals(&self) -> RpcResult<Vec<(AccountId, pallet_cbc_dcf::ApiProposalAction<AccountId, Balance>, u64, u64, u64)>>;
 }
 
 pub struct DcfRpcApiImpl<C> {
@@ -548,6 +560,64 @@ where
             ))?;
         
         Ok(ConsensusWeights { pos_weight, poi_weight })
+    }
+
+    fn validate_epoch_replay(&self, epoch: u32) -> RpcResult<Result<(), String>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        let res = api.validate_epoch_replay(best_hash, epoch)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Runtime API call failed: {:?}", e),
+                None::<()>
+            ))?;
+            
+        Ok(res.map_err(|e| format!("{:?}", e)))
+    }
+    
+    fn query_evm_events(&self, event_type: Option<u32>, from_block: u32, to_block: u32) -> RpcResult<Vec<pallet_cbc_dcf::evm_compatibility::EvmCompatibleEvent>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        api.query_evm_events(best_hash, event_type, from_block, to_block)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Runtime API call failed: {:?}", e),
+                None::<()>
+            ))
+    }
+    
+    fn validate_current_invariants(&self) -> RpcResult<Result<(), Vec<String>>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        api.validate_current_invariants(best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Runtime API call failed: {:?}", e),
+                None::<()>
+            ))
+    }
+    
+    fn generate_validator_proposals(&self) -> RpcResult<Vec<(AccountId, pallet_cbc_dcf::ApiProposalAction<AccountId, Balance>, u64, u64, u64)>> {
+        self.check_cbc_extensions_enabled()?;
+        
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+        
+        api.generate_validator_proposals(best_hash)
+            .map_err(|e| jsonrpsee::types::ErrorObjectOwned::owned(
+                -32000,
+                format!("Runtime API call failed: {:?}", e),
+                None::<()>
+            ))
     }
 }
 

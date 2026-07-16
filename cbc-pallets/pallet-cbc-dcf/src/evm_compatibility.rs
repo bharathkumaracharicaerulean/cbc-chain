@@ -195,7 +195,7 @@ impl EvmEventValidator {
 }
 
 /// EVM-compatible event structure
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo, MaxEncodedLen, Serialize, Deserialize)]
 pub struct EvmCompatibleEvent {
     /// Numeric event type ID for filtering
     pub event_type: u32,

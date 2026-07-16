@@ -385,6 +385,10 @@ sp_api::decl_runtime_apis! {
         fn get_system_metrics() -> Vec<u8>;
         fn get_performance_indicators() -> Vec<u8>;
         fn get_metrics_last_updated() -> u32;
+        fn validate_epoch_replay(epoch: u32) -> Result<(), ReplayValidationError>;
+        fn query_evm_events(event_type: Option<u32>, from_block: u32, to_block: u32) -> Vec<evm_compatibility::EvmCompatibleEvent>;
+        fn validate_current_invariants() -> Result<(), Vec<String>>;
+        fn generate_validator_proposals() -> Vec<(AccountId, pallet::ApiProposalAction<AccountId, Balance>, u64, u64, u64)>;
     }
 }
 
@@ -411,6 +415,16 @@ pub mod pallet {
     /// This version should be incremented whenever breaking changes are made
     /// to the storage layout that require migration.
     pub const CURRENT_STORAGE_VERSION: u32 = 1;
+
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, Serialize, Deserialize)]
+    pub enum ApiProposalAction<AccountId, Balance> {
+        Slash { validator: AccountId, amount: Balance },
+        Reward { validator: AccountId, amount: Balance },
+        Eject { validator: AccountId, reason: EjectionReason },
+        AddValidator { validator: AccountId },
+        RemoveValidator { validator: AccountId },
+        RewardMultiple { validators: Vec<AccountId>, amount: Balance },
+    }
 
     // --- Data Structures --- //
 
@@ -6747,6 +6761,50 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Enable private chain mode with initial allowlist.
+        #[pallet::call_index(38)]
+        #[pallet::weight(T::DbWeight::get().reads_writes(2, 2))]
+        pub fn enable_private_chain(
+            origin: OriginFor<T>,
+            initial_allowlist: Vec<T::AccountId>,
+            allow_updates: bool,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::enable_private_chain_mode_internal(initial_allowlist, allow_updates)
+        }
+
+        /// Disable private chain mode.
+        #[pallet::call_index(39)]
+        #[pallet::weight(T::DbWeight::get().reads_writes(2, 2))]
+        pub fn disable_private_chain(
+            origin: OriginFor<T>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::disable_private_chain_mode_internal()
+        }
+
+        /// Add a validator to allowlist.
+        #[pallet::call_index(40)]
+        #[pallet::weight(T::DbWeight::get().reads_writes(2, 2))]
+        pub fn add_validator_to_allowlist(
+            origin: OriginFor<T>,
+            validator: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::add_to_validator_allowlist_internal(validator)
+        }
+
+        /// Remove a validator from allowlist.
+        #[pallet::call_index(41)]
+        #[pallet::weight(T::DbWeight::get().reads_writes(2, 2))]
+        pub fn remove_validator_from_allowlist(
+            origin: OriginFor<T>,
+            validator: T::AccountId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::remove_from_validator_allowlist_internal(&validator)
+        }
+
     }
 
     // --- Internal Logic --- //
@@ -11206,6 +11264,24 @@ pub mod pallet {
             proposals
         }
 
+        /// Generate validator proposals in ApiProposalAction format for runtime API queries
+        pub fn generate_validator_proposals_api() -> Vec<(T::AccountId, ApiProposalAction<T::AccountId, <T as pallet::Config>::Balance>, u64, u64, u64)> {
+            Self::generate_validator_proposals()
+                .into_iter()
+                .map(|(val, action, score, pos, poi)| {
+                    let api_action = match action {
+                        ProposalAction::Slash { validator, amount } => ApiProposalAction::Slash { validator, amount },
+                        ProposalAction::Reward { validator, amount } => ApiProposalAction::Reward { validator, amount },
+                        ProposalAction::Eject { validator, reason } => ApiProposalAction::Eject { validator, reason },
+                        ProposalAction::AddValidator { validator } => ApiProposalAction::AddValidator { validator },
+                        ProposalAction::RemoveValidator { validator } => ApiProposalAction::RemoveValidator { validator },
+                        ProposalAction::RewardMultiple { validators, amount } => ApiProposalAction::RewardMultiple { validators: validators.to_vec(), amount },
+                    };
+                    (val, api_action, score, pos, poi)
+                })
+                .collect()
+        }
+
         /// Get validator name
         pub fn get_validator_name(account_id: &T::AccountId) -> Option<Vec<u8>> {
             Self::validator_names(account_id).map(|name| name.into_inner())
@@ -13779,7 +13855,7 @@ pub enum ScoreBoostReason {
 /// from the network for failing to meet minimum standards or engaging in
 /// harmful behavior. Ejected validators must typically wait for cooldown
 /// periods and demonstrate improvement before rejoining.
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Serialize, Deserialize, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum EjectionReason {
     /// Validator's performance score fell below the minimum threshold.
     /// 

@@ -460,6 +460,33 @@ impl_runtime_apis! {
 		fn get_metrics_last_updated() -> u32 {
 			pallet_cbc_dcf::Pallet::<Runtime>::get_metrics_last_updated()
 		}
+
+		fn validate_epoch_replay(epoch: u32) -> Result<(), pallet_cbc_dcf::ReplayValidationError> {
+			pallet_cbc_dcf::Pallet::<Runtime>::validate_epoch_replay(epoch)
+		}
+
+		fn query_evm_events(
+			event_type: Option<u32>,
+			from_block: u32,
+			to_block: u32,
+		) -> Vec<pallet_cbc_dcf::evm_compatibility::EvmCompatibleEvent> {
+			pallet_cbc_dcf::Pallet::<Runtime>::query_evm_events_internal(event_type, from_block, to_block)
+		}
+
+		fn validate_current_invariants() -> Result<(), Vec<alloc::string::String>> {
+			pallet_cbc_dcf::Pallet::<Runtime>::validate_current_invariants()
+		}
+
+		fn generate_validator_proposals(
+		) -> Vec<(
+			AccountId,
+			pallet_cbc_dcf::ApiProposalAction<AccountId, Balance>,
+			u64,
+			u64,
+			u64,
+		)> {
+			pallet_cbc_dcf::Pallet::<Runtime>::generate_validator_proposals_api()
+		}
 	}
 
 	// DVF API
