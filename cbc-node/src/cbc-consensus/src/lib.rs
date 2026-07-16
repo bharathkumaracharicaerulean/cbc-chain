@@ -14,8 +14,6 @@ pub mod validator_set;
 pub mod proposer_factory;
 pub mod import_queue;
 pub mod inherent_providers;
-/// Epoch management
-pub mod epoch_manager;
 
 /// Core types and error handling
 pub mod types;
@@ -59,9 +57,8 @@ mod tests;
 // Re-export commonly used types
 pub use error::{ConsensusError, ConsensusResult};
 pub use dcf::{RealBlockImport, DcfConsensus};
-pub use types::{ValidatorInfo, ValidatorMetrics, EpochConfig, AuthorSelectionMode, ConsensusParams, BlockT};
+pub use types::{ValidatorInfo, EpochConfig, AuthorSelectionMode, ConsensusParams, BlockT};
 pub use proposer_factory::ProposerFactory;
-pub use finality::FinalityEngine;
 pub use inherent_providers::CbcInherentDataProviders;
 pub use vote_creator::VoteCreatorService;
 pub use vote_aggregator::{VoteAggregatorService, VotePoolPruningService};

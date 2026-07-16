@@ -8,7 +8,6 @@ use sp_runtime::traits::Block as BlockTrait;
 use sp_runtime::generic::{Block, Header, UncheckedExtrinsic};
 use sp_runtime::traits::BlakeTwo256;
 use sp_core::ed25519::Public;
-use std::default::Default;
 
 
 /// Block type alias for the consensus engine
@@ -119,31 +118,6 @@ pub enum ImportResult<B: BlockTrait> {
     Rejected(B::Hash, String),
 }
 
-/// Validator performance metrics
-#[derive(Debug, Clone, Encode, Decode, TypeInfo, Default)]
-pub struct ValidatorMetrics {
-    /// Number of blocks produced
-    pub blocks_produced: u32,
-    /// Total blocks validated in current epoch
-    pub blocks_validated: u32,
-    /// Uptime percentage
-    pub uptime: u32,
-    /// Total blocks in epoch
-    pub total_blocks: u32,
-    /// Total missed blocks
-    pub total_missed: u32,
-    /// Failed block production attempts
-    pub failed_blocks: u32,
-}
-
-impl ValidatorMetrics {
-    /// Update validator score with new metrics
-    pub fn update_validator_score(&mut self, _author: Public, _stake_weight: u32, _inference_weight: u32, final_score: u32) {
-        self.blocks_produced = self.blocks_produced.saturating_add(1);
-        self.blocks_validated = self.blocks_validated.saturating_add(1);
-        self.uptime = final_score;
-    }
-}
 
 /// Utility functions for consensus operations
 pub mod utils {

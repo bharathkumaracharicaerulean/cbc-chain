@@ -5,7 +5,7 @@
 
 use crate::{
     error::{ConsensusError, ConsensusResult},
-    types::{ConsensusParams, ValidatorMetrics},
+    types::ConsensusParams,
     proposer_factory::ProposerFactory,
     metrics::ConsensusMetrics,
 };
@@ -39,12 +39,12 @@ where
     proposer_factory: ProposerFactory<B, C, TP>,
     block_import: Arc<dyn BlockImport<B, Error = sp_consensus::Error> + Send + Sync>,
     params: ConsensusParams,
-    metrics: ValidatorMetrics,
     consensus_metrics: Option<ConsensusMetrics>,
     last_block_time: Duration,
     current_slot: u64,
     last_metrics_update_slot: u64,
     last_score_refresh_slot: u64,
+    failed_blocks: u32,
     _phantom: std::marker::PhantomData<(B, P, TP)>,
 }
 
@@ -78,12 +78,12 @@ where
             proposer_factory,
             block_import,
             params,
-            metrics: ValidatorMetrics::default(),
             consensus_metrics: None,
             last_block_time,
             current_slot: 0,
             last_metrics_update_slot: 0,
             last_score_refresh_slot: 0,
+            failed_blocks: 0,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -111,12 +111,12 @@ where
             proposer_factory,
             block_import,
             params,
-            metrics: ValidatorMetrics::default(),
             consensus_metrics: Some(consensus_metrics),
             last_block_time,
             current_slot: 0,
             last_metrics_update_slot: 0,
             last_score_refresh_slot: 0,
+            failed_blocks: 0,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -320,25 +320,15 @@ where
         // Get all validator scores and update metrics
         if let Ok(scores) = api.get_validator_scores(best_hash) {
             for (account_id, _final_score) in scores {
-                let public_key = Public::from_raw(*account_id.as_ref());
-                
                 // Get detailed validator information with fresh scores
                 if let Ok(Some(profile)) = api.get_validator_profile(best_hash, account_id.clone()) {
                     let combined_score = profile.final_score;
                     let poi_score = profile.poi_score as u64;
                     let _trust_score = profile.trust_score;
-                    let inference_count = profile.inference_count;
                     // Get actual metrics from PoS pallet and validator state
                     let pos_score = self.get_pos_score(&account_id);
-                    let uptime = self.calculate_validator_uptime(&account_id);
                     let (participation_rate, missed_blocks) = self.get_validator_participation_metrics(&account_id);
                     
-                    self.metrics.update_validator_score(
-                        public_key, 
-                        uptime, 
-                        inference_count.try_into().unwrap_or(0), 
-                        combined_score.try_into().unwrap_or(0)
-                    );
                     
                     // Log detailed metrics periodically
                     if self.current_slot % self.params.detailed_logging_interval == 0 {
@@ -376,12 +366,6 @@ where
     }
 
     /// Record slashing event in consensus metrics
-    pub fn record_slashing_event(&self, amount: u128) {
-        if let Some(ref metrics) = self.consensus_metrics {
-            metrics.record_slashing(amount);
-            debug!("DCF: Recorded slashing event of {}", amount);
-        }
-    }
 
     /// Get PoS score for a validator from the PoS pallet
     fn get_pos_score(&self, validator: &AccountId) -> u64 {
@@ -532,7 +516,6 @@ where
         // Get and update validator metrics
         if let Ok(scores) = api.get_validator_scores(best_hash) {
             if let Some((_, final_score)) = scores.iter().find(|(a, _)| a == &author_account_id) {
-                self.metrics.update_validator_score(author.clone(), 0, 0, (*final_score).try_into().unwrap_or(0));
                 debug!("DCF: Author {:?} has final score: {}", author_account_id, final_score);
             }
         }
@@ -735,12 +718,6 @@ where
                 Duration::ZERO
             });
         
-        // Update metrics
-        self.metrics.total_blocks = self.metrics.total_blocks.saturating_add(1);
-        
-        // Update validator-specific metrics
-        let author_public = Public::from_raw(*author.as_ref());
-        self.metrics.update_validator_score(author_public, 0, 0, 1); // Increment block count
         
         // Record successful block authorship in runtime
         let api = self.client.runtime_api();
@@ -758,12 +735,12 @@ where
         metadata.block_number = Some(block_number);
         metadata.author = Some(format!("{:?}", author));
         metadata.custom.insert("slot".to_string(), self.current_slot.to_string());
-        metadata.custom.insert("total_blocks".to_string(), self.metrics.total_blocks.to_string());
+        metadata.custom.insert("total_blocks".to_string(), block_number.to_string());
         LifecycleTracer::global().trace_step(
             53,
             "dcf.rs::update_consensus_state",
             &format!("Consensus state updated after block production (block: {}, slot: {}, total: {})", 
-                     block_number, self.current_slot, self.metrics.total_blocks),
+                     block_number, self.current_slot, block_number),
             Some(metadata),
         );
         
@@ -801,19 +778,11 @@ where
             debug!("Block #{} produced successfully by {:?}", block_number, author);
             debug!("Validator stats - Combined: {}, PoS: {}, PoI: {}, Trust: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
                   combined_score, pos_score, poi_score, trust_score, uptime, inference_count, participation_rate, missed_blocks);
-            
-            // Update local metrics with current runtime state
-            self.metrics.update_validator_score(
-                author_public, 
-                uptime, 
-                inference_count.try_into().unwrap_or(0), 
-                combined_score.try_into().unwrap_or(0)
-            );
         }
         
         // Log consensus state update
         debug!("Updated consensus state - Block: {}, Slot: {}, Total Blocks: {}, Author: {:?}", 
-              block_number, self.current_slot, self.metrics.total_blocks, author);
+              block_number, self.current_slot, block_number, author);
         
         // Periodic state health check
         if block_number % self.params.health_check_interval == 0 {
@@ -887,7 +856,7 @@ where
             // Check if we need to trigger epoch transition
             if let Ok(current_epoch) = api.get_current_epoch(best_hash) {
                 debug!("PoS+PoI: Current epoch: {}, Total blocks produced: {}", 
-                       current_epoch, self.metrics.total_blocks);
+                       current_epoch, current_block);
             }
         }
         
@@ -914,7 +883,7 @@ where
             });
         
         // Update metrics to track the failure
-        self.metrics.failed_blocks = self.metrics.failed_blocks.saturating_add(1);
+        self.failed_blocks = self.failed_blocks.saturating_add(1);
         
         // Record missed block in runtime
         let api = self.client.runtime_api();
@@ -928,7 +897,7 @@ where
         
         // Log the failure for monitoring
         info!("PoS+PoI: Block production failed - Slot: {}, Failed blocks: {}, Author: {:?}", 
-              self.current_slot, self.metrics.failed_blocks, author);
+              self.current_slot, self.failed_blocks, author);
         
         // Get updated validator metrics after recording the missed block
         if let Ok(Some(profile)) = api.get_validator_profile(best_hash, author.clone()) {
@@ -1130,42 +1099,7 @@ where
                 _ => {}
             }
         }
-        
         None
-    }
-
-    /// Update validator scores based on block authorship
-    pub fn update_block_authorship_scores(&self, block_number: u32) {
-        let api = self.client.runtime_api();
-        let best_hash = self.client.info().best_hash;
-        
-        // Get the expected author for this block
-        if let Ok(Some(expected_author)) = api.get_expected_author(best_hash, block_number) {
-            // Record successful block authorship
-            debug!("Recording block authorship for validator {:?} at block #{}", 
-                  expected_author, block_number);
-            
-            // Update validator metrics
-            if let Ok(Some(profile)) = api.get_validator_profile(best_hash, expected_author.clone()) {
-                let combined_score = profile.final_score;
-                let pos_score = api.get_validator_stake_score(best_hash, expected_author.clone()).unwrap_or(0);
-                let poi_score = profile.poi_score as u64;
-                let trust_score = profile.trust_score;
-                let uptime = api.get_validator_uptime(best_hash, expected_author.clone())
-                    .unwrap_or(None)
-                    .map(|stats| stats.participation_rate)
-                    .unwrap_or(0);
-                let inference_count = profile.inference_count;
-                
-                // Log validator metrics
-                debug!("Validator {:?} metrics - Combined: {}, PoS: {}, PoI: {}, Trust: {}, Uptime: {}, Inferences: {}", 
-                      expected_author, combined_score, pos_score, poi_score, trust_score, uptime, inference_count);
-                
-                // Log successful block production
-                debug!("Block #{} successfully produced by validator {:?} (combined score: {})", 
-                      block_number, expected_author, combined_score);
-            }
-        }
     }
 }
 

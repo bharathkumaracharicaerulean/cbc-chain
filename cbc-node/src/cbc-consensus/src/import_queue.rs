@@ -3,7 +3,6 @@
 //! This module provides block import validation and processing logic
 //! that works in conjunction with the DCF runtime pallet.
 
-use crate::types::ValidatorMetrics;
 use crate::metrics::ConsensusMetrics;
 use std::sync::Arc;
 use log::{info, error, debug, warn};
@@ -27,7 +26,6 @@ where
     BE: Backend<B>,
 {
     client: Arc<C>,
-    metrics: ValidatorMetrics,
     consensus_metrics: Option<ConsensusMetrics>,
     _phantom: std::marker::PhantomData<(B, BE)>,
 }
@@ -43,7 +41,6 @@ where
     pub fn new(client: Arc<C>) -> Self {
         Self {
             client,
-            metrics: ValidatorMetrics::default(),
             consensus_metrics: None,
             _phantom: std::marker::PhantomData,
         }
@@ -53,21 +50,9 @@ where
     pub fn new_with_metrics(client: Arc<C>, consensus_metrics: ConsensusMetrics) -> Self {
         Self {
             client,
-            metrics: ValidatorMetrics::default(),
             consensus_metrics: Some(consensus_metrics),
             _phantom: std::marker::PhantomData,
         }
-    }
-
-    /// Get current import queue metrics
-    pub fn get_metrics(&self) -> &ValidatorMetrics {
-        &self.metrics
-    }
-
-    /// Reset metrics (useful for testing or periodic resets)
-    pub fn reset_metrics(&mut self) {
-        self.metrics = ValidatorMetrics::default();
-        info!("DCF ImportQueue: Metrics reset");
     }
 
     /// Extract block author from block header digest
