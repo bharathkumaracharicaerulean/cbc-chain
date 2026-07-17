@@ -295,6 +295,14 @@ impl pallet_cbc_pos::Config for Runtime {
     type ValidatorHandler = pallet_cbc_dvf::Pallet<Runtime>;
 }
 
+// === CBC Governance Pallet Configuration ===
+impl pallet_cbc_governance::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Balance = Balance;
+    type ProposalExecutor = pallet_cbc_dcf::Pallet<Runtime>;
+    type ValidatorProvider = pallet_cbc_dcf::Pallet<Runtime>;
+}
+
 // === CBC DCF Pallet Configuration ===
 impl pallet_cbc_dcf::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;

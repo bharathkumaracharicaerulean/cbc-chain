@@ -1384,6 +1384,7 @@ dependencies = [
  "pallet-balances",
  "pallet-cbc-dcf",
  "pallet-cbc-dvf",
+ "pallet-cbc-governance",
  "pallet-cbc-poi",
  "pallet-cbc-pos",
  "pallet-sudo",
@@ -6388,6 +6389,7 @@ dependencies = [
  "frame-system",
  "log",
  "pallet-balances",
+ "pallet-cbc-governance",
  "pallet-cbc-poi",
  "pallet-cbc-pos",
  "pallet-timestamp",
@@ -6416,6 +6418,21 @@ dependencies = [
  "sp-api",
  "sp-core",
  "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-cbc-governance"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core",
  "sp-runtime",
  "sp-std",
 ]

@@ -244,6 +244,7 @@ use sp_std::prelude::*;
 use sp_std::fmt; 
 use pallet_cbc_pos as pos;
 use pallet_cbc_poi as poi;
+pub use pallet_cbc_governance::{EjectionReason, ApiProposalAction, ProposalAction, ProposalStatus, GovernanceProposal};
 use serde::{Serialize, Deserialize};
 
 use scale_info::prelude::format;
@@ -388,7 +389,7 @@ sp_api::decl_runtime_apis! {
         fn validate_epoch_replay(epoch: u32) -> Result<(), ReplayValidationError>;
         fn query_evm_events(event_type: Option<u32>, from_block: u32, to_block: u32) -> Vec<evm_compatibility::EvmCompatibleEvent>;
         fn validate_current_invariants() -> Result<(), Vec<String>>;
-        fn generate_validator_proposals() -> Vec<(AccountId, pallet::ApiProposalAction<AccountId, Balance>, u64, u64, u64)>;
+        fn generate_validator_proposals() -> Vec<(AccountId, ApiProposalAction<AccountId, Balance>, u64, u64, u64)>;
     }
 }
 
@@ -415,16 +416,6 @@ pub mod pallet {
     /// This version should be incremented whenever breaking changes are made
     /// to the storage layout that require migration.
     pub const CURRENT_STORAGE_VERSION: u32 = 1;
-
-    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, Serialize, Deserialize)]
-    pub enum ApiProposalAction<AccountId, Balance> {
-        Slash { validator: AccountId, amount: Balance },
-        Reward { validator: AccountId, amount: Balance },
-        Eject { validator: AccountId, reason: EjectionReason },
-        AddValidator { validator: AccountId },
-        RemoveValidator { validator: AccountId },
-        RewardMultiple { validators: Vec<AccountId>, amount: Balance },
-    }
 
     // --- Data Structures --- //
 
@@ -1359,89 +1350,6 @@ pub mod pallet {
         InferenceBoostHigh,
     }
 
-    /// Actions that can be proposed via governance.
-    #[derive(Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
-    pub enum ProposalAction<T: Config + TypeInfo + fmt::Debug> { // <-- Change here
-        Slash { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
-        Reward { validator: T::AccountId, amount: <T as pallet::Config>::Balance },
-        Eject { validator: T::AccountId, reason: EjectionReason },
-        AddValidator { validator: T::AccountId },
-        RemoveValidator { validator: T::AccountId },
-        RewardMultiple { validators: BoundedVec<T::AccountId, T::MaxProposalActionBoundedVecSize>, amount: <T as pallet::Config>::Balance },
-    }
-
-    impl<T: Config + TypeInfo + fmt::Debug> Clone for ProposalAction<T> {
-        fn clone(&self) -> Self {
-            match self {
-                Self::Slash { validator, amount } => Self::Slash { validator: validator.clone(), amount: *amount },
-                Self::Reward { validator, amount } => Self::Reward { validator: validator.clone(), amount: *amount },
-                Self::Eject { validator, reason } => Self::Eject { validator: validator.clone(), reason: reason.clone() },
-                Self::AddValidator { validator } => Self::AddValidator { validator: validator.clone() },
-                Self::RemoveValidator { validator } => Self::RemoveValidator { validator: validator.clone() },
-                Self::RewardMultiple { validators, amount } => Self::RewardMultiple { validators: validators.clone(), amount: *amount },
-            }
-        }
-    }
-
-    impl<T: Config + TypeInfo + fmt::Debug> PartialEq for ProposalAction<T> {
-        fn eq(&self, other: &Self) -> bool {
-            match (self, other) {
-                (Self::Slash { validator: v1, amount: a1 }, Self::Slash { validator: v2, amount: a2 }) => v1 == v2 && a1 == a2,
-                (Self::Reward { validator: v1, amount: a1 }, Self::Reward { validator: v2, amount: a2 }) => v1 == v2 && a1 == a2,
-                (Self::Eject { validator: v1, reason: r1 }, Self::Eject { validator: v2, reason: r2 }) => v1 == v2 && r1 == r2,
-                (Self::AddValidator { validator: v1 }, Self::AddValidator { validator: v2 }) => v1 == v2,
-                (Self::RemoveValidator { validator: v1 }, Self::RemoveValidator { validator: v2 }) => v1 == v2,
-                (Self::RewardMultiple { validators: v1, amount: a1 }, Self::RewardMultiple { validators: v2, amount: a2 }) => v1 == v2 && a1 == a2,
-                _ => false,
-            }
-        }
-    }
-
-    impl<T: Config + TypeInfo + fmt::Debug> Eq for ProposalAction<T> {}
-
-    /// Governance proposal structure.
-    #[derive(Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
-    pub struct GovernanceProposal<T: Config + TypeInfo + fmt::Debug> { // <-- Change here
-        pub proposer: T::AccountId,
-        pub action: ProposalAction<T>,
-        pub status: ProposalStatus,
-        pub votes_for: u32,
-        pub votes_against: u32,
-    }
-
-    impl<T: Config + TypeInfo + fmt::Debug> Clone for GovernanceProposal<T> {
-        fn clone(&self) -> Self {
-            Self {
-                proposer: self.proposer.clone(),
-                action: self.action.clone(),
-                status: self.status.clone(),
-                votes_for: self.votes_for,
-                votes_against: self.votes_against,
-            }
-        }
-    }
-
-    impl<T: Config + TypeInfo + fmt::Debug> PartialEq for GovernanceProposal<T> {
-        fn eq(&self, other: &Self) -> bool {
-            self.proposer == other.proposer &&
-            self.action == other.action &&
-            self.status == other.status &&
-            self.votes_for == other.votes_for &&
-            self.votes_against == other.votes_against
-        }
-    }
-
-    impl<T: Config + TypeInfo + fmt::Debug> Eq for GovernanceProposal<T> {}
-
-    /// Status of a governance proposal.
-    #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, frame_support::__private::codec::DecodeWithMemTracking)]
-    pub enum ProposalStatus {
-        Pending,
-        Approved,
-        Rejected,
-        Executed,
-    }
-
     /// History of recent epochs for analytics and tracking.
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
     pub struct EpochHistory<T: Config> {
@@ -1752,7 +1660,7 @@ pub mod pallet {
     }
 
     #[pallet::config]
-    pub trait Config: frame_system::Config + pos::Config<Balance = <Self as pallet::Config>::Balance> + poi::Config + TypeInfo + fmt::Debug {
+    pub trait Config: frame_system::Config + pos::Config<Balance = <Self as pallet::Config>::Balance> + poi::Config + pallet_cbc_governance::Config<Balance = <Self as pallet::Config>::Balance> + TypeInfo + fmt::Debug {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         
         /// Interface to notify DVF of epoch transitions and weights
@@ -2696,81 +2604,6 @@ pub mod pallet {
     /// Default value is typically false for decentralized operation.
     /// 
     /// # Value: bool - true if governance mode is enabled, false for automated mode
-    #[pallet::storage]
-    #[pallet::getter(fn governance_mode_enabled)]
-    pub type GovernanceModeEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
-
-    /// Storage for governance proposals indexed by unique proposal ID.
-    /// 
-    /// Contains all governance proposals that have been submitted to the network,
-    /// including their current status, voting results, and proposed actions.
-    /// Proposals can include:
-    /// - Validator slashing actions
-    /// - Validator reward distributions
-    /// - Validator ejection from the network
-    /// - Validator addition to the network
-    /// - Multiple validator operations
-    /// 
-    /// Each proposal has a unique ID (generated sequentially) and contains:
-    /// - Proposer account
-    /// - Proposed action details
-    /// - Current status (Pending, Approved, Rejected, Executed)
-    /// - Vote counts (for and against)
-    /// 
-    /// Proposals are created through `submit_proposal` and voted on via `vote_proposal`.
-    /// Approved proposals can be executed through `execute_proposal`.
-    /// 
-    /// # Key: u32 - Unique proposal identifier
-    /// # Value: GovernanceProposal<T> - Complete proposal information and status
-    #[pallet::storage]
-    pub type Proposals<T: Config> = StorageMap<
-        _, Blake2_128Concat, u32, GovernanceProposal<T>, OptionQuery
-    >;
-
-    /// Counter for generating unique proposal IDs.
-    /// 
-    /// This value is incremented each time a new governance proposal is created,
-    /// ensuring that every proposal has a unique identifier. The counter starts
-    /// at 0 during genesis and increments indefinitely.
-    /// 
-    /// Used internally by the proposal system to:
-    /// - Generate unique IDs for new proposals
-    /// - Maintain proposal ordering and history
-    /// - Enable efficient proposal lookup and management
-    /// 
-    /// The ID is assigned when a proposal is submitted and never reused,
-    /// providing a permanent reference for each governance action.
-    /// 
-    /// # Value: u32 - Next available proposal ID (starts at 0, increments with each proposal)
-    #[pallet::storage]
-    #[pallet::getter(fn next_proposal_id)]
-    pub type NextProposalId<T: Config> = StorageValue<_, u32, ValueQuery>;
-
-    /// Tracking system for individual votes on governance proposals.
-    /// 
-    /// This double map records which validators have voted on which proposals
-    /// and their vote direction (for or against). Used to:
-    /// - Prevent double voting by the same validator
-    /// - Track voting participation rates
-    /// - Maintain transparency in governance decisions
-    /// - Enable vote auditing and verification
-    /// 
-    /// The boolean value indicates the vote direction:
-    /// - true: Vote in favor of the proposal
-    /// - false: Vote against the proposal
-    /// - None: Validator has not voted on this proposal
-    /// 
-    /// Votes are cast through the `vote_proposal` extrinsic and are immutable
-    /// once recorded to ensure governance integrity.
-    /// 
-    /// # Key1: u32 - Proposal ID
-    /// # Key2: T::AccountId - Validator account who voted
-    /// # Value: bool - Vote direction (true = for, false = against)
-    #[pallet::storage]
-    pub type ProposalVotes<T: Config> = StorageDoubleMap<
-        _, Blake2_128Concat, u32, Blake2_128Concat, T::AccountId, bool, OptionQuery
-    >;
-
     /// Queue of validator join/leave requests awaiting execution at epoch boundaries.
     /// 
     /// Validator set changes are not applied immediately but are queued and processed
@@ -3962,77 +3795,7 @@ pub mod pallet {
             author: T::AccountId,
         },
 
-        /// Emitted when governance mode is enabled or disabled.
-        /// 
-        /// Governance mode changes affect how the pallet operates:
-        /// - When enabled: Manual epoch transitions allowed, enhanced admin powers
-        /// - When disabled: Fully automated operation, reduced admin intervention
-        /// 
-        /// This event provides transparency about the current operational mode.
-        GovernanceModeToggled {
-            /// New governance mode state (true = enabled, false = disabled)
-            enabled: bool,
-        },
 
-        /// Emitted when a new governance proposal is submitted to the network.
-        /// 
-        /// Governance proposals enable decentralized decision-making for validator
-        /// management actions including slashing, rewards, ejections, and set changes.
-        /// This event marks the beginning of the proposal lifecycle.
-        ProposalSubmitted {
-            /// Unique identifier for the proposal
-            proposal_id: u32,
-            /// Account that submitted the proposal
-            proposer: T::AccountId,
-            /// Specific action being proposed (slash, reward, eject, etc.)
-            action: ProposalAction<T>,
-        },
-
-        /// Emitted when a governance proposal is executed after approval.
-        /// 
-        /// This event occurs when approved proposals are executed by authorized
-        /// accounts (typically root). It marks the completion of the governance
-        /// process and the implementation of the proposed changes.
-        ProposalExecuted {
-            /// Unique identifier of the executed proposal
-            proposal_id: u32,
-            /// Final status of the proposal after execution
-            status: ProposalStatus,
-        },
-
-        /// Emitted when a validator casts a vote on a governance proposal.
-        /// 
-        /// This event tracks individual voting participation in the governance
-        /// process, providing transparency about validator engagement in network
-        /// decision-making and enabling vote auditing.
-        ProposalVoted {
-            /// Unique identifier of the proposal being voted on
-            proposal_id: u32,
-            /// Validator account that cast the vote
-            voter: T::AccountId,
-            /// Vote direction (true = approve, false = reject)
-            approve: bool,
-        },
-
-        /// Emitted when a governance proposal receives sufficient approval votes.
-        /// 
-        /// This event occurs when a proposal reaches the required quorum and has
-        /// more approval votes than rejection votes. Approved proposals become
-        /// eligible for execution by authorized accounts.
-        ProposalPassed { 
-            /// Unique identifier of the approved proposal
-            proposal_id: u32 
-        },
-
-        /// Emitted when a governance proposal is rejected by validator votes.
-        /// 
-        /// This event occurs when a proposal reaches the required quorum but has
-        /// more rejection votes than approval votes. Rejected proposals cannot
-        /// be executed and are marked as failed.
-        ProposalRejected { 
-            /// Unique identifier of the rejected proposal
-            proposal_id: u32 
-        },
 
         /// Emitted when a validator requests to join the network.
         /// 
@@ -4295,21 +4058,7 @@ pub mod pallet {
             name: BoundedVec<u8, ConstU32<32>>,
         },
 
-        /// Emitted when a detailed governance proposal is created with description.
-        /// 
-        /// This enhanced proposal event includes additional context and description
-        /// information to help validators make informed voting decisions. It
-        /// supplements the basic ProposalSubmitted event with richer metadata.
-        ProposalCreated {
-            /// Unique identifier for the new proposal
-            proposal_id: u32,
-            /// Account that created the proposal
-            proposer: T::AccountId,
-            /// Specific action being proposed
-            action: ProposalAction<T>,
-            /// Human-readable description of the proposal
-            description: BoundedVec<u8, ConstU32<128>>,
-        },
+
 
         /// Emitted when validator scores are updated with detailed before/after information.
         /// 
@@ -5227,53 +4976,10 @@ pub mod pallet {
         NotEnoughValidators,
 
         /// The requested operation is not allowed when governance mode is enabled.
-        /// 
-        /// This error occurs when attempting operations that are restricted
-        /// during governance mode, such as:
-        /// - Automatic epoch transitions when manual control is enabled
-        /// - Certain administrative functions reserved for governance periods
-        /// 
-        /// Resolution: Disable governance mode or use appropriate governance functions.
         NotAllowedInGovernanceMode,
 
         /// The account is not registered as a validator in the network.
-        /// 
-        /// This error occurs when non-validator accounts attempt operations
-        /// that are restricted to registered validators, such as:
-        /// - Voting on governance proposals
-        /// - Submitting inference results
-        /// - Participating in validator-only functions
-        /// 
-        /// Resolution: Join the validator set before attempting validator operations.
         NotValidator,
-
-        /// The validator has already voted on the specified governance proposal.
-        /// 
-        /// This error prevents double-voting on governance proposals to maintain
-        /// the integrity of the voting process. Each validator can only vote
-        /// once per proposal, and votes cannot be changed after submission.
-        /// 
-        /// Resolution: Votes are final and cannot be modified after submission.
-        AlreadyVoted,
-
-        /// The governance proposal has not been approved by validator votes.
-        /// 
-        /// This error occurs when attempting to execute proposals that:
-        /// - Have not reached the required voting quorum
-        /// - Have more rejection votes than approval votes
-        /// - Are still in the pending voting phase
-        /// 
-        /// Resolution: Wait for sufficient approval votes before attempting execution.
-        ProposalNotApproved,
-
-        /// The governance proposal has already been executed and cannot be executed again.
-        /// 
-        /// This error prevents duplicate execution of governance proposals to
-        /// maintain system consistency. Once a proposal is executed, its
-        /// status is permanently marked as executed.
-        /// 
-        /// Resolution: Proposals can only be executed once after approval.
-        ProposalAlreadyExecuted,
 
         /// The provided score value is outside the valid range.
         /// 
@@ -5748,7 +5454,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             validator: T::AccountId,
         ) -> DispatchResult {
-            if GovernanceModeEnabled::<T>::get() {
+            if pallet_cbc_governance::GovernanceModeEnabled::<T>::get() {
                 ensure_root(origin)?;
             } else {
                 ensure_signed(origin)?;
@@ -5885,502 +5591,17 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Toggle governance mode (sudo-like).
-        #[pallet::call_index(3)]
-        #[pallet::weight(<T as Config>::WeightInfo::set_governance_mode())]
-        pub fn set_governance_mode(origin: OriginFor<T>, enabled: bool) -> DispatchResult {
-            ensure_root(origin)?;
-            GovernanceModeEnabled::<T>::put(enabled);
-            Self::deposit_event(Event::GovernanceModeToggled { enabled });
-            Ok(())
-        }
-
         /// Sudo: advance epoch manually (governance mode only).
         #[pallet::call_index(4)]
         #[pallet::weight(<T as Config>::WeightInfo::sudo_advance_epoch())]
         pub fn sudo_advance_epoch(origin: OriginFor<T>) -> DispatchResult {
             ensure_root(origin)?;
-            ensure!(GovernanceModeEnabled::<T>::get(), Error::<T>::NotAllowedInGovernanceMode);
+            ensure!(pallet_cbc_governance::GovernanceModeEnabled::<T>::get(), Error::<T>::NotAllowedInGovernanceMode);
             let _ = Self::handle_epoch_transition();
             Ok(())
         }
 
-        /// Submit a governance proposal (slash, reward, eject).
-        #[pallet::call_index(5)]
-        #[pallet::weight(<T as Config>::WeightInfo::submit_proposal())]
-        pub fn submit_proposal(
-            origin: OriginFor<T>,
-            action: ProposalAction<T>,
-            description: Option<BoundedVec<u8, ConstU32<128>>>,
-        ) -> DispatchResult {
-            let proposer = ensure_signed(origin)?;
-            
-            // Check rate limits before proceeding
-            let weight = <T as Config>::WeightInfo::submit_proposal();
-            if let Err((e, violation_opt)) = Self::check_rate_limits(&proposer, DispatchableType::SubmitProposal, weight) {
-                // Handle rate limit violation using the violation info
-                if let Some(violation) = violation_opt {
-                    let (operation_code, violation_type, current_count, limit) = match violation {
-                        RateLimitViolation::PerBlockLimitExceeded { current_count, limit, .. } => (0u8, 0u8, current_count, limit),
-                        RateLimitViolation::PerAccountLimitExceeded { current_count, limit, .. } => (0u8, 1u8, current_count, limit),
-                        RateLimitViolation::MinimumIntervalViolation { blocks_since_last, required_interval, .. } => (0u8, 2u8, blocks_since_last, required_interval),
-                        RateLimitViolation::WeightLimitExceeded { actual_weight, max_weight, .. } => (0u8, 3u8, (actual_weight / 1000) as u32, (max_weight / 1000) as u32),
-                    };
-                    
-                    Self::deposit_event(Event::RateLimitViolation {
-                        account: proposer,
-                        operation: operation_code,
-                        violation_type,
-                        current_count,
-                        limit,
-                    });
-                }
-                
-                return Err(e);
-            }
-            
-            // Check private chain governance restrictions
-            if Self::is_private_chain_mode() {
-                Self::validate_governance_in_private_mode(&proposer)?;
-                
-                // Also validate the target if it's a validator-specific action
-                match &action {
-                    ProposalAction::Slash { validator, .. } |
-                    ProposalAction::Reward { validator, .. } => {
-                        Self::validate_proposal_in_private_mode(&proposer, validator)?;
-                    },
-                    ProposalAction::Eject { validator, reason: _ } => {
-                        Self::validate_proposal_in_private_mode(&proposer, validator)?;
-                    },
-                    _ => {
-                        // For non-validator-specific actions, just check proposer
-                    }
-                }
-            }
-            
-            let proposal_id = NextProposalId::<T>::get();
-            let proposal = GovernanceProposal {
-                proposer: proposer.clone(),
-                action: action.clone(),
-                status: ProposalStatus::Pending,
-                votes_for: 0,
-                votes_against: 0,
-            };
-            Proposals::<T>::insert(proposal_id, proposal);
-            NextProposalId::<T>::put(proposal_id + 1);
-            Self::deposit_event(Event::ProposalSubmitted {
-                proposal_id,
-                proposer: proposer.clone(),
-                action: action.clone(),
-            });
-            
-            // Emit detailed proposal created event
-            Self::deposit_event(Event::ProposalCreated {
-                proposal_id,
-                proposer: proposer.clone(),
-                action,
-                description: description.unwrap_or_else(|| BoundedVec::truncate_from(b"No description provided".to_vec())),
-            });
-            
-            // Record the operation for rate limiting
-            Self::record_operation(&proposer, DispatchableType::SubmitProposal);
-            
-            Ok(())
-        }
 
-        /// Vote on a governance proposal.
-        #[pallet::call_index(6)]
-        #[pallet::weight(<T as Config>::WeightInfo::vote_proposal())]
-        pub fn vote_proposal(
-            origin: OriginFor<T>,
-            proposal_id: u32,
-            approve: bool,
-        ) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            
-            // Check rate limits before proceeding
-            let weight = <T as Config>::WeightInfo::vote_proposal();
-            if let Err((e, violation_opt)) = Self::check_rate_limits(&who, DispatchableType::VoteProposal, weight) {
-                // Handle rate limit violation using the violation info
-                if let Some(violation) = violation_opt {
-                    let (operation_code, violation_type, current_count, limit) = match violation {
-                        RateLimitViolation::PerBlockLimitExceeded { current_count, limit, .. } => (2u8, 0u8, current_count, limit),
-                        RateLimitViolation::PerAccountLimitExceeded { current_count, limit, .. } => (2u8, 1u8, current_count, limit),
-                        RateLimitViolation::MinimumIntervalViolation { blocks_since_last, required_interval, .. } => (2u8, 2u8, blocks_since_last, required_interval),
-                        RateLimitViolation::WeightLimitExceeded { actual_weight, max_weight, .. } => (2u8, 3u8, (actual_weight / 1000) as u32, (max_weight / 1000) as u32),
-                    };
-                    
-                    Self::deposit_event(Event::RateLimitViolation {
-                        account: who,
-                        operation: operation_code,
-                        violation_type,
-                        current_count,
-                        limit,
-                    });
-                }
-                
-                return Err(e);
-            }
-            Proposals::<T>::try_mutate_exists(proposal_id, |maybe_prop| {
-                let prop = maybe_prop.as_mut().ok_or(Error::<T>::ProposalNotApproved)?;
-                ensure!(matches!(prop.status, ProposalStatus::Pending), Error::<T>::ProposalAlreadyExecuted);
-                ensure!(!ProposalVotes::<T>::contains_key(proposal_id, &who), Error::<T>::AlreadyVoted);
-
-                if approve {
-                    prop.votes_for += 1;
-                } else {
-                    prop.votes_against += 1;
-                }
-                ProposalVotes::<T>::insert(proposal_id, &who, approve);
-                Self::deposit_event(Event::ProposalVoted {
-                    proposal_id,
-                    voter: who.clone(),
-                    approve,
-                });
-
-                // --- Quorum logic: require at least half of active validators to vote ---
-                let quorum = (ActiveValidators::<T>::get().len() as u32 + 1) / 2;
-                let total_votes = prop.votes_for + prop.votes_against;
-                if total_votes >= quorum {
-                    if prop.votes_for > prop.votes_against {
-                        prop.status = ProposalStatus::Approved;
-                        Self::deposit_event(Event::ProposalPassed { proposal_id });
-                    } else {
-                        prop.status = ProposalStatus::Rejected;
-                        Self::deposit_event(Event::ProposalRejected { proposal_id });
-                    }
-                }
-                Ok::<(), Error<T>>(())
-            })?;
-            
-            // Record the operation for rate limiting
-            Self::record_operation(&who, DispatchableType::VoteProposal);
-            
-            Ok(())
-        }
-
-        /// Execute an approved governance proposal (sudo only).
-        #[pallet::call_index(7)]
-        #[pallet::weight(<T as Config>::WeightInfo::execute_proposal())]
-        pub fn execute_proposal(
-            origin: OriginFor<T>,
-            proposal_id: u32,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            Proposals::<T>::try_mutate_exists(proposal_id, |maybe_prop| {
-                let prop = maybe_prop.as_mut().ok_or(Error::<T>::ProposalNotApproved)?;
-                ensure!(matches!(prop.status, ProposalStatus::Approved), Error::<T>::ProposalNotApproved);
-
-                // Execute action with proper implementation
-                match &prop.action {
-                    ProposalAction::Slash { validator, amount } => {
-                        // Implement actual slashing logic
-                        let _ = pos::Pallet::<T>::execute_slash_validator(validator, *amount);
-                    }
-                    ProposalAction::Reward { validator, amount } => {
-                        // Implement actual reward logic
-                        let _ = pos::Pallet::<T>::execute_reward_validator(validator, *amount);
-                    }
-                    ProposalAction::RewardMultiple { validators, amount } => {
-                        // Reward multiple validators with the same amount
-                        for validator in validators.iter() {
-                            let _ = pos::Pallet::<T>::execute_reward_validator(validator, *amount);
-                        }
-                        log::info!("Rewarded {} validators with amount {:?} each", validators.len(), amount);
-                    }
-                    ProposalAction::Eject { validator, reason } => {
-                        // Implement actual ejection logic
-                        let _ = Self::execute_eject_validator(validator, reason.clone());
-                    }
-                    ProposalAction::AddValidator { validator } => {
-                        // Add validator to the validator set
-                        let _ = Self::execute_add_validator(validator);
-                    }
-                    ProposalAction::RemoveValidator { validator } => {
-                        // Remove validator from the validator set
-                        let _ = Self::execute_remove_validator(validator);
-                    }
-                }
-                prop.status = ProposalStatus::Executed;
-                Self::deposit_event(Event::ProposalExecuted {
-                    proposal_id,
-                    status: prop.status.clone(),
-                });
-                Ok::<(), Error<T>>(())
-            })?;
-            Ok(())
-        }
-
-        /// Sudo propose to slash a validator.
-        #[pallet::call_index(8)]
-        #[pallet::weight(<T as Config>::WeightInfo::propose_slash_validator())]
-        pub fn propose_slash_validator(
-            origin: OriginFor<T>,
-            proposer: T::AccountId,
-            validator: T::AccountId,
-            amount: <T as pallet::Config>::Balance,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            let action = ProposalAction::Slash { validator, amount };
-            let proposal_id = NextProposalId::<T>::get();
-            let proposal = GovernanceProposal {
-                proposer: proposer.clone(),
-                action: action.clone(),
-                status: ProposalStatus::Pending,
-                votes_for: 0,
-                votes_against: 0,
-            };
-            Proposals::<T>::insert(proposal_id, proposal);
-            NextProposalId::<T>::put(proposal_id + 1);
-            Self::deposit_event(Event::ProposalSubmitted {
-                proposal_id,
-                proposer,
-                action,
-            });
-            Ok(())
-        }
-
-        /// Sudo propose to reward a validator.
-        #[pallet::call_index(9)]
-        #[pallet::weight(<T as Config>::WeightInfo::propose_reward_validator())]
-        pub fn propose_reward_validator(
-            origin: OriginFor<T>,
-            proposer: T::AccountId,
-            validator: T::AccountId,
-            amount: <T as pallet::Config>::Balance,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            let action = ProposalAction::Reward { validator, amount };
-            let proposal_id = NextProposalId::<T>::get();
-            let proposal = GovernanceProposal {
-                proposer: proposer.clone(),
-                action: action.clone(),
-                status: ProposalStatus::Pending,
-                votes_for: 0,
-                votes_against: 0,
-            };
-            Proposals::<T>::insert(proposal_id, proposal);
-            NextProposalId::<T>::put(proposal_id + 1);
-            Self::deposit_event(Event::ProposalSubmitted {
-                proposal_id,
-                proposer,
-                action,
-            });
-            Ok(())
-        }
-
-        /// Propose to reward a validator with the default reward amount
-        #[pallet::call_index(26)]
-        #[pallet::weight(<T as Config>::WeightInfo::propose_default_reward_validator())]
-        pub fn propose_default_reward_validator(
-            origin: OriginFor<T>,
-            proposer: T::AccountId,
-            validator: T::AccountId,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            let default_reward = T::ValidatorReward::get();
-            let action = ProposalAction::Reward { validator: validator.clone(), amount: default_reward };
-            let proposal_id = NextProposalId::<T>::get();
-            let proposal = GovernanceProposal {
-                proposer: proposer.clone(),
-                action: action.clone(),
-                status: ProposalStatus::Pending,
-                votes_for: 0,
-                votes_against: 0,
-            };
-            Proposals::<T>::insert(proposal_id, proposal);
-            NextProposalId::<T>::put(proposal_id + 1);
-            Self::deposit_event(Event::ProposalSubmitted {
-                proposal_id,
-                proposer,
-                action,
-            });
-            log::info!("Default reward proposal created for validator {:?} with amount {:?}", validator, default_reward);
-            Ok(())
-        }
-
-        /// Propose to reward multiple validators with the same amount
-        #[pallet::call_index(27)]
-        #[pallet::weight(<T as Config>::WeightInfo::propose_reward_multiple_validators(validators.len() as u32))]
-        pub fn propose_reward_multiple_validators(
-            origin: OriginFor<T>,
-            proposer: T::AccountId,
-            validators: Vec<T::AccountId>,
-            amount: <T as pallet::Config>::Balance,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            
-            // Validate validators list length
-            ensure!(
-                validators.len() <= MaxValidatorsOf::<T>::get() as usize,
-                Error::<T>::NotEnoughValidators
-            );
-            ensure!(!validators.is_empty(), Error::<T>::NotEnoughValidators);
-            
-            // Check weight bounds for validator iteration
-            let config = RateLimitConfigStorage::<T>::get();
-            let estimated_weight = validators.len() as u64 * 10_000; // Estimate 10k weight per validator validation
-            
-            if estimated_weight > config.max_proposal_processing_weight {
-                return Err(Error::<T>::WeightLimitExceeded.into());
-            }
-            
-            // Limit iterations to prevent unbounded loops
-            let max_iterations = config.max_loop_iterations.min(validators.len() as u32);
-            ensure!(
-                validators.len() <= max_iterations as usize,
-                Error::<T>::WeightLimitExceeded
-            );
-            
-            // Validate that all validators exist
-            for validator in validators.iter() {
-                ensure!(
-                    ValidatorStates::<T>::contains_key(validator),
-                    Error::<T>::ValidatorNotFound
-                );
-            }
-            
-            let bounded_validators = BoundedVec::try_from(validators.clone())
-                .map_err(|_| Error::<T>::NotEnoughValidators)?;
-            let action = ProposalAction::RewardMultiple { validators: bounded_validators, amount };
-            let proposal_id = NextProposalId::<T>::get();
-            let proposal = GovernanceProposal {
-                proposer: proposer.clone(),
-                action: action.clone(),
-                status: ProposalStatus::Pending,
-                votes_for: 0,
-                votes_against: 0,
-            };
-            Proposals::<T>::insert(proposal_id, proposal);
-            NextProposalId::<T>::put(proposal_id + 1);
-            Self::deposit_event(Event::ProposalSubmitted {
-                proposal_id,
-                proposer,
-                action,
-            });
-            log::info!("Multiple validator reward proposal created for {} validators with amount {:?} each", 
-                      validators.len(), amount);
-            Ok(())
-        }
-
-        /// Propose to reward multiple validators with the default reward amount
-        #[pallet::call_index(28)]
-        #[pallet::weight(<T as Config>::WeightInfo::propose_default_reward_multiple_validators())]
-        pub fn propose_default_reward_multiple_validators(
-            origin: OriginFor<T>,
-            proposer: T::AccountId,
-            validators: Vec<T::AccountId>,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            
-            // Validate validators list length
-            ensure!(
-                validators.len() <= MaxValidatorsOf::<T>::get() as usize,
-                Error::<T>::NotEnoughValidators
-            );
-            ensure!(!validators.is_empty(), Error::<T>::NotEnoughValidators);
-            
-            // Validate that all validators exist
-            for validator in validators.iter() {
-                ensure!(
-                    ValidatorStates::<T>::contains_key(validator),
-                    Error::<T>::ValidatorNotFound
-                );
-            }
-            
-            let default_reward = T::ValidatorReward::get();
-            let bounded_validators = BoundedVec::try_from(validators.clone())
-                .map_err(|_| Error::<T>::NotEnoughValidators)?;
-            let action = ProposalAction::RewardMultiple { validators: bounded_validators, amount: default_reward };
-            let proposal_id = NextProposalId::<T>::get();
-            let proposal = GovernanceProposal {
-                proposer: proposer.clone(),
-                action: action.clone(),
-                status: ProposalStatus::Pending,
-                votes_for: 0,
-                votes_against: 0,
-            };
-            Proposals::<T>::insert(proposal_id, proposal);
-            NextProposalId::<T>::put(proposal_id + 1);
-            Self::deposit_event(Event::ProposalSubmitted {
-                proposal_id,
-                proposer,
-                action,
-            });
-            log::info!("Default multiple validator reward proposal created for {} validators with amount {:?} each", 
-                      validators.len(), default_reward);
-            Ok(())
-        }
-
-        /// Propose to reward all active validators with the default reward amount
-        #[pallet::call_index(29)]
-        #[pallet::weight(<T as Config>::WeightInfo::propose_reward_all_active_validators())]
-        pub fn propose_reward_all_active_validators(
-            origin: OriginFor<T>,
-            proposer: T::AccountId,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            
-            let active_validators = ActiveValidators::<T>::get();
-            ensure!(!active_validators.is_empty(), Error::<T>::NotEnoughValidators);
-            
-            let default_reward = T::ValidatorReward::get();
-            let bounded_validators = BoundedVec::try_from(active_validators.clone().into_inner())
-                .map_err(|_| Error::<T>::NotEnoughValidators)?;
-            let action = ProposalAction::RewardMultiple { 
-                validators: bounded_validators, 
-                amount: default_reward 
-            };
-            let proposal_id = NextProposalId::<T>::get();
-            let proposal = GovernanceProposal {
-                proposer: proposer.clone(),
-                action: action.clone(),
-                status: ProposalStatus::Pending,
-                votes_for: 0,
-                votes_against: 0,
-            };
-            Proposals::<T>::insert(proposal_id, proposal);
-            NextProposalId::<T>::put(proposal_id + 1);
-            Self::deposit_event(Event::ProposalSubmitted {
-                proposal_id,
-                proposer,
-                action,
-            });
-            log::info!("Reward proposal created for all {} active validators with amount {:?} each", 
-                      active_validators.len(), default_reward);
-            Ok(())
-        }
-
-        // direct slashing calls moved to pallet-cbc-pos.
-
-        /// Sudo propose to eject a validator.
-        #[pallet::call_index(10)]
-        #[pallet::weight(<T as Config>::WeightInfo::propose_eject_validator())]
-        pub fn propose_eject_validator(
-            origin: OriginFor<T>,
-            proposer: T::AccountId,
-            validator: T::AccountId,
-            reason: EjectionReason,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            let action = ProposalAction::Eject { validator, reason: reason.clone() };
-            let proposal_id = NextProposalId::<T>::get();
-            let proposal = GovernanceProposal {
-                proposer: proposer.clone(),
-                action: action.clone(),
-                status: ProposalStatus::Pending,
-                votes_for: 0,
-                votes_against: 0,
-            };
-            Proposals::<T>::insert(proposal_id, proposal);
-            NextProposalId::<T>::put(proposal_id + 1);
-            Self::deposit_event(Event::ProposalSubmitted {
-                proposal_id,
-                proposer,
-                action,
-            });
-            Ok(())
-        }
 
         // join_validators moved to pallet-cbc-dvf.
 
@@ -7888,7 +7109,7 @@ pub mod pallet {
         /// Handle the logic for transitioning to a new epoch.
         pub fn handle_epoch_transition() -> Weight {
             // Always allow automatic epoch transitions, but behavior differs based on governance mode
-            let governance_mode = GovernanceModeEnabled::<T>::get();
+            let governance_mode = pallet_cbc_governance::GovernanceModeEnabled::<T>::get();
             let current_epoch = Self::current_epoch();
             let next_epoch = current_epoch.saturating_add(1);
             CurrentEpoch::<T>::put(next_epoch);
@@ -9293,7 +8514,7 @@ pub mod pallet {
                 Self::deposit_event(Event::EpochBoundaryDetected {
                     block_number,
                     epoch: current_epoch,
-                    governance_mode: Self::governance_mode_enabled(),
+                    governance_mode: pallet_cbc_governance::GovernanceModeEnabled::<T>::get(),
                 });
                 
                 // Handle comprehensive epoch transition
@@ -9346,7 +8567,7 @@ pub mod pallet {
         /// # Returns
         /// - `Ok(())`: Operation is allowed
         /// - `Err((Error, ViolationInfo))`: Operation violates rate limits with violation details
-        fn check_rate_limits(
+        pub fn check_rate_limits_internal(
             account: &T::AccountId,
             operation: DispatchableType,
             weight: Weight,
@@ -9578,7 +8799,7 @@ pub mod pallet {
         /// # Parameters
         /// - `account`: Account that performed the operation
         /// - `operation`: Type of operation that was performed
-        fn record_operation(account: &T::AccountId, operation: DispatchableType) {
+        pub fn record_operation_internal(account: &T::AccountId, operation: DispatchableType) {
             let current_block = frame_system::Pallet::<T>::block_number().saturated_into::<u32>();
 
             // Update per-block counter
@@ -9990,7 +9211,7 @@ pub mod pallet {
             };
             
             // Calculate governance activity (simplified - count active proposals)
-            let governance_activity_level = Self::next_proposal_id(); // Approximation
+            let governance_activity_level = pallet_cbc_governance::NextProposalId::<T>::get(); // Approximation
             
             // Create performance indicators
             let indicators = SystemPerformanceIndicators {
@@ -11203,7 +10424,7 @@ pub mod pallet {
 
         /// Generate validator proposals based on combined PoS and PoI scores
         /// This function evaluates all validators and suggests actions based on their performance
-        pub fn generate_validator_proposals() -> Vec<(T::AccountId, ProposalAction<T>, u64, u64, u64)> {
+        pub fn generate_validator_proposals() -> Vec<(T::AccountId, ProposalAction<T::AccountId, <T as pallet::Config>::Balance>, u64, u64, u64)> {
             let mut proposals = Vec::new();
             let validators = Self::validator_set();
             let pos_weight = Self::pos_weight();
@@ -11479,7 +10700,7 @@ pub mod pallet {
         // execute_slash_validator, execute_slash_validator_with_reason, distribute_rewards, execute_reward_validator, and execute_reward_validator_with_reason moved to pallet-cbc-pos.
 
         /// Execute ejection action on a validator
-        fn execute_eject_validator(validator: &T::AccountId, reason: EjectionReason) -> DispatchResult {
+        pub fn execute_eject_validator(validator: &T::AccountId, reason: EjectionReason) -> DispatchResult {
             pos::Pallet::<T>::force_eject_validator(validator)?;
 
             Self::deposit_event(Event::ValidatorEjected {
@@ -11491,7 +10712,7 @@ pub mod pallet {
         }
 
         /// Execute add validator action
-        fn execute_add_validator(validator: &T::AccountId) -> DispatchResult {
+        pub fn execute_add_validator(validator: &T::AccountId) -> DispatchResult {
             // Check if validator already exists in the validator set
             let mut validator_set = ValidatorSet::<T>::get();
             ensure!(
@@ -11571,7 +10792,7 @@ pub mod pallet {
         }
 
         /// Execute remove validator action
-        fn execute_remove_validator(validator: &T::AccountId) -> DispatchResult {
+        pub fn execute_remove_validator(validator: &T::AccountId) -> DispatchResult {
             pos::Pallet::<T>::force_eject_validator(validator)?;
 
             Self::deposit_event(Event::ValidatorRemoved { validator: validator.clone() });
@@ -11700,7 +10921,7 @@ pub mod pallet {
 
         /// Get governance mode status (for runtime API).
         pub fn get_governance_mode() -> bool {
-            Self::governance_mode_enabled()
+            pallet_cbc_governance::GovernanceModeEnabled::<T>::get()
         }
 
         /// Get validators sorted by their final weighted score (highest first).
@@ -11720,17 +10941,7 @@ pub mod pallet {
             validators_with_scores
         }
 
-        /// Get proposal details by ID (for runtime API).
-        pub fn get_proposal_details(proposal_id: u32) -> Option<GovernanceProposal<T>> {
-            Proposals::<T>::get(proposal_id)
-        }
 
-        /// Get all active proposals (for runtime API).
-        pub fn get_active_proposals() -> Vec<(u32, GovernanceProposal<T>)> {
-            Proposals::<T>::iter()
-                .filter(|(_, proposal)| proposal.status == ProposalStatus::Pending)
-                .collect()
-        }
 
         /// Get validator's current consensus weights contribution (for runtime API).
         pub fn get_validator_consensus_contribution(validator: &T::AccountId) -> Option<(u64, u64, u64)> {
@@ -11771,7 +10982,7 @@ pub mod pallet {
             let mut total_slashed = <T as pallet::Config>::Balance::from(0u32);
 
             // Iterate through all executed proposals from the epoch to calculate economic impact
-            for (_, proposal) in Proposals::<T>::iter() {
+            for (_, proposal) in pallet_cbc_governance::Proposals::<T>::iter() {
                 // Only count executed proposals from the target epoch
                 if proposal.status == ProposalStatus::Executed {
                     // Check if proposal was executed in the target epoch by examining when it was last updated
@@ -11879,7 +11090,7 @@ pub mod pallet {
             let _min_active_validators = MinActiveValidatorsOf::<T>::get() as usize;
             
             // Don't generate proposals if governance mode is disabled
-            if !Self::governance_mode_enabled() {
+            if !pallet_cbc_governance::GovernanceModeEnabled::<T>::get() {
                 return;
             }
             
@@ -12120,7 +11331,6 @@ pub mod pallet {
                 },
                 _ => {
                     // Create governance proposal for manual/slashing-based ejections
-                    let proposal_id = NextProposalId::<T>::get();
                     let system_account = T::AccountId::decode(&mut &[0u8; 32][..]).unwrap_or_else(|_| {
                         // Fallback: use the first validator as proposer
                         Self::active_validators().get(0).cloned().unwrap_or_else(|| {
@@ -12155,22 +11365,7 @@ pub mod pallet {
                         reason: reason.clone()
                     };
                     
-                    let proposal = GovernanceProposal {
-                        proposer: system_account,
-                        action,
-                        status: ProposalStatus::Pending,
-                        votes_for: 0,
-                        votes_against: 0,
-                    };
-                    
-                    Proposals::<T>::insert(proposal_id, &proposal);
-                    NextProposalId::<T>::put(proposal_id + 1);
-                    
-                    Self::deposit_event(Event::ProposalSubmitted {
-                        proposal_id,
-                        proposer: proposal.proposer,
-                        action: proposal.action,
-                    });
+                    pallet_cbc_governance::Pallet::<T>::submit_proposal_internal(system_account, action, None)?;
                     
                     log::info!("DCF: Created governance eject proposal for validator {:?} (reason: {:?})", validator, reason);
                     Ok(())
@@ -12185,7 +11380,7 @@ pub mod pallet {
             let total_validators = Self::validator_set().len();
             let active_validators = Self::active_validators().len();
             let current_epoch = Self::current_epoch();
-            let governance_mode = Self::governance_mode_enabled();
+            let governance_mode = pallet_cbc_governance::GovernanceModeEnabled::<T>::get();
             
             // Calculate average validator score
             let validator_scores: Vec<u64> = ValidatorSet::<T>::get()
@@ -12290,7 +11485,7 @@ pub mod pallet {
             let mut processed_count = 0u32;
             
             // Get all pending proposals
-            let pending_proposals: Vec<_> = Proposals::<T>::iter()
+            let pending_proposals: Vec<_> = pallet_cbc_governance::Proposals::<T>::iter()
                 .filter(|(_, proposal)| proposal.status == ProposalStatus::Pending)
                 .collect();
             
@@ -12298,7 +11493,7 @@ pub mod pallet {
                 // For epoch boundary, we can auto-approve certain types of proposals
                 if Self::should_auto_approve_proposal(&proposal) {
                     // Auto-approve and execute
-                    Proposals::<T>::try_mutate(proposal_id, |maybe_prop| {
+                    pallet_cbc_governance::Proposals::<T>::try_mutate(proposal_id, |maybe_prop| {
                         if let Some(prop) = maybe_prop {
                             prop.status = ProposalStatus::Approved;
                             
@@ -12463,7 +11658,7 @@ pub mod pallet {
         }
 
         /// Determine if a proposal should be auto-approved at epoch boundary.
-        fn should_auto_approve_proposal(proposal: &GovernanceProposal<T>) -> bool {
+        fn should_auto_approve_proposal(proposal: &GovernanceProposal<T::AccountId, ProposalAction<T::AccountId, <T as pallet::Config>::Balance>>) -> bool {
             match &proposal.action {
                 ProposalAction::AddValidator { .. } => {
                     // Auto-approve validator additions if they meet criteria
@@ -13849,56 +13044,7 @@ pub enum ScoreBoostReason {
     ManualBoost,
 }
 
-/// Reasons for ejecting validators from the network.
-/// 
-/// Validator ejection is a serious disciplinary action that removes validators
-/// from the network for failing to meet minimum standards or engaging in
-/// harmful behavior. Ejected validators must typically wait for cooldown
-/// periods and demonstrate improvement before rejoining.
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Serialize, Deserialize, frame_support::__private::codec::DecodeWithMemTracking)]
-pub enum EjectionReason {
-    /// Validator's performance score fell below the minimum threshold.
-    /// 
-    /// This ejection occurs when validators consistently underperform and
-    /// their scores drop below the network's minimum acceptable level.
-    /// It protects network quality by removing poor performers.
-    ScoreBelowThreshold,
 
-    /// Validator reached the maximum allowed slashing count.
-    /// 
-    /// This ejection occurs when validators accumulate too many slashing
-    /// events, indicating chronic misbehavior or poor performance that
-    /// poses a risk to network security and reliability.
-    MaxSlashingReached,
-
-    /// Manual ejection through governance proposal or administrative action.
-    /// 
-    /// This ejection allows for discretionary removal of validators for
-    /// reasons that may not be automatically detected, such as off-chain
-    /// misbehavior or community violations.
-    ManualEjection,
-
-    /// Ejection due to validator set size exceeding maximum limits.
-    /// 
-    /// This ejection occurs when the validator set grows beyond the maximum
-    /// allowed size and lower-performing validators are removed to maintain
-    /// network performance and consensus efficiency.
-    ExcessValidators,
-
-    /// Ejection due to repeated misbehavior reports.
-    /// 
-    /// This ejection occurs when validators accumulate multiple misbehavior
-    /// reports, indicating a pattern of harmful or malicious behavior that
-    /// threatens network security and integrity.
-    RepeatedMisbehavior,
-
-    /// Validator's stake fell below the minimum required amount.
-    /// 
-    /// This ejection occurs when validators can no longer maintain the
-    /// minimum stake requirement, either due to slashing, withdrawals,
-    /// or changes in minimum stake requirements.
-    InsufficientStake,
-}
 
 
 /// Reasons for slashing validator stakes as punishment for violations.
@@ -13954,6 +13100,64 @@ pub enum ValidatorStatus {
 }
 
 
+
+
+impl<T: Config> pallet_cbc_governance::ProposalExecutor<T::AccountId, <T as pallet::Config>::Balance> for Pallet<T> {
+    fn slash_validator(validator: &T::AccountId, amount: <T as pallet::Config>::Balance) -> DispatchResult {
+        pos::Pallet::<T>::execute_slash_validator(validator, amount)
+    }
+    fn reward_validator(validator: &T::AccountId, amount: <T as pallet::Config>::Balance) -> DispatchResult {
+        pos::Pallet::<T>::execute_reward_validator(validator, amount)
+    }
+    fn eject_validator(validator: &T::AccountId, reason: EjectionReason) -> DispatchResult {
+        Self::execute_eject_validator(validator, reason)
+    }
+    fn add_validator(validator: &T::AccountId) -> DispatchResult {
+        Self::execute_add_validator(validator)
+    }
+    fn remove_validator(validator: &T::AccountId) -> DispatchResult {
+        Self::execute_remove_validator(validator)
+    }
+}
+
+impl<T: Config> pallet_cbc_governance::ValidatorProvider<T::AccountId, Weight> for Pallet<T> {
+    fn active_validators() -> Vec<T::AccountId> {
+        Self::active_validators().to_vec()
+    }
+    fn is_private_chain_mode() -> bool {
+        Self::is_private_chain_mode()
+    }
+    fn validate_governance_in_private_mode(proposer: &T::AccountId) -> DispatchResult {
+        Self::validate_governance_in_private_mode(proposer).map_err(Into::into)
+    }
+    fn validate_proposal_in_private_mode(proposer: &T::AccountId, target: &T::AccountId) -> DispatchResult {
+        Self::validate_proposal_in_private_mode(proposer, target).map_err(Into::into)
+    }
+    fn check_rate_limits(proposer: &T::AccountId, op_type: u8, weight: Weight) -> Result<(), (DispatchError, Option<(u8, u8, u32, u32)>)> {
+        let disp_type = match op_type {
+            5u8 => DispatchableType::SubmitProposal,
+            6u8 => DispatchableType::VoteProposal,
+            _ => DispatchableType::SubmitProposal,
+        };
+        Self::check_rate_limits_internal(proposer, disp_type, weight).map_err(|(e, violation)| {
+            let violation_opt = violation.map(|v| match v {
+                RateLimitViolation::PerBlockLimitExceeded { current_count, limit, .. } => (op_type, 0u8, current_count, limit),
+                RateLimitViolation::PerAccountLimitExceeded { current_count, limit, .. } => (op_type, 1u8, current_count, limit),
+                RateLimitViolation::MinimumIntervalViolation { blocks_since_last, required_interval, .. } => (op_type, 2u8, blocks_since_last, required_interval),
+                RateLimitViolation::WeightLimitExceeded { actual_weight, max_weight, .. } => (op_type, 3u8, (actual_weight / 1000) as u32, (max_weight / 1000) as u32),
+            });
+            (e, violation_opt)
+        })
+    }
+    fn record_operation(proposer: &T::AccountId, op_type: u8) {
+        let disp_type = match op_type {
+            5u8 => DispatchableType::SubmitProposal,
+            6u8 => DispatchableType::VoteProposal,
+            _ => DispatchableType::SubmitProposal,
+        };
+        Self::record_operation_internal(proposer, disp_type);
+    }
+}
 
 // --- Tests Module --- //
 #[cfg(test)]

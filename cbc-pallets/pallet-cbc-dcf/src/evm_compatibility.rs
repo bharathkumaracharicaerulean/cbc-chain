@@ -109,11 +109,8 @@ impl EvmEventValidator {
             Event::ValidatorLeft { .. } => 2,
             Event::ValidatorEjected { .. } => 5,
             Event::EpochStarted { .. } => 6,
-            Event::ProposalSubmitted { .. } => 7,
-            Event::ProposalExecuted { .. } => 8,
             Event::ValidatorScoreUpdated { .. } => 9,
             Event::ConsensusWeightsUpdated { .. } => 10,
-            Event::GovernanceModeToggled { .. } => 11,
             Event::ValidatorMisbehaviorReported { .. } => 12,
             Event::InvariantViolationsDetected { .. } => 13,
             Event::PrivateChainModeEnabled { .. } => 14,
@@ -143,26 +140,6 @@ impl EvmEventValidator {
             },
             Event::EpochStarted { epoch, .. } => {
                 let encoded = epoch.encode();
-                if encoded.len() <= 32 {
-                    let bounded_field = BoundedVec::try_from(encoded).unwrap_or_default();
-                    let _ = indexed_fields.try_push(bounded_field);
-                }
-            },
-            Event::ProposalSubmitted { proposal_id, proposer, .. } => {
-                let id_encoded = proposal_id.encode();
-                if id_encoded.len() <= 32 {
-                    let bounded_field = BoundedVec::try_from(id_encoded).unwrap_or_default();
-                    let _ = indexed_fields.try_push(bounded_field);
-                }
-                
-                let proposer_encoded = proposer.encode();
-                if proposer_encoded.len() <= 32 && indexed_fields.len() < 3 {
-                    let bounded_field = BoundedVec::try_from(proposer_encoded).unwrap_or_default();
-                    let _ = indexed_fields.try_push(bounded_field);
-                }
-            },
-            Event::ProposalExecuted { proposal_id, .. } => {
-                let encoded = proposal_id.encode();
                 if encoded.len() <= 32 {
                     let bounded_field = BoundedVec::try_from(encoded).unwrap_or_default();
                     let _ = indexed_fields.try_push(bounded_field);

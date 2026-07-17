@@ -24,6 +24,7 @@ sp-io.workspace = true
 pallet-timestamp = { workspace = true, default-features = false }
 pallet-cbc-pos = { path = "../pallet-cbc-pos", default-features = false }
 pallet-cbc-poi = { path = "../pallet-cbc-poi", default-features = false }
+pallet-cbc-governance = { path = "../pallet-cbc-governance", default-features = false }
 serde.workspace = true
 log = { version = "0.4", default-features = false }
 
@@ -50,6 +51,7 @@ std = [
 	"pallet-timestamp/std",
 	"pallet-cbc-pos/std",
 	"pallet-cbc-poi/std",
+	"pallet-cbc-governance/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

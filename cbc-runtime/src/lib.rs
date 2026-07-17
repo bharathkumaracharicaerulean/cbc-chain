@@ -227,7 +227,11 @@ mod runtime {
 
     #[runtime::pallet_index(10)]
     pub type Dvf = pallet_cbc_dvf::Pallet<Runtime>;
+
+    #[runtime::pallet_index(11)]
+    pub type Governance = pallet_cbc_governance;
 }
 pub use pallet_cbc_poi;
 pub use pallet_cbc_pos;
+pub use pallet_cbc_governance;
 pub use pallet_todo;
