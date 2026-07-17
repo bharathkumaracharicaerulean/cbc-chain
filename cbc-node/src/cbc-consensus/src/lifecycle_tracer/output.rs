@@ -90,17 +90,85 @@ impl TraceOutput for FileOutput {
     }
 }
 
+use once_cell::sync::Lazy;
+use prometheus::Opts;
+
+static LIFECYCLE_STEP_COUNTER: Lazy<prometheus::Counter> = Lazy::new(|| {
+    prometheus::register_counter!(
+        Opts::new("cbc_lifecycle_step_total", "Total lifecycle trace steps processed")
+    ).unwrap()
+});
+
+static LIFECYCLE_LAST_STEP: Lazy<prometheus::Gauge> = Lazy::new(|| {
+    prometheus::register_gauge!(
+        Opts::new("cbc_lifecycle_last_step", "Last step number reached in node lifecycle")
+    ).unwrap()
+});
+
+static LIFECYCLE_ERRORS: Lazy<prometheus::Counter> = Lazy::new(|| {
+    prometheus::register_counter!(
+        Opts::new("cbc_lifecycle_errors_total", "Total error traces processed by lifecycle tracer")
+    ).unwrap()
+});
+
+static LIFECYCLE_MILESTONES: Lazy<prometheus::Counter> = Lazy::new(|| {
+    prometheus::register_counter!(
+        Opts::new("cbc_lifecycle_milestones_total", "Total milestone traces processed")
+    ).unwrap()
+});
+
 /// Metrics output implementation (placeholder for Prometheus integration)
 pub struct MetricsOutput;
 
 impl TraceOutput for MetricsOutput {
-    fn write(&self, _formatted_entry: &str) -> Result<(), OutputError> {
-        // TODO: Implement Prometheus metrics integration
-        // For now, this is a no-op placeholder
-        // In a full implementation, this would:
-        // 1. Parse the trace entry
-        // 2. Extract relevant metrics (step number, timing, etc.)
-        // 3. Update Prometheus counters/gauges/histograms
+    fn write(&self, formatted_entry: &str) -> Result<(), OutputError> {
+        // 1. Try to parse the trace entry as JSON first
+        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(formatted_entry) {
+            LIFECYCLE_STEP_COUNTER.inc();
+            if let Some(entry_type) = entry.get("type").and_then(|v| v.as_str()) {
+                match entry_type {
+                    "step" => {
+                        if let Some(step) = entry.get("step").and_then(|v| v.as_u64()) {
+                            LIFECYCLE_LAST_STEP.set(step as f64);
+                        }
+                    }
+                    "milestone" => {
+                        LIFECYCLE_MILESTONES.inc();
+                    }
+                    "error" => {
+                        LIFECYCLE_ERRORS.inc();
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            // Fallback: simple text parsing for human-readable format
+            LIFECYCLE_STEP_COUNTER.inc();
+            if formatted_entry.contains("🎯 MILESTONE") {
+                LIFECYCLE_MILESTONES.inc();
+            } else if formatted_entry.contains("❌ ERROR") {
+                LIFECYCLE_ERRORS.inc();
+                // Extract step number: e.g. "ERROR at STEP 5:"
+                if let Some(idx) = formatted_entry.find("ERROR at STEP ") {
+                    let start = idx + "ERROR at STEP ".len();
+                    if let Some(end) = formatted_entry[start..].find(':') {
+                        if let Ok(step) = formatted_entry[start..start+end].trim().parse::<f64>() {
+                            LIFECYCLE_LAST_STEP.set(step);
+                        }
+                    }
+                }
+            } else if formatted_entry.contains("[CBC-TRACE]") {
+                // Extract step number: e.g. "[CBC-TRACE] 5."
+                if let Some(idx) = formatted_entry.find("[CBC-TRACE] ") {
+                    let start = idx + "[CBC-TRACE] ".len();
+                    if let Some(end) = formatted_entry[start..].find('.') {
+                        if let Ok(step) = formatted_entry[start..start+end].trim().parse::<f64>() {
+                            LIFECYCLE_LAST_STEP.set(step);
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 

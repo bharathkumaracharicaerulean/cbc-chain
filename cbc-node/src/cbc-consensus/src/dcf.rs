@@ -327,13 +327,15 @@ where
                     let _trust_score = profile.trust_score;
                     // Get actual metrics from PoS pallet and validator state
                     let pos_score = self.get_pos_score(&account_id);
-                    let (participation_rate, missed_blocks) = self.get_validator_participation_metrics(&account_id);
+                    let (part_rate_str, missed_str) = self.get_validator_participation_metrics(&account_id)
+                        .map(|(p, m)| (p.to_string(), m.to_string()))
+                        .unwrap_or_else(|| ("N/A".to_string(), "N/A".to_string()));
                     
                     
                     // Log detailed metrics periodically
                     if self.current_slot % self.params.detailed_logging_interval == 0 {
                         info!("DCF: Validator {:?} - Combined: {} (PoS: {} @{}%, PoI: {} @{}%), Participation: {}%, Missed: {}", 
-                              account_id, combined_score, pos_score, pos_weight, poi_score, poi_weight, participation_rate, missed_blocks);
+                              account_id, combined_score, pos_score, pos_weight, poi_score, poi_weight, part_rate_str, missed_str);
                     }
                     
                     // Check for score imbalances and log warnings
@@ -406,7 +408,7 @@ where
     }
 
     /// Get validator participation rate and missed blocks
-    fn get_validator_participation_metrics(&self, validator: &AccountId) -> (u32, u32) {
+    fn get_validator_participation_metrics(&self, validator: &AccountId) -> Option<(u32, u32)> {
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
         
@@ -422,15 +424,11 @@ where
                     // produced or missed any block yet.
                     100
                 };
-                (participation_rate, missed)
+                Some((participation_rate, missed))
             }
             Err(e) => {
                 debug!("Failed to get participation metrics for validator {:?}: {:?}", validator, e);
-                // FB-10: Return u32::MAX as a sentinel meaning "data unavailable".
-                // Callers that use this value for health checks or scoring should treat
-                // u32::MAX as "skip / no data" rather than 0% participation.
-                // TODO: refactor return type to Option<(u32,u32)> in the metrics refactor.
-                (u32::MAX, u32::MAX)
+                None
             }
         }
     }
@@ -528,10 +526,11 @@ where
             let trust_score = profile.trust_score;
             let uptime = self.calculate_validator_uptime(&author_account_id);
             let inference_count = profile.inference_count;
-            let (participation_rate, _) = self.get_validator_participation_metrics(&author_account_id);
-            let (_, missed_blocks) = self.get_validator_participation_metrics(&author_account_id);
+            let (part_rate_str, missed_str) = self.get_validator_participation_metrics(&author_account_id)
+                .map(|(p, m)| (p.to_string(), m.to_string()))
+                .unwrap_or_else(|| ("N/A".to_string(), "N/A".to_string()));
             debug!("DCF: Validator profile - Combined: {}, PoS: {}, PoI: {}, Trust: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
-                  combined_score, pos_score, poi_score, trust_score, uptime, inference_count, participation_rate, missed_blocks);
+                  combined_score, pos_score, poi_score, trust_score, uptime, inference_count, part_rate_str, missed_str);
             
             // Used to have Trace 7 here, removed to avoid duplicate since traces 7 and 8 are handled dynamically in the pallet.
         }
@@ -752,7 +751,9 @@ where
             let trust_score = profile.trust_score;
             let uptime = self.calculate_validator_uptime(author);
             let inference_count = profile.inference_count;
-            let (participation_rate, missed_blocks) = self.get_validator_participation_metrics(author);
+            let (part_rate_str, missed_str) = self.get_validator_participation_metrics(author)
+                .map(|(p, m)| (p.to_string(), m.to_string()))
+                .unwrap_or_else(|| ("N/A".to_string(), "N/A".to_string()));
             
             // STEP 54: Author scores updated
             let mut metadata = TraceMetadata::new();
@@ -764,20 +765,20 @@ where
             metadata.custom.insert("trust_score".to_string(), trust_score.to_string());
             metadata.custom.insert("uptime".to_string(), uptime.to_string());
             metadata.custom.insert("inference_count".to_string(), inference_count.to_string());
-            metadata.custom.insert("participation_rate".to_string(), participation_rate.to_string());
-            metadata.custom.insert("missed_blocks".to_string(), missed_blocks.to_string());
+            metadata.custom.insert("participation_rate".to_string(), part_rate_str.clone());
+            metadata.custom.insert("missed_blocks".to_string(), missed_str.clone());
             LifecycleTracer::global().trace_step(
                 54,
                 "dcf.rs::update_consensus_state",
                 &format!("Author scores updated - PoS: {}, PoI: {}, Combined: {}, Trust: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
-                         pos_score, poi_score, combined_score, trust_score, uptime, inference_count, participation_rate, missed_blocks),
+                         pos_score, poi_score, combined_score, trust_score, uptime, inference_count, part_rate_str, missed_str),
                 Some(metadata),
             );
             
             // Log the successful block production
             debug!("Block #{} produced successfully by {:?}", block_number, author);
             debug!("Validator stats - Combined: {}, PoS: {}, PoI: {}, Trust: {}, Uptime: {}, Inferences: {}, Participation: {}%, Missed: {}", 
-                  combined_score, pos_score, poi_score, trust_score, uptime, inference_count, participation_rate, missed_blocks);
+                  combined_score, pos_score, poi_score, trust_score, uptime, inference_count, part_rate_str, missed_str);
         }
         
         // Log consensus state update
@@ -840,9 +841,17 @@ where
                     let combined_score = profile.final_score;
                     let _trust_score = profile.trust_score;
                     let _inference_count = profile.inference_count;
-                    let (participation_rate, missed_blocks) = self.get_validator_participation_metrics(validator);
+                    let is_healthy = if let Some((part_rate, missed)) = self.get_validator_participation_metrics(validator) {
+                        combined_score >= self.params.healthy_validator_score as u64
+                            && part_rate >= (self.params.healthy_participation_rate.saturating_sub(10))
+                            && missed <= self.params.max_missed_blocks
+                    } else {
+                        // FB-10: Skip / no data handles as healthy if score is fine to avoid false penalty
+                        combined_score >= self.params.healthy_validator_score as u64
+                    };
+                    
                     total_score += combined_score;
-                    if combined_score >= self.params.healthy_validator_score as u64 && participation_rate >= (self.params.healthy_participation_rate - 10) && missed_blocks <= self.params.max_missed_blocks {
+                    if is_healthy {
                         healthy_validators += 1;
                     }
                 }
@@ -904,10 +913,12 @@ where
             let combined_score = profile.final_score;
             let pos_score = self.get_pos_score(author);
             let poi_score = profile.poi_score as u64;
-            let (participation_rate, missed_blocks) = self.get_validator_participation_metrics(author);
+            let (part_rate_str, missed_str) = self.get_validator_participation_metrics(author)
+                .map(|(p, m)| (p.to_string(), m.to_string()))
+                .unwrap_or_else(|| ("N/A".to_string(), "N/A".to_string()));
             
             info!("PoS+PoI: Validator {:?} missed block - Combined: {}, PoS: {}, PoI: {}, Participation: {}%, Total Missed: {}", 
-                  author, combined_score, pos_score, poi_score, participation_rate, missed_blocks);
+                  author, combined_score, pos_score, poi_score, part_rate_str, missed_str);
         }
         
         Ok(())

@@ -1,702 +1,152 @@
-# CBC Runtime
+# CBC Runtime (`cbc-runtime`)
 
-The CBC Runtime is the core blockchain implementation for the CBC (Caerulean ByteChains) protocol. It implements a sophisticated hybrid consensus mechanism combining Proof of Stake (PoS) and Proof of Inference (PoI) through the Dynamic Consensus Framework (DCF), providing a secure, scalable, and efficient blockchain platform.
+[![Rust Compile & Build](https://github.com/bharathkumarachari/cbc-chain/actions/workflows/rust.yml/badge.svg)](https://github.com/bharathkumarachari/cbc-chain/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Overview
+<p align="center">
+  <img src="../docs/assets/logo.png" alt="CBC Logo" width="200" />
+</p>
 
-The CBC Runtime serves as the heart of the CBC blockchain, defining the state transition function and business logic. Built on Substrate's FRAME framework, it integrates multiple custom pallets to deliver a unique consensus mechanism that balances security, performance, and decentralization through hybrid PoS/PoI validation.
+The core state transition function (STF) of the **Caerulean ByteChains (CBC)** blockchain. It compiles to both a native binary and an optimized on-chain WebAssembly (WASM) blob, enabling forkless runtime upgrades and deterministic execution of the hybrid PoS/PoI consensus rules.
 
-## Key Features
+---
 
-- **Hybrid Consensus**: Advanced PoS/PoI consensus through Dynamic Consensus Framework
-- **Comprehensive Runtime APIs**: 13+ specialized APIs for blockchain interaction
-- **Advanced Validator Management**: On-chain validator registration, scoring, and management
-- **Trust Score System**: Sophisticated trust calculation combining PoS and PoI metrics
-- **Epoch-based Operations**: Time-based validator rotation and reward distribution
-- **Comprehensive Testing**: Full test coverage including integration and API tests
-- **Benchmarking Support**: Performance testing and optimization capabilities
-- **WASM Compilation**: Optimized WebAssembly runtime for on-chain execution
-- **Metadata Hash Extension**: Runtime upgrade compatibility verification
-- **Try-Runtime Support**: Safe runtime upgrade testing and validation
+## Table of Contents
+1. [Pallet Architecture](#pallet-architecture)
+2. [Runtime APIs & Interfaces](#runtime-apis-&-interfaces)
+3. [Configuration Constants](#configuration-constants)
+4. [WASM Compilation & On-chain Upgrades](#wasm-compilation-&-on-chain-upgrades)
+5. [Development, Testing & Benchmarking](#development-testing-&-benchmarking)
 
-## Project Structure
+---
+
+## Pallet Architecture
+
+The runtime integrates core system pallets with custom business-logic pallets designed specifically for CBC's validator management and governance system.
 
 ```
-cbc-runtime/
-├── Cargo.toml                    # Project dependencies and feature configuration
-├── build.rs                      # Build script for WASM binary generation
-├── src/
-│   ├── apis.rs                   # Runtime APIs exposed to external systems
-│   ├── benchmark_tests.rs        # Benchmarking infrastructure tests
-│   ├── benchmarks.rs             # Runtime benchmarking logic and implementations
-│   ├── configs/                  # Runtime configuration modules
-│   │   ├── constants.rs          # Runtime constants and parameters
-│   │   ├── mod.rs                # Configuration module definitions
-│   │   └── weights.rs            # Weight calculations for extrinsics
-│   ├── genesis_config_presets.rs # Genesis block configuration presets
-│   ├── lib.rs                    # Main runtime implementation and pallet configuration
-│   ├── mock.rs                   # Mock runtime for testing
-│   ├── runtime_integration_tests.rs # Runtime-level integration tests
-│   └── tests.rs                  # Comprehensive runtime tests
-├── tests/
-│   └── runtime_api_tests.rs      # Runtime API validation tests
-└── README.md                     # This documentation file
++-----------------------------------------------------------+
+|                     Runtime Executive                     |
++-----------------------------+-----------------------------+
+                              |
+     +------------------------+------------------------+
+     | (System Infrastructure)                         | (Custom CBC Pallets)
+     v                                                 v
++------------------+                             +------------------+
+|   frame_system   |                             |  pallet_cbc_pos  |
+| pallet_balances  |                             |  pallet_cbc_poi  |
+| pallet_timestamp |                             |  pallet_cbc_dcf  |
+|   pallet_sudo    |                             |  pallet_cbc_dvf  |
++------------------+                             |  cbc_governance  |
+                                                 +------------------+
 ```
 
-## Key Files
+### 1. Core System Pallets
+* **System (`frame_system`)**: Coordinates accounts, block header transitions, events, metadata, and execution invariants.
+* **Balances (`pallet_balances`)**: Manages the native token ledger, free and reserved funds, and transfers.
+* **Timestamp (`pallet_timestamp`)**: Enforces temporal consistency and exposes clock time to consensus.
+* **Transaction Payment (`pallet_transaction_payment`)**: Computes transaction execution fees dynamically based on weight and length.
+* **Sudo (`pallet_sudo`)**: Provides administrative authority for upgrades and testing bootstrapping.
 
-### Core Runtime Files
+### 2. Custom CBC Pallets
+* **PoS Pallet (`pallet_cbc_pos`)**: Implements staking operations, locked deposit registries, validator application validation, performance rating updates, and reward boosts for top-performing nodes.
+* **PoI Pallet (`pallet_cbc_poi`)**: Manages computational Proof of Inference workloads. Tracks ML result hash submissions, coordinates the 35-block challenge validation window, and scores nodes on inference validation speed and accuracy.
+* **DCF Pallet (`pallet_cbc_dcf`)**: The Dynamic Consensus Framework core. Computes combined trust scores (65% PoS + 35% PoI), maintains active validator rosters, tracks block production metrics, and controls epoch slot boundaries.
+* **DVF Pallet (`pallet_cbc_dvf`)**: The Dynamic Voting Framework core. It manages on-chain block finality transitions, aggregates validator signatures, validates voting round transitions, and stores the canonical finalized block header state.
+* **Governance Pallet (`pallet_cbc_governance`)**: Implements decentralized proposal submission, voting mechanics, and execution callbacks for validator actions (e.g. slashing, ejection, additions, and removals). Decoupled from consensus internals via interfaces.
 
-#### `Cargo.toml`
-- Comprehensive project configuration with 40+ dependencies
-- Feature flags for std, runtime-benchmarks, try-runtime, and metadata-hash
-- WASM compilation support with substrate-wasm-builder
-- Development and build dependencies for testing and compilation
+---
 
-#### `build.rs`
-- Advanced build script for WASM runtime generation
-- Handles compilation flags and feature toggles
-- Ensures proper WASM optimization for on-chain deployment
-- Supports metadata hash generation for upgrade compatibility
+## Runtime APIs & Interfaces
 
-#### `src/lib.rs`
-- Main runtime implementation with complete pallet integration
-- Defines runtime version, constants, and executive configuration
-- Configures all FRAME pallets (System, Balances, Timestamp, etc.)
-- Implements custom CBC pallets (DCF, PoS, PoI)
-- Sets up transaction processing and fee calculation
-- Defines opaque types for blocks and extrinsics
+The runtime exposes key system operations and metrics to external nodes and clients through runtime API macros.
 
-### API and Integration Files
+### Standard APIs
+- `Core`: Exposes standard block execution (`execute_block`) and runtime version identification functions.
+- `Metadata`: Exposes compile-time metadata schema.
+- `BlockBuilder`: Used by block authors to assemble inherents and apply extrinsics.
+- `TaggedTransactionQueue`: Used by transaction pools to validate signatures and nonces.
+- `SessionKeys`: Handles cryptographic key generation and decryption for validators.
 
-#### `src/apis.rs`
-- Comprehensive Runtime APIs (13+ endpoints) exposed to external systems
-- **Core APIs**: Version, metadata, block execution, transaction validation
-- **DCF APIs**: Validator management, epoch handling, consensus state
-- **PoS APIs**: Validator scoring, stake management, performance tracking
-- **PoI APIs**: Inference validation, challenge handling, result verification
-- **System APIs**: Block authorship, trust scores, validator profiles
-- Used by RPC servers, CLI tools, and external applications
+### Custom CBC APIs
+* **`PosApi`**: Fetches validator scores, stake locks, slash records, and statuses.
+* **`PoiApi`**: Exposes latest inference results, confidence indexes, challenge durations, and operational states.
+* **`DcfApi`**: Exposes active validator sets, current epoch numbers, author schedules, consensus weights, and epoch transition validators.
+* **`DvfApi`**: Exposes DVF finalized block indices, accumulated vote weights, and round indexes.
 
-#### `src/benchmarks.rs`
-- Runtime benchmarking logic for performance optimization
-- Measures execution time and resource usage of runtime operations
-- Provides weight calculations for transaction fee estimation
-- Supports automated benchmark generation for all pallets
+---
 
-### Testing Infrastructure
+## Configuration Constants
 
-#### `src/tests.rs`
-- Comprehensive runtime integration tests
-- Cross-pallet interaction validation
-- End-to-end workflow testing
-- Runtime state consistency verification
+Primary parameters are defined in [configs/constants.rs](file:///home/bharat/projects/cbc-chain/cbc-runtime/src/configs/constants.rs) and [configs/mod.rs](file:///home/bharat/projects/cbc-chain/cbc-runtime/src/configs/mod.rs).
 
-#### `src/runtime_integration_tests.rs`
-- Runtime-level integration tests for complete system validation
-- Pallet integration verification
-- Runtime constant validation
-- System initialization testing
+### 1. Staking & Monetary Metrics
+* **Token Unit (`UNIT`)**: $1\text{ CBC} = 10^{12}\text{ Planck}$.
+* **Existential Deposit**: $10^{9}\text{ Planck}$ (Minimum token quantity required to prevent state account cleanup).
+* **Block Target Time**: 6 seconds (6000ms).
 
-#### `src/benchmark_tests.rs`
-- Benchmarking infrastructure validation tests
-- Performance testing for all custom pallets
-- Benchmark execution verification
-- Resource usage validation
+### 2. Consensus & Epoch Boundaries
+* **Epoch Length**: 600 slots (approx. 1 hour).
+* **Validator Count Bounds**: Minimum: 4 validators, Maximum: 100 validators.
+* **Default Score Weights**: 65% Staking (PoS), 35% Computational (PoI).
+* **Governance Quorum**: 50% validator vote requirement for proposal actions.
 
-#### `src/mock.rs`
-- Mock runtime implementation for testing
-- Test account creation and funding utilities
-- Simplified runtime configuration for unit tests
-- Test environment setup and management
+---
 
-#### `tests/runtime_api_tests.rs`
-- Comprehensive Runtime API validation tests
-- API signature and type safety verification
-- Return value validation for all 13+ APIs
-- Integration testing with external tools
+## WASM Compilation & On-chain Upgrades
 
-### Configuration Files
+Because the chain stores the WASM execution blob directly in state (`:code`), the blockchain can undergo forkless runtime upgrades.
 
-#### `src/configs/constants.rs`
-- Runtime constants and parameters
-- Block time, slot duration, and epoch configuration
-- Balance parameters and existential deposits
-- Consensus-specific constants
-
-#### `src/configs/weights.rs`
-- Extrinsic weight calculations for fee estimation
-- Performance-based weight assignments
-- Resource usage optimization
-- Benchmark-derived weight values
-
-#### `src/configs/mod.rs`
-- Configuration module organization
-- Parameter validation and defaults
-- Runtime configuration management
-
-#### `src/genesis_config_presets.rs`
-- Genesis block configuration presets for different networks
-- Initial validator set configuration
-- Initial balance distribution
-- PoS/PoI parameter initialization
-- DCF consensus configuration
-
-## Runtime Features
-
-### Advanced Consensus Mechanism
-- **Hybrid PoS/PoI Consensus**: Combines staking with computational inference validation
-- **Dynamic Consensus Framework (DCF)**: Real-time consensus parameter adjustment
-- **Trust Score System**: Sophisticated scoring combining 65% PoS and 35% PoI weights
-- **Validator Performance Tracking**: Comprehensive metrics for block production and validation
-- **Epoch-based Operations**: Time-based validator rotation and reward distribution
-- **Slashing Protection**: Advanced slashing mechanisms for malicious behavior
-
-### Comprehensive Runtime APIs (13+ Endpoints)
-
-#### Core System APIs
-- **Runtime Version**: Version information and compatibility checking
-- **Block Execution**: Block processing and state transition validation
-- **Transaction Validation**: Comprehensive transaction verification
-- **Metadata Access**: Runtime metadata for external tool integration
-
-#### DCF Consensus APIs
-- **Current Epoch**: Real-time epoch information and transitions
-- **Validator Profiles**: Comprehensive validator information and statistics
-- **Expected Author**: Block author prediction and scheduling
-- **Validator Set Management**: Active validator tracking and rotation
-
-#### PoS (Proof of Stake) APIs
-- **Validator Scoring**: Performance-based validator scoring
-- **Stake Management**: Validator stake tracking and updates
-- **Reward Distribution**: Automated reward calculation and distribution
-- **Validator Status**: Real-time validator state monitoring
-
-#### PoI (Proof of Inference) APIs
-- **Inference Validation**: Computational work verification
-- **Challenge Management**: Challenge creation and resolution
-- **Result Verification**: On-chain inference result validation
-- **Performance Metrics**: Inference-based performance tracking
-
-### Advanced Transaction Processing
-- **Weight-based Fee Calculation**: Dynamic fee calculation based on resource usage
-- **Multi-signature Support**: Advanced signature schemes and validation
-- **Transaction Priority**: Priority-based transaction ordering
-- **Batch Processing**: Efficient batch transaction execution
-- **Fee Estimation**: Accurate fee prediction for transactions
-
-### Security and Validation Features
-- **Secure Key Management**: Ed25519 cryptographic key support
-- **Block Time Enforcement**: Consistent 6-second block times
-- **Balance Protection**: Existential deposit and balance validation
-- **Consensus Security**: Multi-layered consensus validation
-- **Runtime Upgrade Safety**: Safe runtime upgrade mechanisms with try-runtime
-
-## Building the Runtime
-
-### Basic Build Commands
-
+### 1. Compiling the WASM Binary
+Use standard release parameters to compile the optimized WASM image:
 ```bash
-# Build native runtime
-cargo build
-
-# Build optimized release version
-cargo build --release
-
-# Build WASM runtime for on-chain deployment
 cargo build --release --target wasm32-unknown-unknown
-
-# Build with all features enabled
-cargo build --all-features
 ```
+The optimized compiled artifact will be generated at:
+`target/release/wbuild/cbc-runtime/cbc_runtime.wasm`
 
-### Advanced Build Options
-
+### 2. Testing Upgrades with `try-runtime`
+Simulate the on-chain upgrade process against live chain states to catch storage migration errors or logic failures before deploying:
 ```bash
-# Build with specific features
-cargo build --features runtime-benchmarks
-cargo build --features try-runtime
-cargo build --features metadata-hash
+# Build node with try-runtime capability enabled
+cargo build --release --features try-runtime
 
-# Build for on-chain release (optimized)
-cargo build --features on-chain-release-build --release --target wasm32-unknown-unknown
-
-# Build with metadata hash for upgrade compatibility
-cargo build --features metadata-hash --release
-```
-
-### Feature Flags
-
-#### Core Features
-- **`std`** (default): Standard library support for native execution
-  ```bash
-  cargo build --features std
-  ```
-
-- **`runtime-benchmarks`**: Enables runtime benchmarking infrastructure
-  ```bash
-  cargo build --features runtime-benchmarks
-  ```
-
-- **`try-runtime`**: Enables try-runtime for safe upgrade testing
-  ```bash
-  cargo build --features try-runtime
-  ```
-
-#### Advanced Features
-- **`metadata-hash`**: Enables metadata hashing for upgrade compatibility
-  ```bash
-  cargo build --features metadata-hash
-  ```
-
-- **`on-chain-release-build`**: Optimized build for on-chain deployment
-  ```bash
-  cargo build --features on-chain-release-build
-  ```
-
-### WASM Build with All Features
-```bash
-# Complete WASM build with all features
-cargo build --release \
-  --features runtime-benchmarks,try-runtime,metadata-hash \
-  --target wasm32-unknown-unknown
-
-# Production WASM build
-cargo build --release \
-  --features on-chain-release-build \
-  --target wasm32-unknown-unknown
-```
-
-### Build Verification
-
-```bash
-# Check build artifacts
-ls -la target/release/wbuild/cbc-runtime/
-
-# Verify WASM binary
-file target/release/wbuild/cbc-runtime/cbc_runtime.wasm
-
-# Check runtime version
-cargo run -- --version
-```
-
-## Runtime Configuration
-
-### Runtime Version and Constants
-
-The runtime version is defined in `src/lib.rs` and includes:
-
-```rust
-pub const VERSION: RuntimeVersion = RuntimeVersion {
-    spec_name: create_runtime_str!("cbc-runtime"),
-    impl_name: create_runtime_str!("cbc-runtime"),
-    authoring_version: 1,
-    spec_version: 1,
-    impl_version: 1,
-    apis: RUNTIME_API_VERSIONS,
-    transaction_version: 1,
-    state_version: 1,
-};
-```
-
-### Block and Time Parameters
-
-- **Block Time**: 6 seconds (6000 milliseconds)
-- **Slot Duration**: 6 seconds for consensus timing
-- **Block Hash Count**: 2400 blocks (4 hours of history)
-- **Maximum Block Weight**: Optimized for transaction throughput
-- **Maximum Block Length**: Configurable based on network capacity
-
-### Balance and Economic Parameters
-
-```rust
-// Base monetary units
-pub const UNIT: Balance = 1_000_000_000_000;           // 1 CBC token
-pub const MILLIUNIT: Balance = 1_000_000_000;          // 0.001 CBC
-pub const MICROUNIT: Balance = 1_000_000;              // 0.000001 CBC
-
-// Economic parameters
-pub const EXISTENTIAL_DEPOSIT: Balance = MILLIUNIT;    // Minimum account balance
-pub const DOLLARS: Balance = UNIT;                     // 1 CBC = 1 DOLLAR equivalent
-```
-
-### Consensus Parameters
-
-```rust
-// DCF Configuration
-pub const EPOCH_DURATION: u32 = 600;                   // 600 slots per epoch (1 hour)
-pub const MIN_VALIDATORS: u32 = 4;                     // Minimum validator count
-pub const MAX_VALIDATORS: u32 = 100;                   // Maximum validator count
-
-// Trust Score Weights
-pub const POS_WEIGHT: u64 = 65;                        // 65% weight for PoS
-pub const POI_WEIGHT: u64 = 35;                        // 35% weight for PoI
-```
-
-### Check Runtime Version
-
-```bash
-# Check version in source code
-grep -A 10 "pub const VERSION" src/lib.rs
-
-# Check version from built node
-./target/release/cbc-node --version
-
-# Query runtime version via RPC
-curl -X POST -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"state_getRuntimeVersion","params":[],"id":1}' \
-  http://localhost:9944
-```
-
-## Pallets
-
-The runtime integrates a comprehensive set of pallets for complete blockchain functionality:
-
-### Core Substrate Pallets
-
-#### 1. **System (`frame_system`)**
-   - **Purpose**: Fundamental blockchain system management
-   - **Features**: Account management, block execution, event handling
-   - **APIs**: Block hash, account info, event storage
-   - **Configuration**: 2400 block hash count, custom account data
-
-#### 2. **Timestamp (`pallet_timestamp`)**
-   - **Purpose**: Block timestamp management and time-dependent logic
-   - **Features**: Consistent 6-second block times, time-based operations
-   - **APIs**: Current timestamp, minimum period validation
-   - **Integration**: Used by consensus for slot timing
-
-#### 3. **Balances (`pallet_balances`)**
-   - **Purpose**: Account balance management and token transfers
-   - **Features**: Free/reserved balance tracking, existential deposits
-   - **APIs**: Balance queries, transfer operations, account existence
-   - **Configuration**: 1 MILLIUNIT existential deposit, dust handling
-
-#### 4. **Transaction Payment (`pallet_transaction_payment`)**
-   - **Purpose**: Transaction fee handling and weight-based pricing
-   - **Features**: Dynamic fee calculation, tip support, fee estimation
-   - **APIs**: Fee calculation, payment info, next fee multiplier
-   - **Integration**: Weight-based fees with length and complexity factors
-
-#### 5. **Sudo (`pallet_sudo`)**
-   - **Purpose**: Administrative operations and runtime upgrades
-   - **Features**: Superuser access, emergency interventions, governance
-   - **APIs**: Sudo key management, privileged operations
-   - **Security**: Restricted to designated sudo account
-
-### Custom CBC Pallets
-
-#### 6. **Pallet CBC PoI (`pallet_cbc_poi`)**
-   - **Purpose**: Proof of Inference implementation and validation
-   - **Features**: 
-     - Inference result submission and validation
-     - Challenge creation and resolution system
-     - On-chain computational work verification
-     - Performance-based scoring for validators
-   - **APIs**: Submit inference, create challenges, validate results
-   - **Integration**: Provides 35% weight in trust score calculation
-
-#### 7. **Pallet CBC PoS (`pallet_cbc_pos`)**
-   - **Purpose**: Proof of Stake implementation and validator management
-   - **Features**:
-     - Validator registration and stake management
-     - Performance score tracking and updates
-     - Stake-based reward distribution
-     - Validator status monitoring (Active/Inactive/Slashed)
-   - **APIs**: Register validator, submit scores, query performance
-   - **Integration**: Provides 65% weight in trust score calculation
-
-#### 8. **Pallet CBC DCF (`pallet_cbc_dcf`)**
-   - **Purpose**: Dynamic Consensus Framework - core consensus coordination
-   - **Features**:
-     - Hybrid PoS/PoI consensus coordination
-     - Validator set management and rotation
-     - Epoch-based operations and transitions
-     - Trust score calculation and validation
-     - Governance mechanisms for consensus parameters
-   - **APIs**: 
-     - Validator management (join/leave validators)
-     - Epoch information and transitions
-     - Trust score calculations
-     - Validator profiles and statistics
-     - Block authorship tracking
-   - **Integration**: Central coordinator for all consensus operations
-
-### Pallet Integration and Dependencies
-
-```rust
-// Pallet dependency graph
-System ← Timestamp ← Balances ← TransactionPayment
-                              ↑
-                         CBC Pallets
-                    (PoS, PoI, DCF) ← Sudo
-```
-
-### Runtime Executive Configuration
-
-The runtime uses FRAME Executive to coordinate all pallets:
-
-```rust
-pub type Executive = frame_executive::Executive<
-    Runtime,
-    Block,
-    frame_system::ChainContext<Runtime>,
-    Runtime,
-    AllPalletsWithSystem,
->;
-```
-
-## Security Considerations
-
-### Cryptographic Security
-1. **Key Management**: Secure Ed25519 cryptographic keys for all operations
-2. **Signature Verification**: Multi-signature support with robust validation
-3. **Hash Functions**: Blake2 256-bit hashing for all critical operations
-4. **Randomness**: Secure randomness generation for consensus operations
-
-### Consensus Security
-1. **Hybrid Validation**: Combined PoS/PoI prevents single-point-of-failure attacks
-2. **Slashing Mechanisms**: Economic penalties for malicious validator behavior
-3. **Validator Rotation**: Regular validator set rotation prevents centralization
-4. **Trust Score Validation**: Multi-factor trust calculation prevents gaming
-
-### Runtime Security
-1. **Weight-based Fees**: Prevents DoS attacks through resource pricing
-2. **Existential Deposits**: Prevents dust attacks and state bloat
-3. **Transaction Validation**: Multi-layer transaction verification
-4. **Safe Arithmetic**: Overflow protection in all mathematical operations
-
-### Upgrade Security
-1. **Try-Runtime**: Safe runtime upgrade testing before deployment
-2. **Metadata Hash**: Compatibility verification for runtime upgrades
-3. **Version Management**: Strict version control and compatibility checking
-4. **Rollback Capability**: Safe rollback mechanisms for failed upgrades
-
-## Performance Optimization
-
-### Runtime Performance
-- **WASM Optimization**: Optimized WebAssembly compilation for on-chain execution
-- **Weight Calculation**: Accurate resource usage measurement for fee calculation
-- **Parallel Processing**: Multi-threaded transaction validation where possible
-- **Memory Management**: Efficient memory usage in no-std environment
-
-### Storage Optimization
-- **State Pruning**: Automatic pruning of old state data
-- **Compact Encoding**: SCALE codec for efficient data serialization
-- **Storage Layouts**: Optimized storage layouts for frequently accessed data
-- **Caching**: Strategic caching of frequently used runtime data
-
-### Network Optimization
-- **Block Size**: Optimized block size for network propagation
-- **Transaction Priority**: Priority-based transaction ordering
-- **Batch Processing**: Efficient batch transaction processing
-- **Compression**: Data compression for network communication
-
-## Deployment and Operations
-
-### Production Deployment
-
-```bash
-# Build production runtime
-cargo build --release --features on-chain-release-build
-
-# Generate WASM for on-chain deployment
-cargo build --release \
-  --features on-chain-release-build \
-  --target wasm32-unknown-unknown
-
-# Verify WASM binary
-ls -la target/release/wbuild/cbc-runtime/cbc_runtime.wasm
-```
-
-### Runtime Upgrade Process
-
-1. **Development**: Implement changes and test thoroughly
-2. **Testing**: Use try-runtime for upgrade validation
-3. **Staging**: Deploy to testnet for integration testing
-4. **Production**: Deploy via governance or sudo (if available)
-
-```bash
-# Test upgrade with try-runtime
+# Run migration simulation
 ./target/release/cbc-node try-runtime \
   --runtime ./target/release/wbuild/cbc-runtime/cbc_runtime.wasm \
   on-runtime-upgrade live --uri ws://localhost:9944
 ```
 
-### Monitoring and Maintenance
+---
 
-- **Runtime Version**: Monitor runtime version across network
-- **Performance Metrics**: Track transaction throughput and block times
-- **Validator Health**: Monitor validator performance and participation
-- **Storage Growth**: Monitor state size and implement pruning as needed
+## Development, Testing & Benchmarking
 
-## Related Documentation
-
-- [CBC Node Documentation](../cbc-node/README.md) - Complete node setup and operation
-- [CBC Consensus Documentation](../cbc-node/src/cbc-consensus/README.md) - Consensus mechanism details
-- [DCF Pallet Documentation](../cbc-pallets/pallet-cbc-dcf/README.md) - DCF pallet implementation
-- [Testing Guide](../docs/TESTING_GUIDE.md) - Comprehensive testing documentation
-- [Node Architecture](../docs/node-architecture.md) - Overall system architecture
-- [Developer Onboarding](../docs/developer-onboarding.md) - Getting started guide
-
-## Contributing
-
-### Development Workflow
-1. Fork the repository and create a feature branch
-2. Implement changes with comprehensive tests
-3. Run full test suite and benchmarks
-4. Update documentation as needed
-5. Submit pull request with detailed description
-
-### Code Standards
-- Follow Rust best practices and idioms
-- Maintain comprehensive test coverage
-- Document all public APIs and complex logic
-- Use consistent naming conventions
-- Optimize for both performance and readability
-
-## Development and Testing
-
-### Testing Infrastructure
-
-The runtime includes comprehensive testing at multiple levels:
-
-#### Unit Tests
+### 1. Unit & Integration Testing
+Run the runtime test suite, including API validation and cross-pallet integration tests:
 ```bash
-# Run all runtime tests
-cargo test
+# Run unit and integration tests
+cargo test -p cbc-runtime
 
-# Run specific test modules
-cargo test tests::runtime_integration_tests
-cargo test mock::test_runtime_setup
-cargo test benchmark_tests::test_dcf_benchmarks
-
-# Run with output for debugging
-cargo test -- --nocapture
-```
-
-#### Integration Tests
-```bash
-# Run runtime API tests
+# Run external runtime API integration tests
 cargo test --test runtime_api_tests
 
-# Run cross-pallet integration tests
-cargo test runtime_integration_tests
-
-# Run benchmarking tests
-cargo test --features runtime-benchmarks benchmark_tests
+# Run tests with stdout capturing disabled
+cargo test -p cbc-runtime -- --nocapture
 ```
 
-#### Test Coverage
-
-The test suite provides comprehensive coverage:
-
-- **Runtime Integration Tests** (`src/tests.rs`)
-  - Cross-pallet interaction validation
-  - End-to-end workflow testing
-  - Runtime state consistency verification
-  - Validator lifecycle testing
-
-- **Runtime API Tests** (`tests/runtime_api_tests.rs`)
-  - All 13+ Runtime API endpoint validation
-  - API signature and type safety verification
-  - Return value validation and consistency
-  - External tool integration testing
-
-- **Benchmark Tests** (`src/benchmark_tests.rs`)
-  - Benchmarking infrastructure validation
-  - Performance testing for all custom pallets
-  - Resource usage validation
-  - Weight calculation verification
-
-- **Mock Runtime Tests** (`src/mock.rs`)
-  - Simplified runtime for unit testing
-  - Test environment setup and management
-  - Account creation and funding utilities
-
-### Benchmarking
-
-#### Runtime Benchmarking
+### 2. Benchmarking
+Accurate extrinsic weights are computed using the runtime benchmarking features:
 ```bash
-# Enable benchmarking features
-cargo build --features runtime-benchmarks
+# Compile node with benchmarking flags
+cargo build --release --features runtime-benchmarks
 
-# Run pallet benchmarks
-cargo test --features runtime-benchmarks benchmarks
-
-# Run specific pallet benchmarks
+# Run benchmarks for pallet-cbc-dcf
 ./target/release/cbc-node benchmark pallet \
   --pallet pallet_cbc_dcf \
   --extrinsic "*" \
   --steps 50 \
-  --repeat 20
+  --repeat 20 \
+  --output ./cbc-pallets/pallet-cbc-dcf/src/weights.rs
 ```
-
-#### Performance Testing
-```bash
-# Run overhead benchmarks
-./target/release/cbc-node benchmark overhead \
-  --chain dev \
-  --execution wasm \
-  --wasm-execution compiled
-
-# Run machine benchmarks
-./target/release/cbc-node benchmark machine \
-  --chain dev
-```
-
-### Try-Runtime for Safe Upgrades
-
-```bash
-# Build with try-runtime support
-cargo build --features try-runtime
-
-# Test runtime upgrade
-./target/release/cbc-node try-runtime \
-  --runtime ./target/release/wbuild/cbc-runtime/cbc_runtime.wasm \
-  on-runtime-upgrade \
-  live \
-  --uri ws://localhost:9944
-
-# Dry run runtime upgrade
-./target/release/cbc-node try-runtime \
-  --runtime ./target/release/wbuild/cbc-runtime/cbc_runtime.wasm \
-  on-runtime-upgrade \
-  snap \
-  --snapshot snapshot.json
-```
-
-### Development Tools
-
-#### Code Quality
-```bash
-# Format code
-cargo fmt
-
-# Run clippy lints
-cargo clippy --all-features
-
-# Check for unused dependencies
-cargo machete
-```
-
-#### Documentation
-```bash
-# Generate documentation
-cargo doc --open
-
-# Generate documentation with private items
-cargo doc --document-private-items --open
-```
-
-#### WASM Analysis
-```bash
-# Analyze WASM binary size
-wasm-opt --print-stack-ir target/release/wbuild/cbc-runtime/cbc_runtime.wasm
-
-# Validate WASM binary
-wasm-validate target/release/wbuild/cbc-runtime/cbc_runtime.wasm
-```
-
-
-
+> [!IMPORTANT]
+> Always verify that your local development setup matches the hardware specifications of the target production network to compile accurate execution weights.

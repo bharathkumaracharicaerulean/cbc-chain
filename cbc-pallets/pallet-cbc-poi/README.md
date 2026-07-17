@@ -1,195 +1,70 @@
-# pallet-cbc-poi
+# Pallet CBC PoI (`pallet-cbc-poi`)
 
-A Substrate pallet implementing Proof-of-Inference (PoI) consensus for the CBC-Chain, enabling decentralized validation of AI/ML inference results through a challenge-based mechanism.
+<p align="center">
+  <img src="../../docs/assets/logo.png" alt="CBC Logo" width="200" />
+</p>
 
-## Overview
+The **Proof of Inference (PoI)** pallet manages computational validation for AI/ML inference results on the CBC Blockchain. It enables validators to submit ML execution hashes with confidence ratings and processes peer challenges to verify validation accuracy.
 
-The PoI pallet provides the Proof of Inference functionality for CBC-Chain, handling inference submission, validation, and challenge mechanisms. It integrates with the DCF pallet to provide the inference component of the hybrid consensus system.
+---
 
-## Key Features
+## Core Responsibilities
 
-- **Inference Management**: Store and validate inference submissions with confidence scores
-- **Challenge System**: Handle disputes between validators through challenge mechanisms
-- **Epoch Control**: Manage epoch transitions and validity windows for results
-- **PoS Integration**: Seamless integration with Proof of Stake system for scoring
+1. **Inference Submission**: Validators submit inference results (`submit_inference`) along with confidence percentages.
+2. **Challenge Windows**: Opens a 35-block dispute period during which other validators can challenge the validity of a submitted result.
+3. **Slashing & Boosting**: Cooperates with the PoS and DCF pallets to boost scores for verified results and slash stakes/scores for incorrect outputs.
+4. **Accuracy Auditing**: Processes peer challenge evaluations on-chain to determine whether the original inference was correct.
 
-## Configuration
+---
+
+## Configuration Trait (`Config`)
 
 ```rust
 #[pallet::config]
 pub trait Config: frame_system::Config {
-    /// The overarching event type
     type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-    
-    /// Weight information for extrinsics
     type WeightInfo: WeightInfo;
     
-    /// Minimum confidence threshold for inference (0-100)
+    // Limits and thresholds
     type MinInferenceConfidence: Get<u32>;
-    
-    /// Maximum age of inference in epochs
     type MaxInferenceAge: Get<u32>;
-    
-    /// Number of epochs to challenge an inference
     type ChallengeWindow: Get<u32>;
     
-    /// Reward for correct inference
+    // Monetary rewards
     type InferenceReward: Get<u128>;
-    
-    /// Reward for successful challenge
     type ChallengeReward: Get<u128>;
     
-    /// Interface to PoS pallet for boosting/slashing scores
+    // Interface traits
     type PosInterface: PosInterface<Self::AccountId>;
-    
-    /// Interface to DCF pallet for inference tracking
     type DcfInterface: DcfInterface<Self::AccountId>;
 }
 ```
 
-## Storage
+---
 
-### InferenceResults
-```rust
-#[pallet::storage]
-pub type InferenceResults<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (u32, u32), OptionQuery>;
-```
+## Storage Layout
 
-### Challenges
-```rust
-#[pallet::storage]
-pub type Challenges<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (T::AccountId, u32, u32), OptionQuery>;
-```
+* **`InferenceResults`**: Map of validator `AccountId` to their submitted `(result_hash, confidence, block_number)`.
+* **`Challenges`**: Map of challenged validator `AccountId` to `(challenger_account, result, epoch_index)` indicating ongoing disputes.
+* **`CurrentEpoch`**: Value tracking the current operational PoI epoch.
 
-### CurrentEpoch
-```rust
-#[pallet::storage]
-pub type CurrentEpoch<T: Config> = StorageValue<_, u32, ValueQuery>;
-```
+---
 
-## Events
+## Dispatchables (`#[pallet::call]`)
 
-```rust
-#[pallet::event]
-pub enum Event<T: Config> {
-    InferenceSubmitted { who: T::AccountId, result: u32, confidence: u32 },
-    InferenceAccepted { validator: T::AccountId, confidence: u32 },
-    InferenceRejected { validator: T::AccountId, confidence: u32 },
-    InferenceChallenged { challenger: T::AccountId, challenged: T::AccountId, result: u32 },
-    ChallengeResolved { challenger: T::AccountId, challenged: T::AccountId, result: u32, success: bool },
-    ValidatorSlashed { validator: T::AccountId, reason: Vec<u8> },
-}
-```
+### 1. `submit_inference`
+* **Access**: Signed Transaction from Validator
+* **Logic**: Submits the cryptographic hash of an ML model execution alongside its confidence value. Inserts the entry into `InferenceResults` if the confidence exceeds `MinInferenceConfidence`.
 
-## Errors
+### 2. `challenge_inference`
+* **Access**: Signed Transaction
+* **Logic**: Challenges another validator's submitted inference. If successful and within the `ChallengeWindow`, it slashes the original author and rewards the challenger.
 
-```rust
-#[pallet::error]
-pub enum Error<T> {
-    InferenceAlreadySubmitted,
-    InferenceNotFound,
-    ConfidenceTooLow,
-    ChallengeWindowExpired,
-    InferenceTooOld,
-    InvalidChallenge,
-}
-```
+---
 
-## Dispatchable Functions
+## Testing & Compilation
 
-### submit_inference
-```rust
-pub fn submit_inference(origin: OriginFor<T>, result: u32, confidence: u32) -> DispatchResult
-```
-Submit an inference result with confidence score (0-100).
-
-### challenge_inference
-```rust
-pub fn challenge_inference(origin: OriginFor<T>, challenged: T::AccountId, result: u32) -> DispatchResult
-```
-Challenge another validator's inference result within the challenge window.
-
-## Runtime API
-
-```rust
-sp_api::decl_runtime_apis! {
-    pub trait PoiApi<AccountId>
-    where
-        AccountId: codec::Codec + Clone + Eq + sp_std::fmt::Debug,
-    {
-        /// Get the inference result and epoch for a validator
-        fn get_inference_result(validator: AccountId) -> Option<(u32, u32)>;
-        
-        /// Get the challenge (challenger, result, epoch) for a validator
-        fn get_challenge(validator: AccountId) -> Option<(AccountId, u32, u32)>;
-        
-        /// Get the current inference epoch
-        fn get_current_epoch() -> u32;
-    }
-}
-```
-
-## Genesis Configuration
-
-```rust
-#[pallet::genesis_config]
-pub struct GenesisConfig<T: Config> {
-    pub inference_results: Vec<(T::AccountId, u32, u32)>,
-    pub current_epoch: u32,
-}
-```
-
-## Usage Example
-
-```rust
-// Submit inference result
-assert_ok!(PalletCbcPoi::submit_inference(Origin::signed(validator_account), 42, 85));
-
-// Challenge inference
-assert_ok!(PalletCbcPoi::challenge_inference(
-    Origin::signed(challenger_account), 
-    challenged_account, 
-    42
-));
-
-// Get inference result
-let result = PalletCbcPoi::get_inference_result(validator_account);
-```
-
-## Development
-
-### Building
-```bash
-cargo build -p pallet-cbc-poi
-```
-
-### Testing
+### Unit Tests
 ```bash
 cargo test -p pallet-cbc-poi
 ```
-
-### Benchmarking
-```bash
-cargo bench -p pallet-cbc-poi
-```
-
-## Integration
-
-The PoI pallet integrates with:
-
-- **Other Pallets**: PoS (via PosInterface), DCF (Dynamic Consensus Framework), Balances
-- **Runtime APIs**: Inference queries, Challenge queries, Epoch queries
-- **FRAME System**: Event system, Storage system, Weight system
-
-## Security Considerations
-
-- **Inference Validation**: Minimum confidence thresholds, epoch-based validity, challenge windows
-- **Challenge System**: Time-limited challenges, result validation, automatic resolution
-- **Reward System**: Incentives for accurate reporting, penalties for false challenges
-- **Integration Security**: Secure PoS interface, proper event handling, state consistency
-
-## References
-
-- [DCF Pallet](../pallet-cbc-dcf/README.md)
-- [PoS Pallet](../pallet-cbc-pos/README.md)
-- [Runtime Overview](../../docs/runtime-overview.md)
