@@ -1,5 +1,9 @@
 # CBC Monitoring Setup
 
+<p align="center">
+  <img src="../docs/assets/logo.png" alt="CBC Logo" width="200" />
+</p>
+
 This directory contains the configuration files for monitoring your CBC node with Prometheus and Grafana.
 
 ## Quick Start

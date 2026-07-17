@@ -1,6 +1,4 @@
 # CBC Node (`cbc-node`)
-
-[![Rust Compile & Build](https://github.com/bharathkumarachari/cbc-chain/actions/workflows/rust.yml/badge.svg)](https://github.com/bharathkumarachari/cbc-chain/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <p align="center">
@@ -80,7 +78,7 @@ The node binary includes core consensus features as well as custom CLI hooks for
 | `--cbc-mode <MODE>` | Custom operational configuration mode (`production`, `testing`, `development`). | `production` |
 | `--enable-cbc-extensions` | Exposes additional specialized developer RPC endpoints. | `false` |
 | `--log-file <PATH>` | Diverts node logger output from stdout to a designated log file. | `None` |
-| `--cbc-log-only` | Filters out general substrate logs, showing only `[cerulea]` messages. | `false` |
+| `--cbc-log-only` | Filters out general node logs, showing only `[cerulea]` messages. | `false` |
 | `--unsafe-rpc-expose` | Bypasses local filters, exposing administrative endpoints to public networks. | `false` |
 | `--rpc-rate-limit-window <SECS>` | Duration window in seconds for RPC rate limiting. | `60` |
 | `--rpc-rate-limit-requests <NUM>` | Maximum RPC requests allowed per account per window. | `100` |
