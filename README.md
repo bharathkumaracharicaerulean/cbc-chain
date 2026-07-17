@@ -249,21 +249,6 @@ Nodes expose consensus performance and lifecycle metrics (e.g., `cbc_lifecycle_s
 
 ## Development Roadmap
 
-### Phase 1: Real AI Inference Integration (8-12 weeks)
-- Standardize off-chain worker (OCW) ML task distribution.
-- Implement zero-knowledge verification frameworks for inference challenges.
-- Integrate computation speed tracking with trust scores.
-
-### Phase 2: Advanced Governance & On-chain Treasury (6-8 weeks)
-- Deploy referendum voting for runtime parameters.
-- Enable automatic treasury payout systems based on validator performance tiers.
-
-### Phase 3: High-Throughput Optimization (4-6 weeks)
-- Optimize block proposal transaction compilation pipelines.
-- Target transaction execution speeds of over 1000+ TPS.
-
----
-
 ## Troubleshooting & FAQ
 
 #### Q: The node logs periodically show `Idle (0 peers)`. Has a chain fork occurred?
