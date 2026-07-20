@@ -12,14 +12,21 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check if docker-compose is available
-if ! command -v docker-compose &> /dev/null; then
-    echo "ERROR: docker-compose is not installed. Please install docker-compose first."
+# Check if docker-compose or docker compose is available
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "ERROR: Docker Compose is not installed. Please install docker-compose or the docker-compose-plugin first."
     exit 1
 fi
 
-# Create monitoring directories if they don't exist
+# Create monitoring directories and initialize targets list if they don't exist
 mkdir -p monitoring/grafana/provisioning/{dashboards,datasources}
+if [ ! -f "monitoring/targets.json" ]; then
+    echo "[]" > monitoring/targets.json
+fi
 
 # Parse arguments
 FRESH=false
@@ -34,7 +41,7 @@ done
 
 if [ "$FRESH" = true ]; then
     echo "Fresh start requested. Removing old monitoring data (volumes)..."
-    docker-compose -f docker-compose.monitoring.yml down -v || true
+    $DOCKER_COMPOSE -f docker-compose.monitoring.yml down -v || true
 fi
 
 # Clean up any existing stopped containers to avoid conflicts
@@ -42,13 +49,13 @@ echo "Cleaning up old containers..."
 docker ps -a --filter name=cbc-prometheus --filter name=cbc-grafana -q | xargs -r docker rm 2>/dev/null || true
 
 echo "Starting Prometheus and Grafana..."
-docker-compose -f docker-compose.monitoring.yml up -d
+$DOCKER_COMPOSE -f docker-compose.monitoring.yml up -d
 
 echo "Waiting for services to start..."
 sleep 10
 
 # Check if services are running
-if docker-compose -f docker-compose.monitoring.yml ps | grep -q "Up"; then
+if $DOCKER_COMPOSE -f docker-compose.monitoring.yml ps | grep -q "Up"; then
     echo "SUCCESS: Monitoring stack started successfully!"
     echo ""
     echo "Access URLs:"
@@ -61,9 +68,9 @@ if docker-compose -f docker-compose.monitoring.yml ps | grep -q "Up"; then
     echo "   3. If no data appears, check the troubleshooting section in docs/grafana-setup-guide.md"
     echo "   4. To reset all data (e.g. after restarting chain), use: ./start-monitoring.sh --fresh"
     echo ""
-    echo "To stop: docker-compose -f docker-compose.monitoring.yml down"
+    echo "To stop: $DOCKER_COMPOSE -f docker-compose.monitoring.yml down"
 else
     echo "ERROR: Failed to start monitoring stack. Check logs with:"
-    echo "   docker-compose -f docker-compose.monitoring.yml logs"
+    echo "   $DOCKER_COMPOSE -f docker-compose.monitoring.yml logs"
     exit 1
 fi

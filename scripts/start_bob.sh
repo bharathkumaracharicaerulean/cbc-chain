@@ -50,6 +50,7 @@ exec "$BINARY" \
     --bob \
     --rpc-port 9945 \
     --prometheus-port 9616 \
+    --prometheus-external \
     --unsafe-rpc-external \
     --rpc-cors all \
     --no-mdns \

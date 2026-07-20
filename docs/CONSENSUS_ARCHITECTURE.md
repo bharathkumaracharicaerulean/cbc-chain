@@ -1,8 +1,10 @@
 # CBC Chain — Block Confirmation and Finality Architecture
 
-This document describes the layered consensus model of CBC Chain as observed
-from the codebase and node logs. There are three distinct levels, each with a
-specific responsibility.
+<p align="center">
+  <img src="assets/logo.png" alt="CBC Logo" width="200" />
+</p>
+
+This document describes the layered consensus model of CBC Chain as observed from the codebase and node logs. There are three distinct levels, each with a specific responsibility.
 
 ---
 
@@ -137,7 +139,7 @@ VoteAggregatorService at block 10:
 ### What DVF finalization means for blocks 1-9
 
 Once block 10 is DVF-finalized, all blocks from 1 to 9 are implicitly
-finalized because they are ancestors of block 10. Substrate's finality model
+finalized because they are ancestors of block 10. The blockchain's finality model
 guarantees that finalizing block N finalizes all ancestors.
 
 ```

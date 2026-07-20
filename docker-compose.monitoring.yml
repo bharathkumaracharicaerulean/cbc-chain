@@ -8,6 +8,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/targets.json:/etc/prometheus/targets.json
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -20,6 +21,19 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - monitoring
+
+  discovery:
+    image: python:3.10-slim
+    container_name: cbc-discovery
+    volumes:
+      - ./monitoring:/monitoring
+      - ./scripts:/scripts
+    command: python3 /scripts/discover_nodes.py
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - monitoring
+    restart: unless-stopped
 
 
   grafana:

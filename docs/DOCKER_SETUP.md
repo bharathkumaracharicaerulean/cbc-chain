@@ -1,7 +1,10 @@
 # CBC Chain — Docker Setup Guide
 
-This document covers everything you need to run, develop, and maintain the CBC Chain
-3-validator network using Docker locally, and how it maps to the Render deployment.
+<p align="center">
+  <img src="assets/logo.png" alt="CBC Logo" width="200" />
+</p>
+
+This document covers everything you need to run, develop, and maintain the CBC Chain 3-validator network using Docker locally, and how it maps to the Render deployment.
 
 ---
 
@@ -205,8 +208,8 @@ HTTP RPC  : http://localhost:9944
 WS RPC    : ws://localhost:9944
 ```
 
-Use this in Polkadot.js Apps:
-1. Open https://polkadot.js.org/apps
+Use this in your blockchain explorer interface:
+1. Open the blockchain apps/explorer interface
 2. Click the network selector (top-left)
 3. Choose "Development" → "Custom"
 4. Enter `ws://localhost:9944`

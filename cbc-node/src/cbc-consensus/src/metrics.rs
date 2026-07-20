@@ -158,6 +158,8 @@ pub struct ConsensusMetrics {
     pub block_production_time: Histogram,
     /// RPC request duration histogram vector (Task 8 requirement)
     pub rpc_request_duration: HistogramVec,
+    /// Validator participation rate gauge vector
+    pub validator_participation_rate: GaugeVec,
 }
 
 impl ConsensusMetrics {
@@ -211,6 +213,11 @@ impl ConsensusMetrics {
                 HistogramOpts::new("cbc_rpc_request_duration_seconds", "Duration of RPC requests")
                     .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0]),
                 &["method"],
+                registry
+            )?,
+            validator_participation_rate: register_gauge_vec_with_registry!(
+                Opts::new("cbc_validator_participation_rate", "Validator participation rate (0.0 to 1.0)"),
+                &["validator_id"],
                 registry
             )?,
         })
@@ -297,6 +304,13 @@ impl ConsensusMetrics {
             .set(score);
     }
 
+    /// Update validator participation rate gauge
+    pub fn update_validator_participation_rate(&self, validator_id: &str, rate: f64) {
+        self.validator_participation_rate
+            .with_label_values(&[validator_id])
+            .set(rate);
+    }
+
     /// Update validator scores for all validators
     pub fn update_validator_scores<B, C>(&self, client: &Arc<C>) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     where
@@ -315,6 +329,17 @@ impl ConsensusMetrics {
         for (validator, score) in validator_scores {
             let validator_id = format!("{:?}", validator);
             self.update_validator_score(&validator_id, score as f64);
+
+            // Get participation rate
+            if let Ok((authored, missed)) = api.get_validator_participation(best_hash, validator.clone()) {
+                let total = authored + missed;
+                let rate = if total > 0 {
+                    authored as f64 / total as f64
+                } else {
+                    1.0
+                };
+                self.update_validator_participation_rate(&validator_id, rate);
+            }
         }
 
         Ok(())

@@ -433,6 +433,11 @@ where
                     block_number, block_hash
                 );
 
+                // Update DVF finalized block number metric
+                if let Some(ref metrics) = self.metrics {
+                    metrics.update_finalized_block_number(block_number.saturated_into::<u32>());
+                }
+
                 // Update DVF pallet's FinalizedBlockNumber so get_dvf_finalized_block()
                 // returns the correct value and DCF progressive finality is properly capped.
                 // Convert local DvfJustification<Hash, AccountId> to the pallet's

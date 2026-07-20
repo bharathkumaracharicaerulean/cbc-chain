@@ -57,6 +57,7 @@ exec "$BINARY" \
     --port "$PORT" \
     --rpc-port "$RPC_PORT" \
     --prometheus-port "$PROM_PORT" \
+    --prometheus-external \
     --unsafe-rpc-external \
     --rpc-cors all \
     --validator \

@@ -99,6 +99,7 @@ BASE_ARGS=(
     --port "$P2P_PORT"
     --rpc-port "$RPC_PORT"
     --prometheus-port "$PROMETHEUS_PORT"
+    --prometheus-external
     --unsafe-rpc-external
     --rpc-cors all
     --validator

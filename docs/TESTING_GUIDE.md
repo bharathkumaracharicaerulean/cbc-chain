@@ -1,5 +1,9 @@
 # CBC Chain Testing Guide
 
+<p align="center">
+  <img src="assets/logo.png" alt="CBC Logo" width="200" />
+</p>
+
 This document provides a comprehensive guide to the testing infrastructure for the CBC (Consensus-Based Chain) system.
 
 ## Overview
@@ -45,11 +49,12 @@ The CBC system includes comprehensive testing across multiple layers:
 #### Consensus Module (`cbc-consensus`)
 - **Location**: `cbc-node/src/cbc-consensus/src/`
 - **Files**:
-  - `mock.rs` - Consensus mock runtime
-  - `metrics_test.rs` - Metrics system tests
-  - `validator_set_test.rs` - Validator management tests
-  - `epoch_manager_test.rs` - Epoch transition tests
-  - `dcf.rs` - DCF consensus tests (embedded)
+  - `mock.rs` - Consensus mock runtime config
+  - `tests/validator_set_test.rs` - Validator registration and set rotation
+  - `tests/metrics_test.rs` - Prometheus metric values increment assertions
+  - `tests/proposer_integration_test.rs` - Proposer factory integrations
+  - `tests/state_root_fix_test.rs` - State and block hash verification
+  - `tests/task8_metrics_test.rs` - Detailed consensus telemetry checks
 
 ## Running Tests
 
@@ -57,7 +62,7 @@ The CBC system includes comprehensive testing across multiple layers:
 ```bash
 cargo test
 ```
-clea
+
 ### Specific Pallet Tests
 ```bash
 # DCF pallet tests
@@ -153,9 +158,9 @@ cargo test --features runtime-benchmarks -p pallet-cbc-poi
 - Authority rotation
 
 **Key Test Files**:
-- `cbc-consensus/src/validator_set_test.rs`
-- `cbc-consensus/src/epoch_manager_test.rs`
-- `cbc-consensus/src/metrics_test.rs`
+- `cbc-consensus/src/tests/validator_set_test.rs`
+- `cbc-consensus/src/tests/metrics_test.rs`
+- `cbc-consensus/src/tests/proposer_integration_test.rs`
 
 ## Mock Runtime
 

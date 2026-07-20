@@ -390,8 +390,24 @@ where
 
 	// Initialize DVF Gossip Components
 	let dvf_gossip_pool = DvfVotePool::<Hash, AccountId>::new();
+	
+	// Initialize DVF Metrics
+	let dvf_metrics = config.prometheus_registry().and_then(|registry| {
+		match cbc_consensus::metrics::DvfMetrics::new(registry) {
+			Ok(m) => Some(Arc::new(m)),
+			Err(e) => {
+				log::error!("DVF: Failed to initialize DVF metrics: {:?}", e);
+				None
+			}
+		}
+	});
+
+	let mut dvf_gossip_validator = DvfGossipValidator::new(dvf_gossip_pool.clone(), client.clone());
+	if let Some(ref m) = dvf_metrics {
+		dvf_gossip_validator = dvf_gossip_validator.with_metrics(m.clone());
+	}
 	let dvf_gossip_validator: Arc<dyn sc_network_gossip::Validator<Block>> =
-		Arc::new(DvfGossipValidator::new(dvf_gossip_pool.clone(), client.clone()));
+		Arc::new(dvf_gossip_validator);
 	let dvf_gossip_engine = sc_network_gossip::GossipEngine::new(
 		network.clone(),
 		sync_service.clone(),
@@ -508,13 +524,16 @@ where
 			// Create DVF Finality Notifier
 			let finality_notifier = Arc::new(cbc_consensus::FinalityNotifier::new());
 			
-			let vote_creator = cbc_consensus::VoteCreatorService::new(
+			let mut vote_creator = cbc_consensus::VoteCreatorService::new(
 				client.clone(),
 				keystore.clone(),
 				dvf_gossip_engine.clone(),
 				dvf_gossip_pool.clone(),
 				validator_account.clone(),
 			);
+			if let Some(ref m) = dvf_metrics {
+				vote_creator = vote_creator.with_metrics(m.clone());
+			}
 			
 			task_manager.spawn_essential_handle().spawn(
 				"dvf-vote-creator",
@@ -527,19 +546,26 @@ where
 			log::info!("DVF: Vote Creator Service started for validator {:?}", validator_account);
 			
 			// Create DVF Justification Builder
-			let justification_builder = Arc::new(cbc_consensus::justification_builder::JustificationBuilder::new(
+			let mut justification_builder = cbc_consensus::justification_builder::JustificationBuilder::new(
 				client.clone(),
 				dvf_gossip_pool.clone(),
-			));
+			);
+			if let Some(ref m) = dvf_metrics {
+				justification_builder = justification_builder.with_metrics(m.clone());
+			}
+			let justification_builder = Arc::new(justification_builder);
 			
 			// Start DVF Vote Aggregator Service
-			let vote_aggregator = cbc_consensus::VoteAggregatorService::new(
+			let mut vote_aggregator = cbc_consensus::VoteAggregatorService::new(
 				client.clone(),
 				dvf_gossip_pool.clone(),
 				justification_builder,
 				transaction_pool.clone(),
 				std::time::Duration::from_secs(1), // Check every 1 second
 			);
+			if let Some(ref m) = dvf_metrics {
+				vote_aggregator = vote_aggregator.with_metrics(m.clone());
+			}
 			
 			task_manager.spawn_essential_handle().spawn(
 				"dvf-vote-aggregator",

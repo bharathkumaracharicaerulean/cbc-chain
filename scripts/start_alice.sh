@@ -24,6 +24,7 @@ exec "$BINARY" \
     --alice \
     --rpc-port 9944 \
     --prometheus-port 9615 \
+    --prometheus-external \
     --unsafe-rpc-external \
     --rpc-methods unsafe \
     --rpc-cors all \
