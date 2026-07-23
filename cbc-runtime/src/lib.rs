@@ -155,8 +155,6 @@ pub type TxExtension = (
     frame_system::CheckNonce<Runtime>,
     frame_system::CheckWeight<Runtime>,
     pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
-    frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
-    frame_system::WeightReclaim<Runtime>,
 );
 
 // Define the unchecked extrinsic type for the runtime.

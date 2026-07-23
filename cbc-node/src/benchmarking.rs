@@ -151,8 +151,6 @@ pub fn create_benchmark_extrinsic(
         frame_system::CheckNonce::<runtime::Runtime>::from(nonce),
         frame_system::CheckWeight::<runtime::Runtime>::new(),
         pallet_transaction_payment::ChargeTransactionPayment::<runtime::Runtime>::from(0),
-        frame_metadata_hash_extension::CheckMetadataHash::<runtime::Runtime>::new(false),
-        frame_system::WeightReclaim::<runtime::Runtime>::new(),
     );
 
     // Create the raw payload for signing
@@ -167,8 +165,6 @@ pub fn create_benchmark_extrinsic(
             best_hash,
             (),
             (),
-            (),
-            None,
             (),
         ),
     );
