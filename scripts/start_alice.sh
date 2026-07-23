@@ -30,6 +30,7 @@ exec "$BINARY" \
     --rpc-cors all \
     --no-mdns \
     --listen-addr /ip4/127.0.0.1/tcp/30333 \
+    --enable-cbc-extensions \
     --validator \
     --name Alice \
     >> "$LOG_FILE" 2>&1

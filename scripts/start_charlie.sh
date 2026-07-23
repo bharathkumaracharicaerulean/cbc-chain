@@ -55,6 +55,7 @@ exec "$BINARY" \
     --rpc-cors all \
     --no-mdns \
     --listen-addr /ip4/127.0.0.1/tcp/30335 \
+    --enable-cbc-extensions \
     --validator \
     --name Charlie \
     --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID" \
