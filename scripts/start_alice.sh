@@ -29,7 +29,9 @@ exec "$BINARY" \
     --rpc-methods unsafe \
     --rpc-cors all \
     --no-mdns \
+    --rpc-max-connections 5000 \
     --listen-addr /ip4/127.0.0.1/tcp/30333 \
+    --allow-private-ip \
     --enable-cbc-extensions \
     --validator \
     --name Alice \

@@ -54,9 +54,12 @@ exec "$BINARY" \
     --unsafe-rpc-external \
     --rpc-cors all \
     --no-mdns \
+    --rpc-max-connections 5000 \
     --listen-addr /ip4/127.0.0.1/tcp/30334 \
+    --allow-private-ip \
     --enable-cbc-extensions \
     --validator \
     --name Bob \
     --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID" \
+    --reserved-nodes "/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID" \
     >> "$LOG_FILE" 2>&1
