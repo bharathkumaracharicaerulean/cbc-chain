@@ -6207,7 +6207,7 @@ pub mod pallet {
                 // NOTE: Do NOT write a score-sorted ActiveValidators list back to storage here.
                 // ActiveValidators is sorted by account ID at epoch transitions only.
                 // Score-based ordering is for metrics/display only (see get_validators_by_score).
-                if state.history.len() == state.history.capacity() && !state.history.is_empty() {
+                if state.history.len() == T::MaxValidatorHistorySize::get() as usize && !state.history.is_empty() {
                     state.history.remove(0);
                 }
                 let _ = state.history.try_push(EpochStats {
@@ -6282,7 +6282,7 @@ pub mod pallet {
                     state.current.final_score = T::MaxValidatorScore::get();
                 }
                 state.last_active_epoch = Self::current_epoch();
-                if state.history.len() == state.history.capacity() {
+                if state.history.len() == T::MaxValidatorHistorySize::get() as usize {
                     state.history.remove(0);
                 }
                 let _ = state.history.try_push(EpochStats {
@@ -7113,6 +7113,13 @@ pub mod pallet {
             let current_epoch = Self::current_epoch();
             let next_epoch = current_epoch.saturating_add(1);
             CurrentEpoch::<T>::put(next_epoch);
+
+            // Distribute rewards for the epoch that just ended
+            let total_reward_pool = T::MaxRewardPerEpoch::get();
+            let base_pool = (total_reward_pool * 60u32.into()) / 100u32.into();
+            let performance_pool = (total_reward_pool * 25u32.into()) / 100u32.into();
+            let top_performer_pool = (total_reward_pool * 15u32.into()) / 100u32.into();
+            let _ = pos::Pallet::<T>::distribute_rewards(base_pool, performance_pool, top_performer_pool);
 
             // Reset epoch bounds tracking in pos pallet for the new epoch
             pos::Pallet::<T>::reset_epoch_totals();
@@ -10722,7 +10729,7 @@ pub mod pallet {
 
             // Check that we haven't exceeded the maximum validators limit
             ensure!(
-                validator_set.len() < validator_set.capacity(),
+                validator_set.len() < MaxValidatorsOf::<T>::get() as usize,
                 Error::<T>::NotEnoughValidators
             );
 
@@ -10869,7 +10876,10 @@ pub mod pallet {
                     score_b.cmp(&score_a) // Descending order
                 });
 
-                let available_slots = active.capacity() - active.len();
+                let max_vals = MaxValidatorsOf::<T>::get() as usize;
+                let active_len = active.len();
+                let available_slots = max_vals.saturating_sub(active_len);
+                log::info!("DCF: apply_pending_validator_actions - max_vals: {}, active_len: {}, available_slots: {}", max_vals, active_len, available_slots);
                 let min_score_threshold = MinValidatorScoreOf::<T>::get() as u64;
 
                 for who in join_requests.iter().take(available_slots) {
@@ -12214,8 +12224,7 @@ pub mod pallet {
             if score_change > significant_change_threshold {
                 let current_epoch = Self::current_epoch();
                 TrustScoreHistory::<T>::try_mutate(validator, |history| {
-                    // Remove oldest entry if at capacity and not empty
-                    if history.len() == history.capacity() && !history.is_empty() {
+                    if history.len() == 100 && !history.is_empty() {
                         history.remove(0);
                     }
                     // Add new entry
@@ -12947,7 +12956,7 @@ pub mod pallet {
                 let new_total_stake = pos::Pallet::<T>::stake(validator);
                 state.current.stake_score = new_total_stake.saturated_into::<u64>();
                 
-                if state.history.len() == state.history.capacity() {
+                if state.history.len() == T::MaxValidatorHistorySize::get() as usize {
                     state.history.remove(0);
                 }
                 let _ = state.history.try_push(EpochStats {
@@ -12980,7 +12989,7 @@ pub mod pallet {
                 let new_total_stake = pos::Pallet::<T>::stake(validator);
                 state.current.stake_score = new_total_stake.saturated_into::<u64>();
                 
-                if state.history.len() == state.history.capacity() {
+                if state.history.len() == T::MaxValidatorHistorySize::get() as usize {
                     state.history.remove(0);
                 }
                 let _ = state.history.try_push(EpochStats {

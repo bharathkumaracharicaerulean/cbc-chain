@@ -435,10 +435,16 @@ pub mod pallet {
             Stake::<T>::insert(&who, &new_stake);
             Self::deposit_event(Event::StakeBonded { validator: who.clone(), amount });
             Self::deposit_event(Event::StakeUpdated { 
-                validator: who, 
+                validator: who.clone(), 
                 old_stake: current_stake, 
                 new_stake 
             });
+            
+            if current_stake.is_zero() {
+                T::ValidatorHandler::on_joined(&who, new_stake)?;
+            } else {
+                T::ValidatorHandler::on_stake_increased(&who, amount)?;
+            }
             
             Ok(())
         }

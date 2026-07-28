@@ -268,6 +268,52 @@ impl pallet_cbc_poi::Config for Runtime {
     type MaxLoopIterations = ConstU32<1000>;
 }
 
+pub struct CbcValidatorHandler;
+
+impl pallet_cbc_pos::ValidatorHandler<AccountId, Balance> for CbcValidatorHandler {
+    fn on_joined(validator: &AccountId, stake: Balance) -> sp_runtime::DispatchResult {
+        <pallet_cbc_dvf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_joined(validator, stake)?;
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_joined(validator, stake)?;
+        Ok(())
+    }
+    fn on_leave_requested(validator: &AccountId) -> sp_runtime::DispatchResult {
+        <pallet_cbc_dvf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_leave_requested(validator)?;
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_leave_requested(validator)?;
+        Ok(())
+    }
+    fn on_left(validator: &AccountId) -> sp_runtime::DispatchResult {
+        <pallet_cbc_dvf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_left(validator)?;
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_left(validator)?;
+        Ok(())
+    }
+    fn on_stake_increased(validator: &AccountId, amount: Balance) -> sp_runtime::DispatchResult {
+        <pallet_cbc_dvf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_stake_increased(validator, amount)?;
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_stake_increased(validator, amount)?;
+        Ok(())
+    }
+    fn on_stake_decreased(validator: &AccountId, amount: Balance) -> sp_runtime::DispatchResult {
+        <pallet_cbc_dvf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_stake_decreased(validator, amount)?;
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_stake_decreased(validator, amount)?;
+        Ok(())
+    }
+    fn on_slashed(validator: &AccountId, amount: Balance, penalty: u64) -> sp_runtime::DispatchResult {
+        <pallet_cbc_dvf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_slashed(validator, amount, penalty)?;
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_slashed(validator, amount, penalty)?;
+        Ok(())
+    }
+    fn on_rewarded(validator: &AccountId, amount: Balance, boost: u64) -> sp_runtime::DispatchResult {
+        <pallet_cbc_dvf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_rewarded(validator, amount, boost)?;
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::on_rewarded(validator, amount, boost)?;
+        Ok(())
+    }
+    fn get_validator_score(validator: &AccountId) -> u64 {
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::get_validator_score(validator)
+    }
+    fn get_active_validators() -> alloc::vec::Vec<AccountId> {
+        <pallet_cbc_dcf::Pallet<Runtime> as pallet_cbc_pos::ValidatorHandler<AccountId, Balance>>::get_active_validators()
+    }
+}
+
 impl pallet_cbc_pos::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_cbc_pos::weights::SubstrateWeight<Runtime>;
@@ -292,7 +338,7 @@ impl pallet_cbc_pos::Config for Runtime {
     type MaxRewardBoost = ConstU64<20>;
     type HighPerformanceScore = HighPerformanceScore;
     type TopPerformerPercentage = TopPerformerPercentage;
-    type ValidatorHandler = pallet_cbc_dvf::Pallet<Runtime>;
+    type ValidatorHandler = CbcValidatorHandler;
 }
 
 // === CBC Governance Pallet Configuration ===

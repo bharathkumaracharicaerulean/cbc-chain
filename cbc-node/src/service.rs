@@ -361,8 +361,8 @@ where
 		1024 * 1024,
 		None,
 		sc_network::config::SetConfig {
-			in_peers: 0,
-			out_peers: 0,
+			in_peers: 32,
+			out_peers: 32,
 			reserved_nodes: Vec::new(),
 			non_reserved_mode: sc_network::config::NonReservedPeerMode::Accept,
 		},
@@ -475,6 +475,9 @@ where
 			} else if node_name.contains("ferdie") {
 				log::info!("CBC DVF: Using deterministic key for Ferdie");
 				Some("//Ferdie")
+			} else if node_name.contains("bharath") || node_name.contains("bharat") {
+				log::info!("CBC DVF: Using deterministic key for Bharath");
+				Some("//Bharath")
 			} else {
 				None
 			};
