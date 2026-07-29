@@ -37,6 +37,10 @@ if [ -z "$ALICE_PEER_ID" ]; then
 fi
 
 echo "Starting Bharath..."
+# Derive other peers
+BOB_PEER_ID=$("$BINARY" key inspect-node-key --file "$HOME/.local/share/cbc-node/bob/chains/cbc_local/network/secret_ed25519" 2>/dev/null | tail -n 1)
+CHARLIE_PEER_ID=$("$BINARY" key inspect-node-key --file "$HOME/.local/share/cbc-node/charlie/chains/cbc_local/network/secret_ed25519" 2>/dev/null | tail -n 1)
+
 echo "  Data dir   : $BASE_PATH"
 echo "  RPC port   : 9947"
 echo "  Bootnode   : /ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID"
@@ -58,5 +62,5 @@ exec "$BINARY" \
     --validator \
     --name bharath \
     --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID" \
-    --reserved-nodes "/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID" \
+    --reserved-nodes "/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID" "/ip4/127.0.0.1/tcp/30334/p2p/$BOB_PEER_ID" "/ip4/127.0.0.1/tcp/30335/p2p/$CHARLIE_PEER_ID" \
     >> "$LOG_FILE" 2>&1

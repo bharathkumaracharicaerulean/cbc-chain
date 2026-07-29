@@ -152,17 +152,20 @@ where
             total_weight, threshold
         );
 
-        // 6. Select minimum votes needed to reach threshold
+        // 6. Select votes (include all valid votes in the pool to show active participation)
         let mut selected_votes = Vec::new();
         let mut accumulated_weight = 0u128;
 
         for (vote, weight) in weighted_votes {
             selected_votes.push(vote);
             accumulated_weight = accumulated_weight.saturating_add(weight);
+        }
 
-            if accumulated_weight >= threshold {
-                break;
-            }
+        if accumulated_weight < threshold {
+            return Err(format!(
+                "DVF Justification Builder: Accumulated weight {} is below threshold {}",
+                accumulated_weight, threshold
+            ));
         }
 
         info!(
