@@ -384,6 +384,16 @@ pub mod pallet {
 		) -> DispatchResult {
 			let challenger = ensure_signed(origin)?;
 
+			ensure!(
+				challenger != challenged,
+				Error::<T>::CannotChallengeSelf
+			);
+
+			ensure!(
+				!Challenges::<T>::contains_key(&challenger),
+				Error::<T>::ChallengeAlreadyExists
+			);
+
 			// Get the inference result and its epoch.
 			let (stored_result, epoch) = InferenceResults::<T>::get(&challenged)
 				.ok_or(Error::<T>::InferenceNotFound)?;

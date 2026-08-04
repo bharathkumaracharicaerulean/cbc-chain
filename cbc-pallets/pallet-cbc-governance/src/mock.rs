@@ -1,23 +1,23 @@
-use crate as pallet_cbc_pos;
+use crate as pallet_cbc_governance;
 use frame_support::{
     parameter_types,
     traits::{ConstU32, ConstU64},
+    weights::Weight,
 };
 use frame_system as system;
 use sp_core::H256;
 use sp_runtime::{
     traits::{BlakeTwo256, IdentityLookup},
-    BuildStorage,
+    BuildStorage, DispatchError, DispatchResult,
 };
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
-// Configure a mock runtime to test the pallet.
 frame_support::construct_runtime!(
     pub enum Test {
         System: frame_system,
         Balances: pallet_balances,
-        PalletCbcPos: pallet_cbc_pos,
+        PalletCbcGovernance: pallet_cbc_governance,
     }
 );
 
@@ -76,71 +76,83 @@ impl pallet_balances::Config for Test {
     type DoneSlashHandler = ();
 }
 
-pub struct TestValidatorHandler;
+pub struct MockProposalExecutor;
+impl pallet_cbc_governance::ProposalExecutor<u64, u64> for MockProposalExecutor {
+    fn slash_validator(_validator: &u64, _amount: u64) -> DispatchResult {
+        Ok(())
+    }
+    fn reward_validator(_validator: &u64, _amount: u64) -> DispatchResult {
+        Ok(())
+    }
+    fn eject_validator(
+        _validator: &u64,
+        _reason: pallet_cbc_governance::EjectionReason,
+    ) -> DispatchResult {
+        Ok(())
+    }
+    fn add_validator(_validator: &u64) -> DispatchResult {
+        Ok(())
+    }
+    fn remove_validator(_validator: &u64) -> DispatchResult {
+        Ok(())
+    }
+}
 
-impl pallet_cbc_pos::ValidatorHandler<u64, u64> for TestValidatorHandler {
-    fn on_joined(_validator: &u64, _stake: u64) -> sp_runtime::DispatchResult { Ok(()) }
-    fn on_leave_requested(_validator: &u64) -> sp_runtime::DispatchResult { Ok(()) }
-    fn on_left(_validator: &u64) -> sp_runtime::DispatchResult { Ok(()) }
-    fn on_stake_increased(_validator: &u64, _amount: u64) -> sp_runtime::DispatchResult { Ok(()) }
-    fn on_stake_decreased(_validator: &u64, _amount: u64) -> sp_runtime::DispatchResult { Ok(()) }
-    fn on_slashed(_validator: &u64, _amount: u64, _penalty: u64) -> sp_runtime::DispatchResult { Ok(()) }
-    fn on_rewarded(_validator: &u64, _amount: u64, _boost: u64) -> sp_runtime::DispatchResult { Ok(()) }
-    fn get_validator_score(validator: &u64) -> u64 {
-        match validator {
-            1 => 90,
-            2 => 60,
-            _ => 50,
+pub struct MockValidatorProvider;
+impl pallet_cbc_governance::ValidatorProvider<u64, Weight> for MockValidatorProvider {
+    fn active_validators() -> Vec<u64> {
+        vec![1, 2, 3]
+    }
+    fn is_private_chain_mode() -> bool {
+        // Return true if account 999 is involved to test private mode validation
+        false
+    }
+    fn validate_governance_in_private_mode(proposer: &u64) -> DispatchResult {
+        if *proposer == 999 {
+            return Err(DispatchError::Other("PrivateModeGovernanceForbidden"));
         }
+        Ok(())
     }
-    fn get_active_validators() -> Vec<u64> {
-        vec![1, 2]
+    fn validate_proposal_in_private_mode(_proposer: &u64, target: &u64) -> DispatchResult {
+        if *target == 999 {
+            return Err(DispatchError::Other("PrivateModeTargetForbidden"));
+        }
+        Ok(())
     }
+    fn check_rate_limits(
+        proposer: &u64,
+        op_type: u8,
+        _weight: Weight,
+    ) -> Result<(), (DispatchError, Option<(u8, u8, u32, u32)>)> {
+        if *proposer == 888 {
+            return Err((
+                crate::Error::<Test>::RateLimitExceeded.into(),
+                Some((op_type, 1u8, 10u32, 5u32)),
+            ));
+        }
+        Ok(())
+    }
+    fn record_operation(_proposer: &u64, _op_type: u8) {}
 }
 
-impl pallet_cbc_pos::Config for Test {
+impl pallet_cbc_governance::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = ();
-    type MinValidatorScore = ConstU32<50>;
-    type MinActiveValidators = ConstU32<3>;
-    type MaxValidators = ConstU32<10>;
-    type ValidatorScoreDecay = ConstU32<5>;
-    type MaxSlashingCount = ConstU32<3>;
-    type MinStake = ConstU64<1000>;
     type Balance = u64;
-    type Currency = Balances;
-    type LeaveCooldown = ConstU32<1000>;
-    type ValidatorReward = ConstU64<10000>;
-    type SlashPercent = ConstU32<10>;
-    type MaxSlashPerEpoch = ConstU64<50000>;
-    type MaxSlashPerValidator = ConstU64<20000>;
-    type MaxRewardPerEpoch = ConstU64<30000>;
-    type MaxRewardPerValidator = ConstU64<10000>;
-    type SlashPenaltyDivisor = ConstU64<1000>;
-    type MaxSlashPenalty = ConstU64<50>;
-    type RewardBoostDivisor = ConstU64<1000>;
-    type MaxRewardBoost = ConstU64<20>;
-    type HighPerformanceScore = ConstU64<80>;
-    type TopPerformerPercentage = ConstU32<20>;
-    type ValidatorHandler = TestValidatorHandler;
+    type ProposalExecutor = MockProposalExecutor;
+    type ValidatorProvider = MockValidatorProvider;
 }
 
-// Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
     let mut storage = system::GenesisConfig::<Test>::default()
         .build_storage()
         .unwrap();
 
     pallet_balances::GenesisConfig::<Test> {
-        balances: vec![
-            (1, 10000),
-            (2, 10000),
-            (3, 10000),
-        ],
+        balances: vec![(1, 10000), (2, 10000), (3, 10000)],
         dev_accounts: None,
     }
     .assimilate_storage(&mut storage)
     .unwrap();
 
     storage.into()
-} 
+}

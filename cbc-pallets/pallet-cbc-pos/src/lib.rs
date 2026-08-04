@@ -577,22 +577,23 @@ pub mod pallet {
                 Error::<T>::InsufficientStake
             );
 
-            let unreserved = T::Currency::unreserve(&who, decrease_amount);
+            let unreserved_deficit = T::Currency::unreserve(&who, decrease_amount);
+            let actual_unreserved = decrease_amount.saturating_sub(unreserved_deficit);
 
             Stake::<T>::mutate(&who, |current_stake| {
-                *current_stake = current_stake.saturating_sub(unreserved);
+                *current_stake = current_stake.saturating_sub(actual_unreserved);
             });
 
-            T::ValidatorHandler::on_stake_decreased(&who, unreserved)?;
+            T::ValidatorHandler::on_stake_decreased(&who, actual_unreserved)?;
 
             Self::deposit_event(Event::ValidatorStakeUnreserved {
                 validator: who.clone(),
-                amount: unreserved,
+                amount: actual_unreserved,
             });
 
             Self::deposit_event(Event::ValidatorStakeDecreased {
                 validator: who,
-                amount: unreserved,
+                amount: actual_unreserved,
             });
 
             Ok(())
@@ -816,8 +817,8 @@ pub mod pallet {
                 Error::<T>::SlashingBoundsExceeded
             );
 
-            let (_negative_imbalance, actual_slashed) = T::Currency::slash(validator, slash_amount);
-            let slashed_amount = actual_slashed.min(slash_amount);
+            let (_negative_imbalance, unslashed_deficit) = T::Currency::slash(validator, slash_amount);
+            let slashed_amount = slash_amount.saturating_sub(unslashed_deficit);
 
             EpochTotalSlashed::<T>::mutate(|total| {
                 *total = total.saturating_add(slashed_amount);

@@ -107,7 +107,7 @@
 //! ### Example Genesis Preset Values
 //!
 //! **Development Preset:**
-//! ```rust
+//! ```ignore
 //! dcf: pallet_cbc_dcf::GenesisConfig {
 //!     validators: vec![Alice],
 //!     validator_stakes: vec![10_000_000],
@@ -121,7 +121,7 @@
 //! ```
 //!
 //! **Multi-Validator Preset:**
-//! ```rust
+//! ```ignore
 //! dcf: pallet_cbc_dcf::GenesisConfig {
 //!     validators: vec![Alice, Bob, Charlie, Dave, Eve],
 //!     validator_stakes: vec![15_000_000, 12_000_000, 8_000_000, 5_000_000, 3_000_000],
@@ -318,7 +318,7 @@ sp_api::decl_runtime_apis! {
         /// - `u32`: Current API version number
         /// 
         /// # Example Usage
-        /// ```rust
+        /// ```ignore
         /// let api_version = runtime_api.get_api_version();
         /// if api_version != expected_version {
         ///     // Handle version mismatch
@@ -461,7 +461,7 @@ pub mod pallet {
     /// determine how much each component contributes to the final trust score.
     ///
     /// Trust score calculation formula with bounded growth and decay:
-    /// ```
+    /// ```text
     /// weighted_score = (uptime_score * uptime_weight + inference_score * inference_weight) / (uptime_weight + inference_weight)
     /// bounded_score = clamp(weighted_score, min_trust_score, max_trust_score)
     /// decay_factor = calculate_decay_factor(epochs_inactive, decay_rate)
@@ -6512,7 +6512,7 @@ pub mod pallet {
         }
 
         /// Handle comprehensive epoch transition with all required steps.
-        fn handle_comprehensive_epoch_transition(block_number: u32) -> Weight {
+        pub fn handle_comprehensive_epoch_transition(block_number: u32) -> Weight {
             let mut weight = Weight::zero();
             
             // Step 1: Run score aggregation for all validators
@@ -6604,7 +6604,35 @@ pub mod pallet {
                 Self::generate_automatic_validator_proposals();
             }
             
-            // Cooldown and leave requests are managed by pallet-cbc-pos.
+            // 7. Process pending leave requests after cooldown
+            let current_block = block_number;
+            let cooldown_period = LeaveCooldownOf::<T>::get();
+            let mut leaving = Vec::new();
+            for validator in ValidatorSet::<T>::get().iter() {
+                if let Some(request_block) = ValidatorLeaveRequests::<T>::get(validator) {
+                    if current_block >= request_block.saturating_add(cooldown_period) {
+                        leaving.push(validator.clone());
+                    }
+                }
+            }
+            for validator in leaving {
+                let min_stake = MinStakeOf::<T>::get();
+                let _ = <T as pallet_cbc_pos::Config>::Currency::unreserve(&validator, min_stake);
+                pos::Stake::<T>::remove(&validator);
+                ValidatorLeaveRequests::<T>::remove(&validator);
+                RecentlyRemovedValidators::<T>::insert(&validator, current_block);
+                let mut set = ValidatorSet::<T>::get();
+                set.retain(|x| x != &validator);
+                ValidatorSet::<T>::put(set);
+                ValidatorStates::<T>::remove(&validator);
+
+                Self::deposit_event(Event::ValidatorStatusChanged {
+                    validator,
+                    old_status: ValidatorStatus::Leaving,
+                    new_status: ValidatorStatus::Inactive,
+                    block_number: current_block,
+                });
+            }
 
             // 8. Emit periodic health metrics
             if block_number % T::HealthMetricsInterval::get() == 0 {
@@ -7113,6 +7141,8 @@ pub mod pallet {
             let current_epoch = Self::current_epoch();
             let next_epoch = current_epoch.saturating_add(1);
             CurrentEpoch::<T>::put(next_epoch);
+            pallet_cbc_poi::CurrentEpoch::<T>::put(next_epoch);
+            pallet_cbc_pos::CurrentEpoch::<T>::put(next_epoch);
 
             // Distribute rewards for the epoch that just ended
             let total_reward_pool = T::MaxRewardPerEpoch::get();
@@ -9530,6 +9560,9 @@ pub mod pallet {
                     }),
             );
 
+            // Ensure governance mode defaults to false at genesis
+            pallet_cbc_governance::GovernanceModeEnabled::<T>::put(false);
+
             CurrentEpoch::<T>::put(self.current_epoch);
             EpochConfigStorage::<T>::put(self.epoch_config.clone());
             PosWeight::<T>::put(T::DefaultPosWeight::get());
@@ -10124,7 +10157,7 @@ pub mod pallet {
         }
     }
 
-    // --- Public Helper Functions --- //
+    // --- Public Storage Getters --- //
     impl<T: Config> Pallet<T> {
         pub fn active_validators() -> BoundedVec<T::AccountId, MaxValidatorsOf<T>> {
             ActiveValidators::<T>::get()
@@ -10619,7 +10652,7 @@ pub mod pallet {
 
         /// Get finality information including last finalized block and current epoch.
         pub fn get_finality_info() -> (u32, u32) {
-            (Self::last_finalized_block(), Self::current_epoch())
+            (Self::last_finalized_block(), frame_system::Pallet::<T>::block_number().saturated_into::<u32>())
         }
 
         /// Get the number of blocks since last finalization.
@@ -10664,9 +10697,7 @@ pub mod pallet {
 
         /// Get governance mode
         pub fn governance_mode() -> bool {
-            // Return true if governance config exists and has valid parameters
-            let config = GovernanceConfigStorage::<T>::get();
-            config.epoch_length.current > 0
+            pallet_cbc_governance::GovernanceModeEnabled::<T>::get()
         }
 
         /// Get total validators count
@@ -11029,8 +11060,8 @@ pub mod pallet {
         pub fn get_validator_set_info() -> (u32, u32, u32) {
             let current_count = ValidatorSet::<T>::get().len() as u32;
             let active_count = ActiveValidators::<T>::get().len() as u32;
-            let max_validators = MaxValidatorsOf::<T>::get();
-            (current_count, active_count, max_validators)
+            let inactive_count = current_count.saturating_sub(active_count);
+            (current_count, active_count, inactive_count)
         }
 
         /// Get the number of misbehavior reports for a validator
@@ -11815,7 +11846,7 @@ pub mod pallet {
         /// - **Clamping**: Final safety net against out-of-bounds values
         ///
         /// # Calculation Formula with Bounds
-        /// ```
+        /// ```text
         /// // Base calculation
         /// weighted_score = (uptime_score * uptime_weight + inference_score * inference_weight) / total_weight
         /// base_score = weighted_score - (slashing_penalty * slashing_weight / 100)

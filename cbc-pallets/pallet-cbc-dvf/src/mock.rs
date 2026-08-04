@@ -1,7 +1,7 @@
 use crate as pallet_cbc_dvf;
 use frame_support::{
     parameter_types,
-    traits::ConstU32,
+    traits::{ConstU32, ConstU64},
 };
 use sp_core::{sr25519, Pair, H256};
 use sp_runtime::{
@@ -24,6 +24,8 @@ frame_support::construct_runtime!(
         Dvf: pallet_cbc_dvf,
     }
 );
+
+pub type PalletCbcDvf = Dvf;
 
 parameter_types! {
     pub const BlockHashCount: u64 = 250;
@@ -149,7 +151,7 @@ impl pallet_cbc_dvf::Config for Test {
     type VoteRetentionRounds = VoteRetentionRounds;
     type MaxValidators = ConstU32<100>;
     type MaxInactiveEpochs = ConstU32<5>;
-    type UnderperformanceCheckInterval = ConstU32<50>;
+    type UnderperformanceCheckInterval = ConstU64<50>;
     type MaxValidatorHistorySize = ConstU32<100>;
     type MaxValidatorNameSize = ConstU32<32>;
 }

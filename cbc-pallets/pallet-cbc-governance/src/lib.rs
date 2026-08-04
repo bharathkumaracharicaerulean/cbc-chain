@@ -11,6 +11,12 @@ use serde::{Serialize, Deserialize};
 
 pub use pallet::*;
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
 /// Reasons for ejecting validators from the network.
 #[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Serialize, Deserialize, frame_support::__private::codec::DecodeWithMemTracking)]
 pub enum EjectionReason {

@@ -2,7 +2,7 @@
 use crate as pallet_cbc_poi;
 use frame_support::{
     parameter_types,
-    traits::{ConstU128, ConstU32},
+    traits::{ConstU128, ConstU32, ConstU64},
 };
 use frame_system as system;
 use sp_core::H256;
@@ -68,6 +68,23 @@ pub struct DummyPosInterface;
 impl pallet_cbc_poi::PosInterface<u64> for DummyPosInterface {
     fn boost_score(_validator: &u64, _weight: u32) -> frame_support::dispatch::DispatchResult { Ok(()) }
     fn slash_score(_validator: &u64, _weight: u32) -> frame_support::dispatch::DispatchResult { Ok(()) }
+    fn get_active_validators() -> Vec<u64> {
+        vec![1, 2, 3]
+    }
+}
+
+// Mock DcfInterface implementation
+pub struct MockDcfInterface;
+impl pallet_cbc_poi::DcfInterface<u64> for MockDcfInterface {
+    fn record_inference_activity(_validator: &u64) -> frame_support::dispatch::DispatchResult {
+        Ok(())
+    }
+    fn eject_validator(_validator: &u64, _reason: &'static str) -> frame_support::dispatch::DispatchResult {
+        Ok(())
+    }
+    fn update_final_score(_validator: &u64) -> frame_support::dispatch::DispatchResult {
+        Ok(())
+    }
 }
 
 impl pallet_cbc_poi::Config for Test {
@@ -78,23 +95,35 @@ impl pallet_cbc_poi::Config for Test {
     type ChallengeWindow = ConstU32<5>;        // Epochs allowed for challenge.
     type InferenceReward = ConstU128<1000>;    // Reward for correct inference.
     type ChallengeReward = ConstU128<500>;     // Reward for successful challenge.
-    type DcfInterface = MockDcfInterface;
     type PosInterface = DummyPosInterface;
-}
+    type DcfInterface = MockDcfInterface;
 
-// Mock DcfInterface implementation
-pub struct MockDcfInterface;
-impl pallet_cbc_poi::DcfInterface<u64> for MockDcfInterface {
-    fn record_inference_activity(_validator: &u64) -> frame_support::dispatch::DispatchResult {
-        Ok(())
-    }
+    type InferenceBoostLow = ConstU64<2>;
+    type InferenceBoostMedium = ConstU64<5>;
+    type InferenceBoostHigh = ConstU64<10>;
+    type InferencePenaltyLow = ConstU64<3>;
+    type InferencePenaltyMedium = ConstU64<7>;
+    type InferencePenaltyHigh = ConstU64<15>;
+    type InferenceConfidenceThresholdLow = ConstU32<70>;
+    type InferenceConfidenceThresholdHigh = ConstU32<90>;
+    type MaxValidatorScore = ConstU64<10000>;
+    type PercentagePrecision = ConstU32<100>;
+    type OffchainWorkerInterval = ConstU32<1>;
+    type MaxValidatorIterationWeight = ConstU64<1000000>;
+    type MaxLoopIterations = ConstU32<10>;
 }
 
 // Helper function to build genesis storage for tests.
 // Returns a TestExternalities instance for executing tests in an isolated environment.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-    system::GenesisConfig::<Test>::default()
+    let mut ext: sp_io::TestExternalities = system::GenesisConfig::<Test>::default()
         .build_storage()
         .unwrap()
-        .into()
+        .into();
+
+    let (offchain, _offchain_state) = sp_core::offchain::testing::TestOffchainExt::new();
+    ext.register_extension(sp_core::offchain::OffchainDbExt::new(offchain.clone()));
+    ext.register_extension(sp_core::offchain::OffchainWorkerExt::new(offchain));
+
+    ext
 }

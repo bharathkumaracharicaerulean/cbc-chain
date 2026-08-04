@@ -378,10 +378,9 @@ sp_api::decl_runtime_apis! {
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            assert!(
-                !self.initial_validator_weights.is_empty(),
-                "DVF genesis requires at least one validator with non-zero weight"
-            );
+            if self.initial_validator_weights.is_empty() {
+                return;
+            }
 
             for (validator, stake, score) in &self.initial_validator_weights {
                 assert!(

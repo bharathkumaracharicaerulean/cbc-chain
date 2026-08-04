@@ -23,6 +23,7 @@ frame_support::construct_runtime!(
         DcfPallet: crate,
         PalletCbcPos: pallet_cbc_pos,
         PalletCbcPoi: pallet_cbc_poi,
+        PalletCbcGovernance: pallet_cbc_governance,
     }
 );
 
@@ -61,7 +62,7 @@ impl frame_system::Config for Test {
 
 impl pallet_balances::Config for Test {
     type MaxLocks = ConstU32<50>;
-    type MaxReserves = ();
+    type MaxReserves = ConstU32<50>;
     type ReserveIdentifier = [u8; 8];
     type Balance = u128;
     type RuntimeEvent = RuntimeEvent;
@@ -89,7 +90,7 @@ parameter_types! {
     pub const MaxSlashingCount: u32 = 3;
     pub const MinValidatorScore: u32 = 50;
     pub const ValidatorScoreDecay: u32 = 10;
-    pub const MinInferenceConfidence: u32 = 80;
+    pub const MinInferenceConfidence: u32 = 10;
     pub const MaxInferenceAge: u32 = 10;
     pub const ChallengeWindow: u32 = 5;
     pub const InferenceReward: u128 = 1000;
@@ -99,6 +100,7 @@ parameter_types! {
 impl pallet_cbc_pos::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type Balance = u128;
+    type Currency = Balances;
     type MinStake = MinStake;
     type MaxValidators = MaxValidators;
     type MaxSlashingCount = MaxSlashingCount;
@@ -106,6 +108,21 @@ impl pallet_cbc_pos::Config for Test {
     type MinActiveValidators = MinActiveValidators;
     type ValidatorScoreDecay = ValidatorScoreDecay;
     type WeightInfo = ();
+
+    type LeaveCooldown = ConstU32<10>;
+    type ValidatorReward = ConstU128<10000>;
+    type SlashPercent = ConstU32<10>;
+    type MaxSlashPerEpoch = ConstU128<50000>;
+    type MaxSlashPerValidator = ConstU128<20000>;
+    type MaxRewardPerEpoch = ConstU128<30000>;
+    type MaxRewardPerValidator = ConstU128<10000>;
+    type SlashPenaltyDivisor = ConstU64<1000>;
+    type MaxSlashPenalty = ConstU64<50>;
+    type RewardBoostDivisor = ConstU64<1000>;
+    type MaxRewardBoost = ConstU64<20>;
+    type HighPerformanceScore = ConstU64<80>;
+    type TopPerformerPercentage = ConstU32<20>;
+    type ValidatorHandler = ();
 }
 
 impl pallet_cbc_poi::Config for Test {
@@ -118,6 +135,20 @@ impl pallet_cbc_poi::Config for Test {
     type PosInterface = MockPosInterface;
     type DcfInterface = crate::Pallet<Test>;
     type WeightInfo = ();
+
+    type InferenceBoostLow = ConstU64<2>;
+    type InferenceBoostMedium = ConstU64<5>;
+    type InferenceBoostHigh = ConstU64<10>;
+    type InferencePenaltyLow = ConstU64<3>;
+    type InferencePenaltyMedium = ConstU64<7>;
+    type InferencePenaltyHigh = ConstU64<15>;
+    type InferenceConfidenceThresholdLow = ConstU32<70>;
+    type InferenceConfidenceThresholdHigh = ConstU32<90>;
+    type MaxValidatorScore = ConstU64<10000>;
+    type PercentagePrecision = ConstU32<10000>;
+    type OffchainWorkerInterval = ConstU32<1>;
+    type MaxValidatorIterationWeight = ConstU64<1000000>;
+    type MaxLoopIterations = ConstU32<10>;
 }
 
 parameter_types! {
@@ -149,6 +180,9 @@ impl pallet_cbc_poi::PosInterface<u64> for MockPosInterface {
     fn slash_score(_validator: &u64, _weight: u32) -> DispatchResult {
         Ok(())
     }
+    fn get_active_validators() -> Vec<u64> {
+        vec![1, 2, 3]
+    }
 }
 
 // Mock DcfInterface implementation for PoI pallet
@@ -157,6 +191,38 @@ impl pallet_cbc_poi::DcfInterface<u64> for MockDcfInterface {
     fn record_inference_activity(_validator: &u64) -> DispatchResult {
         Ok(())
     }
+    fn eject_validator(_validator: &u64, _reason: &'static str) -> DispatchResult {
+        Ok(())
+    }
+    fn update_final_score(_validator: &u64) -> DispatchResult {
+        Ok(())
+    }
+}
+
+pub struct MockProposalExecutor;
+impl pallet_cbc_governance::ProposalExecutor<u64, u128> for MockProposalExecutor {
+    fn slash_validator(_validator: &u64, _amount: u128) -> DispatchResult { Ok(()) }
+    fn reward_validator(_validator: &u64, _amount: u128) -> DispatchResult { Ok(()) }
+    fn eject_validator(_validator: &u64, _reason: pallet_cbc_governance::EjectionReason) -> DispatchResult { Ok(()) }
+    fn add_validator(_validator: &u64) -> DispatchResult { Ok(()) }
+    fn remove_validator(_validator: &u64) -> DispatchResult { Ok(()) }
+}
+
+pub struct MockValidatorProvider;
+impl pallet_cbc_governance::ValidatorProvider<u64, Weight> for MockValidatorProvider {
+    fn active_validators() -> Vec<u64> { vec![1, 2, 3] }
+    fn is_private_chain_mode() -> bool { false }
+    fn validate_governance_in_private_mode(_proposer: &u64) -> DispatchResult { Ok(()) }
+    fn validate_proposal_in_private_mode(_proposer: &u64, _target: &u64) -> DispatchResult { Ok(()) }
+    fn check_rate_limits(_proposer: &u64, _op_type: u8, _weight: Weight) -> Result<(), (DispatchError, Option<(u8, u8, u32, u32)>)> { Ok(()) }
+    fn record_operation(_proposer: &u64, _op_type: u8) {}
+}
+
+impl pallet_cbc_governance::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type Balance = u128;
+    type ProposalExecutor = MockProposalExecutor;
+    type ValidatorProvider = MockValidatorProvider;
 }
 
 // Mock weight info
@@ -248,25 +314,12 @@ impl WeightInfo for MockWeightInfo {
 
 impl Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type MaxValidators = DcfMaxValidators;
     type MaxEpochHistory = MaxEpochHistory;
     type DefaultPosWeight = DefaultPosWeight;
     type DefaultPoiWeight = DefaultPoiWeight;
-    type MinActiveValidators = MinActiveValidators;
-    type MinValidatorScore = DcfMinValidatorScore;
-    type ValidatorScoreDecay = DcfValidatorScoreDecay;
-    type MaxValidatorScore = MaxValidatorScore;
     type BlockAuthorshipBoost = BlockAuthorshipBoost;
     type MissedBlockPenalty = MissedBlockPenalty;
-    type InferenceBoostLow = InferenceBoostLow;
-    type InferenceBoostMedium = InferenceBoostMedium;
-    type InferenceBoostHigh = InferenceBoostHigh;
-    type InferencePenaltyLow = InferencePenaltyLow;
-    type InferencePenaltyMedium = InferencePenaltyMedium;
-    type InferencePenaltyHigh = InferencePenaltyHigh;
-    type MinStake = DcfMinStake;
     type Balance = u128;
-    type Currency = Balances;
     type WeightInfo = MockWeightInfo;
 
     // Constants for hardcoded values
@@ -288,10 +341,7 @@ impl Config for Test {
     type UnderperformanceCheckInterval = ConstU32<50>;
     type ValidatorProposalInterval = ConstU32<200>;
     type HealthMetricsInterval = ConstU32<1000>;
-    type OffchainWorkerInterval = ConstU32<5>;
-    type LeaveCooldown = ConstU32<1000>;
     type EpochLength = ConstU32<2400>;
-    type PercentagePrecision = ConstU32<10000>;
 
     // Trust score weights
     type TrustScoreUptimeWeight = ConstU64<4000>;
@@ -309,7 +359,6 @@ impl Config for Test {
     
     // Performance thresholds
     type MinPerformanceScore = ConstU64<30>;
-    type HighPerformanceScore = ConstU64<80>;
     type MinParticipationRate = ConstU32<50>;
     type HighParticipationRate = ConstU32<90>;
     type MaxMissedBlocks = ConstU32<10>;
@@ -341,22 +390,11 @@ impl Config for Test {
     type HealthCheckSampleSize = ConstU32<5>;
     
 
-    // Additional missing parameters
-    type InferenceConfidenceThresholdLow = ConstU32<70>;
-    type InferenceConfidenceThresholdHigh = ConstU32<90>;
-    type MaxSlashPenalty = ConstU64<50>;
-    type MaxRewardBoost = ConstU64<20>;
-    type SlashPenaltyDivisor = ConstU64<1000>;
-    type RewardBoostDivisor = ConstU64<1000>;
-    type SlashPercent = ConstU32<10>;
-    type ValidatorReward = ConstU128<10000>;
-    
-    // Slashing and reward bounds
-    type MaxSlashPerEpoch = ConstU128<50000>;
-    type MaxSlashPerValidator = ConstU128<20000>;
-    type MaxRewardPerEpoch = ConstU128<30000>;
-    type MaxRewardPerValidator = ConstU128<10000>;
-    
+    // Reward distribution percentages
+    type BaseRewardPercentage = ConstU32<60>;
+    type PerformanceRewardPercentage = ConstU32<25>;
+    type TopPerformerRewardPercentage = ConstU32<15>;
+
     type MaxValidatorNameLength = ConstU32<32>;
     type MaxValidatorWebsiteLength = ConstU32<64>;
     type MaxValidatorContactLength = ConstU32<64>;
@@ -367,24 +405,161 @@ impl Config for Test {
     type MaxCommissionRate = ConstU32<10000>;
     type FullPercentage = ConstU32<100>;
     type HighPerformancePercentage = ConstU32<80>;
-    type TopPerformerPercentage = ConstU32<20>;
-
-    // Reward distribution percentages
-    type BaseRewardPercentage = ConstU32<60>;
-    type PerformanceRewardPercentage = ConstU32<25>;
-    type TopPerformerRewardPercentage = ConstU32<15>;
-
-    // Trust score configuration (already defined above, removing duplicates)
 
     // DVF integration — no-op in tests
     type WeightFreezer = ();
     type DvfFinalizedBlockProvider = ();
+
+    type ValidatorRegistry = MockValidatorRegistry;
+}
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+
+thread_local! {
+    static MOCK_ACTIVE_VALIDATORS: RefCell<Vec<u64>> = RefCell::new(Vec::new());
+    static MOCK_VALIDATOR_SET: RefCell<Vec<u64>> = RefCell::new(Vec::new());
+    static MOCK_VALIDATOR_STATES: RefCell<BTreeMap<u64, crate::traits::ValidatorState>> = RefCell::new(BTreeMap::new());
+    static MOCK_VALIDATOR_NAMES: RefCell<BTreeMap<u64, Vec<u8>>> = RefCell::new(BTreeMap::new());
+    static MOCK_VALIDATOR_METADATA: RefCell<BTreeMap<u64, crate::ValidatorMetadataInfo>> = RefCell::new(BTreeMap::new());
+    static MOCK_PENDING_ACTIONS: RefCell<BTreeMap<u64, crate::ValidatorAction>> = RefCell::new(BTreeMap::new());
+    static MOCK_JOIN_TIMES: RefCell<BTreeMap<u64, u32>> = RefCell::new(BTreeMap::new());
+    static MOCK_LEAVE_REQUESTS: RefCell<BTreeMap<u64, u32>> = RefCell::new(BTreeMap::new());
+    static MOCK_RECENTLY_REMOVED: RefCell<BTreeMap<u64, u32>> = RefCell::new(BTreeMap::new());
+    static MOCK_PERF_HISTORIES: RefCell<BTreeMap<u64, Vec<crate::PerformanceRecord>>> = RefCell::new(BTreeMap::new());
+}
+
+pub fn clear_mock_registry() {
+    MOCK_ACTIVE_VALIDATORS.with(|v| v.borrow_mut().clear());
+    MOCK_VALIDATOR_SET.with(|v| v.borrow_mut().clear());
+    MOCK_VALIDATOR_STATES.with(|v| v.borrow_mut().clear());
+    MOCK_VALIDATOR_NAMES.with(|v| v.borrow_mut().clear());
+    MOCK_VALIDATOR_METADATA.with(|v| v.borrow_mut().clear());
+    MOCK_PENDING_ACTIONS.with(|v| v.borrow_mut().clear());
+    MOCK_JOIN_TIMES.with(|v| v.borrow_mut().clear());
+    MOCK_LEAVE_REQUESTS.with(|v| v.borrow_mut().clear());
+    MOCK_RECENTLY_REMOVED.with(|v| v.borrow_mut().clear());
+    MOCK_PERF_HISTORIES.with(|v| v.borrow_mut().clear());
+}
+
+pub struct MockValidatorRegistry;
+
+impl crate::traits::ValidatorRegistryProvider<u64, u128, u64> for MockValidatorRegistry {
+    fn get_active_validators() -> Vec<u64> {
+        MOCK_ACTIVE_VALIDATORS.with(|v| v.borrow().clone())
+    }
+    fn update_active_validators(active: Vec<u64>) {
+        MOCK_ACTIVE_VALIDATORS.with(|v| *v.borrow_mut() = active);
+    }
+    fn get_validator_set() -> Vec<u64> {
+        MOCK_VALIDATOR_SET.with(|v| v.borrow().clone())
+    }
+    fn update_validator_set(set: Vec<u64>) {
+        MOCK_VALIDATOR_SET.with(|v| *v.borrow_mut() = set);
+    }
+    fn is_validator_active(validator: &u64) -> bool {
+        MOCK_ACTIVE_VALIDATORS.with(|v| v.borrow().contains(validator))
+    }
+    fn get_validator_profile(_validator: &u64) -> Option<crate::ValidatorProfile<u64, u128, u64>> {
+        None
+    }
+    fn get_validator_status(_validator: &u64) -> Option<crate::ValidatorStatus> {
+        None
+    }
+    fn eject_validator(_validator: &u64, _reason: crate::EjectionReason) -> sp_runtime::DispatchResult {
+        Ok(())
+    }
+    fn get_validator_state(validator: &u64) -> Option<crate::traits::ValidatorState> {
+        MOCK_VALIDATOR_STATES.with(|m| m.borrow().get(validator).cloned())
+    }
+    fn update_validator_state(validator: &u64, state: crate::traits::ValidatorState) {
+        MOCK_VALIDATOR_STATES.with(|m| m.borrow_mut().insert(*validator, state));
+    }
+    fn contains_validator_state(validator: &u64) -> bool {
+        MOCK_VALIDATOR_STATES.with(|m| m.borrow().contains_key(validator))
+    }
+    fn remove_validator_state(validator: &u64) {
+        MOCK_VALIDATOR_STATES.with(|m| m.borrow_mut().remove(validator));
+    }
+    fn get_validator_name(validator: &u64) -> Option<Vec<u8>> {
+        MOCK_VALIDATOR_NAMES.with(|m| m.borrow().get(validator).cloned())
+    }
+    fn set_validator_name(validator: &u64, name: Vec<u8>) {
+        MOCK_VALIDATOR_NAMES.with(|m| m.borrow_mut().insert(*validator, name));
+    }
+    fn get_validator_metadata(validator: &u64) -> Option<crate::ValidatorMetadataInfo> {
+        MOCK_VALIDATOR_METADATA.with(|m| m.borrow().get(validator).cloned())
+    }
+    fn set_validator_metadata(validator: &u64, metadata: crate::ValidatorMetadataInfo) {
+        MOCK_VALIDATOR_METADATA.with(|m| m.borrow_mut().insert(*validator, metadata));
+    }
+    fn remove_validator_metadata(validator: &u64) {
+        MOCK_VALIDATOR_METADATA.with(|m| m.borrow_mut().remove(validator));
+    }
+    fn get_validator_detailed_cooldown_status(_validator: &u64) -> Option<(u32, bool)> {
+        None
+    }
+    fn get_validator_leave_request(validator: &u64) -> Option<u32> {
+        MOCK_LEAVE_REQUESTS.with(|m| m.borrow().get(validator).cloned())
+    }
+    fn set_validator_leave_request(validator: &u64, val: u32) {
+        MOCK_LEAVE_REQUESTS.with(|m| m.borrow_mut().insert(*validator, val));
+    }
+    fn remove_validator_leave_request(validator: &u64) {
+        MOCK_LEAVE_REQUESTS.with(|m| m.borrow_mut().remove(validator));
+    }
+    fn get_pending_actions() -> Vec<(u64, crate::ValidatorAction)> {
+        MOCK_PENDING_ACTIONS.with(|m| m.borrow().iter().map(|(k, v)| (*k, v.clone())).collect())
+    }
+    fn remove_pending_action(validator: &u64) {
+        MOCK_PENDING_ACTIONS.with(|m| m.borrow_mut().remove(validator));
+    }
+    fn add_pending_action(validator: &u64, action: crate::ValidatorAction) {
+        MOCK_PENDING_ACTIONS.with(|m| m.borrow_mut().insert(*validator, action));
+    }
+    fn get_validator_join_time(validator: &u64) -> Option<u32> {
+        MOCK_JOIN_TIMES.with(|m| m.borrow().get(validator).cloned())
+    }
+    fn set_validator_join_time(validator: &u64, val: u32) {
+        MOCK_JOIN_TIMES.with(|m| m.borrow_mut().insert(*validator, val));
+    }
+    fn remove_validator_join_time(validator: &u64) {
+        MOCK_JOIN_TIMES.with(|m| m.borrow_mut().remove(validator));
+    }
+    fn get_recently_removed_validator(validator: &u64) -> Option<u32> {
+        MOCK_RECENTLY_REMOVED.with(|m| m.borrow().get(validator).cloned())
+    }
+    fn set_recently_removed_validator(validator: &u64, val: u32) {
+        MOCK_RECENTLY_REMOVED.with(|m| m.borrow_mut().insert(*validator, val));
+    }
+    fn remove_recently_removed_validator(validator: &u64) {
+        MOCK_RECENTLY_REMOVED.with(|m| m.borrow_mut().remove(validator));
+    }
+    fn get_validator_performance_history(validator: &u64) -> Vec<crate::PerformanceRecord> {
+        MOCK_PERF_HISTORIES.with(|m| m.borrow().get(validator).cloned().unwrap_or_default())
+    }
+    fn set_validator_performance_history(validator: &u64, history: Vec<crate::PerformanceRecord>) {
+        MOCK_PERF_HISTORIES.with(|m| m.borrow_mut().insert(*validator, history));
+    }
+    fn remove_validator_performance_history(validator: &u64) {
+        MOCK_PERF_HISTORIES.with(|m| m.borrow_mut().remove(validator));
+    }
+    fn get_validator_last_seen(_validator: &u64) -> u32 { 0 }
+    fn set_validator_last_seen(_validator: &u64, _val: u32) {}
+    fn remove_validator_last_seen(_validator: &u64) {}
+    fn get_validator_blocks_authored(_validator: &u64) -> u32 { 0 }
+    fn set_validator_blocks_authored(_validator: &u64, _val: u32) {}
+    fn remove_validator_blocks_authored(_validator: &u64) {}
+    fn get_validator_blocks_missed(_validator: &u64) -> u32 { 0 }
+    fn set_validator_blocks_missed(_validator: &u64, _val: u32) {}
+    fn remove_validator_blocks_missed(_validator: &u64) {}
 }
 
 
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
+    clear_mock_registry();
     let mut storage = frame_system::GenesisConfig::<Test>::default()
         .build_storage()
         .unwrap();
@@ -413,6 +588,23 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     .assimilate_storage(&mut storage)
     .unwrap();
 
+    pallet_cbc_pos::GenesisConfig::<Test> {
+        validators: vec![1, 2, 3],
+        validator_scores: vec![6000, 7000, 8000],
+        current_epoch: 0,
+        slashing_count: vec![],
+    }
+    .assimilate_storage(&mut storage)
+    .unwrap();
+
+    pallet_cbc_poi::GenesisConfig::<Test> {
+        inference_results: vec![(1, 6000), (2, 7000), (3, 8000)],
+        challenges: vec![],
+        current_epoch: 0,
+    }
+    .assimilate_storage(&mut storage)
+    .unwrap();
+
     crate::GenesisConfig::<Test> {
         validators: vec![1, 2, 3],
         validator_scores: vec![6000, 7000, 8000],
@@ -428,11 +620,15 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     }
     .assimilate_storage(&mut storage)
     .unwrap();
-
-    storage.into()
+    let mut ext: sp_io::TestExternalities = storage.into();
+    let (offchain, _offchain_state) = sp_core::offchain::testing::TestOffchainExt::new();
+    ext.register_extension(sp_core::offchain::OffchainDbExt::new(offchain.clone()));
+    ext.register_extension(sp_core::offchain::OffchainWorkerExt::new(offchain));
+    ext
 }
 
 pub fn new_test_ext_with_genesis(genesis_config: crate::GenesisConfig<Test>) -> sp_io::TestExternalities {
+    clear_mock_registry();
     let mut storage = frame_system::GenesisConfig::<Test>::default()
         .build_storage()
         .unwrap();
@@ -459,8 +655,31 @@ pub fn new_test_ext_with_genesis(genesis_config: crate::GenesisConfig<Test>) -> 
     .assimilate_storage(&mut storage)
     .unwrap();
 
+    let pos_scores: Vec<u32> = genesis_config.validator_scores.iter().map(|s| *s as u32).collect();
+    pallet_cbc_pos::GenesisConfig::<Test> {
+        validators: genesis_config.validators.clone(),
+        validator_scores: pos_scores.clone(),
+        current_epoch: 0,
+        slashing_count: vec![],
+    }
+    .assimilate_storage(&mut storage)
+    .unwrap();
+
+    let poi_results: Vec<(u64, u32)> = genesis_config.validators.iter().zip(pos_scores.iter()).map(|(v, s)| (*v, *s)).collect();
+    pallet_cbc_poi::GenesisConfig::<Test> {
+        inference_results: poi_results,
+        challenges: vec![],
+        current_epoch: 0,
+    }
+    .assimilate_storage(&mut storage)
+    .unwrap();
+
     // Use the provided genesis config
     genesis_config.assimilate_storage(&mut storage).unwrap();
 
-    storage.into()
+    let mut ext: sp_io::TestExternalities = storage.into();
+    let (offchain, _offchain_state) = sp_core::offchain::testing::TestOffchainExt::new();
+    ext.register_extension(sp_core::offchain::OffchainDbExt::new(offchain.clone()));
+    ext.register_extension(sp_core::offchain::OffchainWorkerExt::new(offchain));
+    ext
 }

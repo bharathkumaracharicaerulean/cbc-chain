@@ -1,31 +1,132 @@
 #[cfg(test)]
 mod tests {
     use crate::mock::*;
-    use crate::Error;
-    use frame_support::{assert_noop, assert_ok, traits::Get};
-    // use sp_runtime::traits::BadOrigin; // unused
+    use crate::{
+        CurrentEpoch, Error, Event, GenesisConfig, InferenceErrorSeverity, ValidatorInferenceCount,
+    };
+    use frame_support::{assert_noop, assert_ok};
+    use sp_runtime::{BuildStorage, DispatchError};
+
+    fn run_to_block(n: u64) {
+        while System::block_number() < n {
+            System::set_block_number(System::block_number() + 1);
+        }
+    }
+
+    // ================================================================================================
+    // 1. Genesis Configuration Tests
+    // ================================================================================================
+
+    #[test]
+    fn test_genesis_config_initialization() {
+        let genesis = GenesisConfig::<Test> {
+            inference_results: vec![(1, 42), (2, 85)],
+            challenges: vec![(3, 1, 42)],
+            current_epoch: 5,
+        };
+        let mut storage = frame_system::GenesisConfig::<Test>::default()
+            .build_storage()
+            .unwrap();
+        genesis.assimilate_storage(&mut storage).unwrap();
+
+        let mut ext = sp_io::TestExternalities::from(storage);
+        ext.execute_with(|| {
+            assert_eq!(PalletCbcPoi::inference_results(1), Some((42, 5)));
+            assert_eq!(PalletCbcPoi::inference_results(2), Some((85, 5)));
+            assert_eq!(PalletCbcPoi::challenges(3), Some((1, 42, 5)));
+            assert_eq!(PalletCbcPoi::current_epoch(), 5);
+        });
+    }
+
+    // ================================================================================================
+    // 2. Inference Submission Extrinsic Tests
+    // ================================================================================================
 
     #[test]
     fn test_submit_inference_success() {
         new_test_ext().execute_with(|| {
-            // Test successful inference submission
+            run_to_block(1);
             assert_ok!(PalletCbcPoi::submit_inference(
                 RuntimeOrigin::signed(1),
                 42,
-                80 // confidence above minimum threshold
+                80
             ));
 
-            // Verify the inference was stored correctly
             let (result, epoch) = PalletCbcPoi::inference_results(1).unwrap();
             assert_eq!(result, 42);
-            assert_eq!(epoch, 0); // Initial epoch should be 0
+            assert_eq!(epoch, 0);
+
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::PoiScoreUpdated {
+                validator: 1,
+                old_score: 0,
+                new_score: 42,
+                epoch: 0,
+            }));
+
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::InferenceSubmitted {
+                who: 1,
+                result: 42,
+                confidence: 80,
+            }));
+
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::InferenceAccepted {
+                validator: 1,
+                confidence: 80,
+            }));
+        });
+    }
+
+    #[test]
+    fn test_submit_inference_confidence_tier_high() {
+        new_test_ext().execute_with(|| {
+            run_to_block(1);
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(1),
+                50,
+                95
+            ));
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::InferenceAccepted {
+                validator: 1,
+                confidence: 95,
+            }));
+        });
+    }
+
+    #[test]
+    fn test_submit_inference_confidence_tier_medium() {
+        new_test_ext().execute_with(|| {
+            run_to_block(1);
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(1),
+                50,
+                75
+            ));
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::InferenceAccepted {
+                validator: 1,
+                confidence: 75,
+            }));
+        });
+    }
+
+    #[test]
+    fn test_submit_inference_confidence_tier_low() {
+        new_test_ext().execute_with(|| {
+            run_to_block(1);
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(1),
+                50,
+                55
+            ));
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::InferenceAccepted {
+                validator: 1,
+                confidence: 55,
+            }));
         });
     }
 
     #[test]
     fn test_submit_inference_confidence_too_low() {
         new_test_ext().execute_with(|| {
-            // Test submission with confidence below threshold
             assert_noop!(
                 PalletCbcPoi::submit_inference(RuntimeOrigin::signed(1), 42, 20),
                 Error::<Test>::ConfidenceTooLow
@@ -36,14 +137,12 @@ mod tests {
     #[test]
     fn test_submit_inference_already_submitted() {
         new_test_ext().execute_with(|| {
-            // Submit first inference
             assert_ok!(PalletCbcPoi::submit_inference(
                 RuntimeOrigin::signed(1),
                 42,
                 80
             ));
 
-            // Try to submit again with same account
             assert_noop!(
                 PalletCbcPoi::submit_inference(RuntimeOrigin::signed(1), 43, 80),
                 Error::<Test>::InferenceAlreadySubmitted
@@ -52,250 +151,67 @@ mod tests {
     }
 
     #[test]
-    fn test_challenge_inference_success() {
+    fn test_submit_inference_bad_origin() {
         new_test_ext().execute_with(|| {
-            // First submit an inference
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(1),
-                42,
-                80
-            ));
-
-            // Challenge the inference
-            assert_ok!(PalletCbcPoi::challenge_inference(
-                RuntimeOrigin::signed(2),
-                1,
-                42
-            ));
-
-            // Verify the challenge was stored
-            let (challenged, result, epoch) = PalletCbcPoi::challenges(2).unwrap();
-            assert_eq!(challenged, 1);
-            assert_eq!(result, 42);
-            assert_eq!(epoch, 0);
-        });
-    }
-
-    #[test]
-    fn test_challenge_inference_not_found() {
-        new_test_ext().execute_with(|| {
-            // Try to challenge non-existent inference
-            assert_noop!(
-                PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 42),
-                Error::<Test>::InferenceNotFound
-            );
-        });
-    }
-
-    #[test]
-    fn test_challenge_inference_invalid_result() {
-        new_test_ext().execute_with(|| {
-            // Submit inference
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(1),
-                42,
-                80
-            ));
-
-            // Try to challenge with wrong result
-            assert_noop!(
-                PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 43),
-                Error::<Test>::InvalidChallenge
-            );
-        });
-    }
-
-    #[test]
-    fn test_unauthorized_submit() {
-        new_test_ext().execute_with(|| {
-            // Try to submit inference with root origin
             assert_noop!(
                 PalletCbcPoi::submit_inference(RuntimeOrigin::root(), 42, 80),
-                sp_runtime::DispatchError::BadOrigin
+                DispatchError::BadOrigin
             );
         });
     }
 
-    #[test]
-    fn test_unauthorized_challenge() {
-        new_test_ext().execute_with(|| {
-            // Try to challenge with root origin
-            assert_noop!(
-                PalletCbcPoi::challenge_inference(RuntimeOrigin::root(), 1, 42),
-                sp_runtime::DispatchError::BadOrigin
-            );
-        });
-    }
+    // ================================================================================================
+    // 3. Challenge Extrinsic Tests
+    // ================================================================================================
 
     #[test]
-    fn test_challenge_unregistered_validator() {
+    fn test_challenge_inference_success() {
         new_test_ext().execute_with(|| {
-            // Should fail because the validator has not submitted any inference
-            assert_noop!(
-                PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 42),
-                Error::<Test>::InferenceNotFound
-            );
-        });
-    }
-
-    #[test]
-    fn test_submit_inference_malformed_data() {
-        new_test_ext().execute_with(|| {
-            // Should fail because confidence value exceeds maximum allowed (100)
-            assert_ok!(PalletCbcPoi::submit_inference(RuntimeOrigin::signed(1), 42, 101));
-        });
-    }
-
-    #[test]
-    fn test_submit_inference_duplicate() {
-        new_test_ext().execute_with(|| {
-            // Submit first inference
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(1),
-                42,
-                80
-            ));
-            // Should fail because validator has already submitted an inference in this epoch
-            assert_noop!(
-                PalletCbcPoi::submit_inference(RuntimeOrigin::signed(1), 43, 85),
-                Error::<Test>::InferenceAlreadySubmitted
-            );
-        });
-    }
-
-    #[test]
-    fn test_challenge_window_expiry() {
-        new_test_ext().execute_with(|| {
-            // Submit inference
+            run_to_block(1);
             assert_ok!(PalletCbcPoi::submit_inference(
                 RuntimeOrigin::signed(1),
                 42,
                 80
             ));
 
-            // Simulate epoch advancement beyond challenge window
-            let challenge_window: u32 = <Test as crate::Config>::ChallengeWindow::get();
-            let current_epoch = challenge_window + 1;
-            
-            // In a real scenario, this would be handled by epoch management
-            // For testing, we can verify the challenge window logic
-            assert!(current_epoch > challenge_window);
-        });
-    }
-
-    #[test]
-    fn test_inference_age_validation() {
-        new_test_ext().execute_with(|| {
-            // Submit inference
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(1),
-                42,
-                80
-            ));
-
-            // Verify inference was stored with current epoch (0)
-            let (result, epoch) = PalletCbcPoi::inference_results(1).unwrap();
-            assert_eq!(result, 42);
-            assert_eq!(epoch, 0);
-
-            // Test max inference age
-            let max_age: u32 = <Test as crate::Config>::MaxInferenceAge::get();
-            assert!(max_age > 0);
-        });
-    }
-
-    #[test]
-    fn test_multiple_validators_inference() {
-        new_test_ext().execute_with(|| {
-            // Multiple validators submit different inferences
-            for i in 1..=5 {
-                assert_ok!(PalletCbcPoi::submit_inference(
-                    RuntimeOrigin::signed(i),
-                    (i * 10) as u32, // Different results
-                    (60 + i * 5) as u32 // Different confidence levels
-                ));
-            }
-
-            // Verify all inferences were stored
-            for i in 1..=5 {
-                let (result, epoch) = PalletCbcPoi::inference_results(i).unwrap();
-                assert_eq!(result, (i * 10) as u32);
-                assert_eq!(epoch, 0);
-            }
-        });
-    }
-
-    #[test]
-    fn test_challenge_resolution_success() {
-        new_test_ext().execute_with(|| {
-            // Submit inference
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(1),
-                42,
-                80
-            ));
-
-            // Challenge the inference
             assert_ok!(PalletCbcPoi::challenge_inference(
                 RuntimeOrigin::signed(2),
                 1,
                 42
             ));
 
-            // Verify challenge was stored
-            assert!(PalletCbcPoi::challenges(2).is_some());
             let (challenged, result, epoch) = PalletCbcPoi::challenges(2).unwrap();
             assert_eq!(challenged, 1);
             assert_eq!(result, 42);
             assert_eq!(epoch, 0);
+
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::InferenceChallenged {
+                challenger: 2,
+                challenged: 1,
+                result: 42,
+            }));
+
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::InferenceRejected {
+                validator: 1,
+                confidence: 0,
+            }));
+
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::ValidatorSlashed {
+                validator: 1,
+                reason: b"Invalid inference".to_vec(),
+            }));
         });
     }
 
     #[test]
-    fn test_confidence_threshold_validation() {
+    fn test_challenge_inference_self_challenge() {
         new_test_ext().execute_with(|| {
-            let min_confidence: u32 = <Test as crate::Config>::MinInferenceConfidence::get();
-            
-            // Test with confidence exactly at threshold
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(1),
-                42,
-                min_confidence
-            ));
-
-            // Test with confidence above threshold
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(2),
-                43,
-                min_confidence + 10
-            ));
-        });
-    }
-
-    #[test]
-    fn test_inference_rewards_and_penalties() {
-        new_test_ext().execute_with(|| {
-            // Test reward constants
-            let inference_reward: u128 = <Test as crate::Config>::InferenceReward::get();
-            let challenge_reward: u128 = <Test as crate::Config>::ChallengeReward::get();
-            
-            assert!(inference_reward > 0);
-            assert!(challenge_reward > 0);
-            assert!(inference_reward > challenge_reward); // Inference should reward more than challenge
-        });
-    }
-
-    #[test]
-    fn test_self_challenge_prevention() {
-        new_test_ext().execute_with(|| {
-            // Submit inference
             assert_ok!(PalletCbcPoi::submit_inference(
                 RuntimeOrigin::signed(1),
                 42,
                 80
             ));
 
-            // Try to challenge own inference (should fail)
             assert_noop!(
                 PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(1), 1, 42),
                 Error::<Test>::CannotChallengeSelf
@@ -304,23 +220,20 @@ mod tests {
     }
 
     #[test]
-    fn test_challenge_already_challenged() {
+    fn test_challenge_inference_already_challenged() {
         new_test_ext().execute_with(|| {
-            // Submit inference
             assert_ok!(PalletCbcPoi::submit_inference(
                 RuntimeOrigin::signed(1),
                 42,
                 80
             ));
 
-            // First challenge
             assert_ok!(PalletCbcPoi::challenge_inference(
                 RuntimeOrigin::signed(2),
                 1,
                 42
             ));
 
-            // Try to challenge again with same challenger
             assert_noop!(
                 PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 42),
                 Error::<Test>::ChallengeAlreadyExists
@@ -329,351 +242,305 @@ mod tests {
     }
 
     #[test]
-    fn test_epoch_management_integration() {
+    fn test_challenge_inference_not_found() {
         new_test_ext().execute_with(|| {
-            // Submit inference in epoch 0
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 999, 42),
+                Error::<Test>::InferenceNotFound
+            );
+        });
+    }
+
+    #[test]
+    fn test_challenge_inference_invalid_result() {
+        new_test_ext().execute_with(|| {
             assert_ok!(PalletCbcPoi::submit_inference(
                 RuntimeOrigin::signed(1),
                 42,
                 80
             ));
 
-            // Verify epoch tracking
-            let (_, epoch) = PalletCbcPoi::inference_results(1).unwrap();
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 43),
+                Error::<Test>::InvalidChallenge
+            );
+        });
+    }
+
+    #[test]
+    fn test_challenge_inference_too_old() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(1),
+                42,
+                80
+            ));
+
+            // Set current epoch past MaxInferenceAge (10)
+            CurrentEpoch::<Test>::put(15);
+
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 42),
+                Error::<Test>::InferenceTooOld
+            );
+        });
+    }
+
+    #[test]
+    fn test_challenge_inference_window_expired() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(1),
+                42,
+                80
+            ));
+
+            // Set current epoch past ChallengeWindow (5) but <= MaxInferenceAge (10)
+            CurrentEpoch::<Test>::put(6);
+
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(RuntimeOrigin::signed(2), 1, 42),
+                Error::<Test>::ChallengeWindowExpired
+            );
+        });
+    }
+
+    #[test]
+    fn test_challenge_inference_bad_origin() {
+        new_test_ext().execute_with(|| {
+            assert_noop!(
+                PalletCbcPoi::challenge_inference(RuntimeOrigin::root(), 1, 42),
+                DispatchError::BadOrigin
+            );
+        });
+    }
+
+    // ================================================================================================
+    // 4. Simulate Inference Extrinsic Tests
+    // ================================================================================================
+
+    #[test]
+    fn test_simulate_inference_success() {
+        new_test_ext().execute_with(|| {
+            run_to_block(1);
+            // Validator 1 is active in DummyPosInterface
+            assert_ok!(PalletCbcPoi::simulate_inference(
+                RuntimeOrigin::signed(2),
+                1
+            ));
+
+            assert_eq!(ValidatorInferenceCount::<Test>::get(1), 1);
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(Event::InferenceSubmitted {
+                who: 1,
+                result: 72,
+                confidence: 89,
+            }));
+        });
+    }
+
+    #[test]
+    fn test_simulate_inference_validator_not_found() {
+        new_test_ext().execute_with(|| {
+            // Validator 999 is not in active validators [1, 2, 3]
+            assert_noop!(
+                PalletCbcPoi::simulate_inference(RuntimeOrigin::signed(1), 999),
+                Error::<Test>::ValidatorNotFound
+            );
+        });
+    }
+
+    #[test]
+    fn test_simulate_inference_bad_origin() {
+        new_test_ext().execute_with(|| {
+            assert_noop!(
+                PalletCbcPoi::simulate_inference(RuntimeOrigin::root(), 1),
+                DispatchError::BadOrigin
+            );
+        });
+    }
+
+    // ================================================================================================
+    // 5. Off-Chain Worker Score Application Tests
+    // ================================================================================================
+
+    #[test]
+    fn test_apply_offchain_poi_scores_success() {
+        new_test_ext().execute_with(|| {
+            run_to_block(1);
+            // Store offchain score for validator 1 at block 1
+            assert_ok!(PalletCbcPoi::submit_score(1, 800, 1));
+
+            assert_ok!(PalletCbcPoi::apply_offchain_poi_scores(
+                RuntimeOrigin::signed(2),
+                1
+            ));
+
+            let (score, epoch) = PalletCbcPoi::inference_results(1).unwrap();
+            assert_eq!(score, 800);
             assert_eq!(epoch, 0);
 
-            // In a real scenario, epoch would advance through runtime hooks
-            // Here we just verify the storage structure is correct
+            System::assert_has_event(RuntimeEvent::PalletCbcPoi(
+                Event::ValidatorPoiScoreUpdated {
+                    validator: 1,
+                    poi_score: 800,
+                },
+            ));
+        });
+    }
+
+    #[test]
+    fn test_update_validator_inference_score_success() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(PalletCbcPoi::submit_inference(
+                RuntimeOrigin::signed(1),
+                42,
+                80
+            ));
+
+            assert_ok!(PalletCbcPoi::update_validator_inference_score(
+                RuntimeOrigin::signed(2),
+                1
+            ));
+        });
+    }
+
+    #[test]
+    fn test_update_validator_inference_score_not_found() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(PalletCbcPoi::update_validator_inference_score(
+                RuntimeOrigin::signed(2),
+                999
+            ));
         });
     }
 
     // ================================================================================================
-    // Additional Unit Tests for Comprehensive Coverage
+    // 6. Scoring Logic & Handler Tests
     // ================================================================================================
 
     #[test]
-    fn test_inference_confidence_boundary_conditions() {
+    fn test_handle_valid_inference_high_confidence() {
         new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            let min_confidence: u32 = <Test as crate::Config>::MinInferenceConfidence::get();
-            
-            // Test exactly at minimum confidence
+            // High confidence >= 90
+            assert_ok!(PalletCbcPoi::handle_valid_inference(&1, 95));
+            assert_eq!(ValidatorInferenceCount::<Test>::get(1), 1);
+        });
+    }
+
+    #[test]
+    fn test_handle_valid_inference_medium_confidence() {
+        new_test_ext().execute_with(|| {
+            // Medium confidence >= 70, < 90
+            assert_ok!(PalletCbcPoi::handle_valid_inference(&1, 75));
+            assert_eq!(ValidatorInferenceCount::<Test>::get(1), 1);
+        });
+    }
+
+    #[test]
+    fn test_handle_valid_inference_low_confidence() {
+        new_test_ext().execute_with(|| {
+            // Low confidence < 70
+            assert_ok!(PalletCbcPoi::handle_valid_inference(&1, 60));
+            assert_eq!(ValidatorInferenceCount::<Test>::get(1), 1);
+        });
+    }
+
+    #[test]
+    fn test_handle_invalid_inference_severities() {
+        new_test_ext().execute_with(|| {
+            assert_ok!(PalletCbcPoi::handle_invalid_inference(
+                &1,
+                InferenceErrorSeverity::High
+            ));
+            assert_ok!(PalletCbcPoi::handle_invalid_inference(
+                &1,
+                InferenceErrorSeverity::Medium
+            ));
+            assert_ok!(PalletCbcPoi::handle_invalid_inference(
+                &1,
+                InferenceErrorSeverity::Low
+            ));
+        });
+    }
+
+    // ================================================================================================
+    // 7. Off-Chain Storage & Helper Functions Tests
+    // ================================================================================================
+
+    #[test]
+    fn test_get_score_and_inference_score() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(PalletCbcPoi::get_score(&1), 0);
+            assert_eq!(PalletCbcPoi::get_poi_score(&1), 0);
+            assert_eq!(PalletCbcPoi::get_inference_score(&1), 0);
+
             assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(validator),
-                85,
-                min_confidence
+                RuntimeOrigin::signed(1),
+                88,
+                90
             ));
-            
-            // Clear inference for next test
-            // Note: In real implementation, this would be handled by epoch transitions
+
+            assert_eq!(PalletCbcPoi::get_score(&1), 88);
+            assert_eq!(PalletCbcPoi::get_poi_score(&1), 88);
+            assert_eq!(PalletCbcPoi::get_inference_score(&1), 88);
+            assert_eq!(PalletCbcPoi::validator_inference_score(&1), 88);
         });
     }
 
     #[test]
-    fn test_challenge_result_validation() {
+    fn test_submit_and_verify_score() {
         new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            let challenger = 2u64;
-            let result = 85u32;
-            let confidence = 90u32;
-            
-            // Submit inference
+            assert_ok!(PalletCbcPoi::submit_score(1, 500, 10));
+            assert!(PalletCbcPoi::verify_score(&1, 500, 10));
+            assert!(!PalletCbcPoi::verify_score(&1, 500, 11));
+            assert!(!PalletCbcPoi::verify_score(&1, 600, 10));
+        });
+    }
+
+    #[test]
+    fn test_record_inference_activity() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(ValidatorInferenceCount::<Test>::get(1), 0);
+            assert_ok!(PalletCbcPoi::record_inference_activity(&1));
+            assert_eq!(ValidatorInferenceCount::<Test>::get(1), 1);
+            assert_ok!(PalletCbcPoi::record_inference_activity(&1));
+            assert_eq!(ValidatorInferenceCount::<Test>::get(1), 2);
+        });
+    }
+
+    #[test]
+    fn test_collect_inference_data_stored() {
+        new_test_ext().execute_with(|| {
             assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(validator),
-                result,
-                confidence
+                RuntimeOrigin::signed(1),
+                42,
+                80
             ));
-            
-            // Test valid challenge results
-            assert_ok!(PalletCbcPoi::challenge_inference(
-                RuntimeOrigin::signed(challenger),
-                validator,
-                result // Same result should be valid for challenge
-            ));
+
+            let data = PalletCbcPoi::collect_inference_data(&1, 0).unwrap();
+            assert_eq!(data.validator, 1);
+            assert_eq!(data.epoch, 0);
+            assert_eq!(data.inference_result, 42);
+            assert_eq!(data.confidence_score, 0);
+            assert_eq!(data.data_sources, vec![b"poi_pallet".to_vec()]);
         });
     }
 
     #[test]
-    fn test_multiple_epoch_inference_tracking() {
+    fn test_collect_inference_data_external_fallback() {
         new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            let result = 85u32;
-            let confidence = 90u32;
-            
-            // Submit inference in epoch 0
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(validator),
-                result,
-                confidence
-            ));
-            
-            let (stored_result, stored_epoch) = PalletCbcPoi::inference_results(&validator).unwrap();
-            assert_eq!(stored_result, result);
-            assert_eq!(stored_epoch, 0);
+            // Validator 1 has no stored inference result, falls back to external simulation
+            let data = PalletCbcPoi::collect_inference_data(&1, 0).unwrap();
+            assert_eq!(data.validator, 1);
+            assert_eq!(data.epoch, 0);
+            assert_eq!(data.data_sources, vec![b"simulation".to_vec()]);
         });
     }
 
     #[test]
-    fn test_challenge_window_enforcement() {
+    fn test_run_offchain_computation() {
         new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            let challenger = 2u64;
-            let result = 85u32;
-            let confidence = 90u32;
-            let challenge_window: u32 = <Test as crate::Config>::ChallengeWindow::get();
-            
-            // Submit inference
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(validator),
-                result,
-                confidence
-            ));
-            
-            // Challenge within window should work
-            assert_ok!(PalletCbcPoi::challenge_inference(
-                RuntimeOrigin::signed(challenger),
-                validator,
-                result
-            ));
-            
-            // Verify challenge window configuration
-            assert!(challenge_window > 0);
+            assert_ok!(PalletCbcPoi::run_offchain_computation(1));
         });
     }
-
-    #[test]
-    fn test_inference_quality_assessment() {
-        new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            
-            // Test different confidence levels
-            let confidence_levels = vec![60, 70, 80, 90, 100];
-            
-            for (i, confidence) in confidence_levels.iter().enumerate() {
-                let test_validator = (validator + i as u64) % 10 + 1; // Avoid conflicts
-                
-                let min_conf: u32 = <Test as crate::Config>::MinInferenceConfidence::get();
-                if *confidence >= min_conf {
-                    assert_ok!(PalletCbcPoi::submit_inference(
-                        RuntimeOrigin::signed(test_validator),
-                        (i * 10) as u32,
-                        *confidence
-                    ));
-                }
-            }
-        });
-    }
-
-    #[test]
-    fn test_challenge_mechanism_edge_cases() {
-        new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            let challenger = 2u64;
-            let result = 85u32;
-            let confidence = 90u32;
-            
-            // Submit inference
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(validator),
-                result,
-                confidence
-            ));
-            
-            // Test challenge with same result (should be valid)
-            assert_ok!(PalletCbcPoi::challenge_inference(
-                RuntimeOrigin::signed(challenger),
-                validator,
-                result
-            ));
-            
-            // Verify challenge was stored
-            let challenge_data = PalletCbcPoi::challenges(&challenger);
-            assert!(challenge_data.is_some());
-        });
-    }
-
-    #[test]
-    fn test_inference_data_consistency() {
-        new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            let result = 85u32;
-            let confidence = 90u32;
-            
-            // Submit inference
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(validator),
-                result,
-                confidence
-            ));
-            
-            // Verify all fields are consistent
-            let (stored_result, stored_epoch) = PalletCbcPoi::inference_results(&validator).unwrap();
-            assert_eq!(stored_result, result);
-            assert_eq!(stored_epoch, PalletCbcPoi::current_epoch());
-            
-            // Verify no challenge exists initially
-            assert!(PalletCbcPoi::challenges(&validator).is_none());
-        });
-    }
-
-    #[test]
-    fn test_challenge_data_consistency() {
-        new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            let challenger = 2u64;
-            let result = 85u32;
-            let confidence = 90u32;
-            
-            // Submit inference first
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(validator),
-                result,
-                confidence
-            ));
-            
-            // Submit challenge
-            assert_ok!(PalletCbcPoi::challenge_inference(
-                RuntimeOrigin::signed(challenger),
-                validator,
-                result
-            ));
-            
-            // Verify challenge data consistency
-            let (challenged_validator, challenge_result, challenge_epoch) = PalletCbcPoi::challenges(&challenger).unwrap();
-            assert_eq!(challenged_validator, validator);
-            assert_eq!(challenge_result, result);
-            assert_eq!(challenge_epoch, PalletCbcPoi::current_epoch());
-            
-            // Verify original inference still exists
-            assert!(PalletCbcPoi::inference_results(&validator).is_some());
-        });
-    }
-
-    #[test]
-    fn test_reward_configuration_validation() {
-        new_test_ext().execute_with(|| {
-            // Test reward configuration values
-            let inference_reward: u128 = <Test as crate::Config>::InferenceReward::get();
-            let challenge_reward: u128 = <Test as crate::Config>::ChallengeReward::get();
-            
-            // Rewards should be positive
-            assert!(inference_reward > 0);
-            assert!(challenge_reward > 0);
-            
-            // Inference reward should typically be higher than challenge reward
-            // (This is a design assumption, may vary by implementation)
-            assert!(inference_reward >= challenge_reward);
-        });
-    }
-
-    #[test]
-    fn test_comprehensive_error_handling() {
-        new_test_ext().execute_with(|| {
-            let validator = 1u64;
-            let challenger = 2u64;
-            let result = 85u32;
-            let confidence = 90u32;
-            let min_confidence: u32 = <Test as crate::Config>::MinInferenceConfidence::get();
-            
-            // Test ConfidenceTooLow
-            assert_noop!(
-                PalletCbcPoi::submit_inference(
-                    RuntimeOrigin::signed(validator),
-                    result,
-                    min_confidence - 1
-                ),
-                Error::<Test>::ConfidenceTooLow
-            );
-            
-            // Submit valid inference for further tests
-            assert_ok!(PalletCbcPoi::submit_inference(
-                RuntimeOrigin::signed(validator),
-                result,
-                confidence
-            ));
-            
-            // Test InferenceAlreadySubmitted
-            assert_noop!(
-                PalletCbcPoi::submit_inference(
-                    RuntimeOrigin::signed(validator),
-                    result + 1,
-                    confidence
-                ),
-                Error::<Test>::InferenceAlreadySubmitted
-            );
-            
-            // Test InferenceNotFound
-            assert_noop!(
-                PalletCbcPoi::challenge_inference(
-                    RuntimeOrigin::signed(challenger),
-                    999u64, // Non-existent validator
-                    result
-                ),
-                Error::<Test>::InferenceNotFound
-            );
-            
-            // Test CannotChallengeSelf
-            assert_noop!(
-                PalletCbcPoi::challenge_inference(
-                    RuntimeOrigin::signed(validator),
-                    validator,
-                    result
-                ),
-                Error::<Test>::CannotChallengeSelf
-            );
-        });
-    }
-
-    #[test]
-    fn test_performance_with_multiple_inferences() {
-        new_test_ext().execute_with(|| {
-            // Test performance with many inference submissions
-            for i in 1..=10 {
-                assert_ok!(PalletCbcPoi::submit_inference(
-                    RuntimeOrigin::signed(i),
-                    (i * 10) as u32,
-                    (60 + i * 3) as u32
-                ));
-            }
-            
-            // Verify all inferences were stored correctly
-            for i in 1..=10 {
-                let inference_data = PalletCbcPoi::inference_results(&i);
-                assert!(inference_data.is_some());
-                
-                let (result, epoch) = inference_data.unwrap();
-                assert_eq!(result, (i * 10) as u32);
-                assert_eq!(epoch, 0);
-            }
-        });
-    }
-
-    #[test]
-    fn test_challenge_performance() {
-        new_test_ext().execute_with(|| {
-            // Submit multiple inferences
-            for i in 1..=5 {
-                assert_ok!(PalletCbcPoi::submit_inference(
-                    RuntimeOrigin::signed(i),
-                    (i * 10) as u32,
-                    (70 + i * 2) as u32
-                ));
-            }
-            
-            // Challenge multiple inferences
-            for i in 6..=10 {
-                let target_validator = ((i - 5) % 5) + 1;
-                assert_ok!(PalletCbcPoi::challenge_inference(
-                    RuntimeOrigin::signed(i),
-                    target_validator,
-                    (target_validator * 10) as u32
-                ));
-            }
-            
-            // Verify challenges were stored
-            for i in 6..=10 {
-                assert!(PalletCbcPoi::challenges(&i).is_some());
-            }
-        });
-    }
-} 
+}
