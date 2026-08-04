@@ -14,6 +14,24 @@ if [ ! -f "$BINARY" ]; then
     exit 1
 fi
 
+get_peer_id() {
+    local key_file="$1"
+    if [ -f "$key_file" ]; then
+        "$BINARY" key inspect-node-key --file "$key_file" 2>/dev/null | grep -E '^12D3K[a-zA-Z0-9]+' | tail -n 1
+    fi
+}
+
+ensure_net_key() {
+    local key_file="$1"
+    if [ ! -f "$key_file" ]; then
+        mkdir -p "$(dirname "$key_file")"
+        "$BINARY" key generate-node-key --file "$key_file" 2>/dev/null || true
+        chmod 600 "$key_file" 2>/dev/null || true
+    fi
+}
+
+ensure_net_key "$BASE_PATH/chains/cbc_local/network/secret_ed25519"
+
 # Derive Alice's peer ID from her network key (written by the node on first start).
 ALICE_NET_KEY="$ALICE_BASE_PATH/chains/cbc_local/network/secret_ed25519"
 MAX_RETRIES=15
@@ -32,15 +50,23 @@ if [ ! -f "$ALICE_NET_KEY" ]; then
     exit 1
 fi
 
-ALICE_PEER_ID=$("$BINARY" key inspect-node-key --file "$ALICE_NET_KEY" 2>/dev/null | tail -n 1)
+ALICE_PEER_ID=$(get_peer_id "$ALICE_NET_KEY")
 if [ -z "$ALICE_PEER_ID" ]; then
     echo "ERROR: Could not derive Alice's peer ID from $ALICE_NET_KEY"
     exit 1
 fi
 
 # Derive other peers
-CHARLIE_PEER_ID=$("$BINARY" key inspect-node-key --file "$HOME/.local/share/cbc-node/charlie/chains/cbc_local/network/secret_ed25519" 2>/dev/null | tail -n 1)
-BHARATH_PEER_ID=$("$BINARY" key inspect-node-key --file "$HOME/.local/share/cbc-node/bharath/chains/cbc_local/network/secret_ed25519" 2>/dev/null | tail -n 1)
+CHARLIE_PEER_ID=$(get_peer_id "$HOME/.local/share/cbc-node/charlie/chains/cbc_local/network/secret_ed25519")
+BHARATH_PEER_ID=$(get_peer_id "$HOME/.local/share/cbc-node/bharath/chains/cbc_local/network/secret_ed25519")
+
+RESERVED_NODES=("/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID")
+if [ -n "$CHARLIE_PEER_ID" ]; then
+    RESERVED_NODES+=("/ip4/127.0.0.1/tcp/30335/p2p/$CHARLIE_PEER_ID")
+fi
+if [ -n "$BHARATH_PEER_ID" ]; then
+    RESERVED_NODES+=("/ip4/127.0.0.1/tcp/30336/p2p/$BHARATH_PEER_ID")
+fi
 
 echo "Starting Bob..."
 echo "  Data dir   : $BASE_PATH"
@@ -65,5 +91,5 @@ exec "$BINARY" \
     --validator \
     --name Bob \
     --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID" \
-    --reserved-nodes "/ip4/127.0.0.1/tcp/30333/p2p/$ALICE_PEER_ID" "/ip4/127.0.0.1/tcp/30335/p2p/$CHARLIE_PEER_ID" "/ip4/127.0.0.1/tcp/30336/p2p/$BHARATH_PEER_ID" \
+    --reserved-nodes "${RESERVED_NODES[@]}" \
     >> "$LOG_FILE" 2>&1

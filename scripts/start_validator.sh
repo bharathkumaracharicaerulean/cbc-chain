@@ -22,6 +22,13 @@ if [ ! -f "$BINARY" ]; then
     exit 1
 fi
 
+get_peer_id() {
+    local key_file="$1"
+    if [ -f "$key_file" ]; then
+        "$BINARY" key inspect-node-key --file "$key_file" 2>/dev/null | grep -E '^12D3K[a-zA-Z0-9]+' | tail -n 1
+    fi
+}
+
 # Derive Alice's peer ID from her network key (written by the node on first start).
 ALICE_NET_KEY="$ALICE_BASE_PATH/chains/cbc_local/network/secret_ed25519"
 MAX_RETRIES=15
@@ -39,7 +46,7 @@ if [ ! -f "$ALICE_NET_KEY" ]; then
     exit 1
 fi
 
-ALICE_PEER_ID=$("$BINARY" key inspect-node-key --file "$ALICE_NET_KEY" 2>/dev/null | tail -n 1)
+ALICE_PEER_ID=$(get_peer_id "$ALICE_NET_KEY")
 if [ -z "$ALICE_PEER_ID" ]; then
     echo "ERROR: Could not derive Alice's peer ID from $ALICE_NET_KEY"
     exit 1

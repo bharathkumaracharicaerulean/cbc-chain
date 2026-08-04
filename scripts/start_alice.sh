@@ -18,10 +18,54 @@ echo "  Data dir  : $BASE_PATH"
 echo "  RPC port  : 9944"
 echo "  Log file  : $LOG_FILE"
 
-# Derive other peers
-BOB_PEER_ID=$("$BINARY" key inspect-node-key --file "$HOME/.local/share/cbc-node/bob/chains/cbc_local/network/secret_ed25519" 2>/dev/null | tail -n 1)
-CHARLIE_PEER_ID=$("$BINARY" key inspect-node-key --file "$HOME/.local/share/cbc-node/charlie/chains/cbc_local/network/secret_ed25519" 2>/dev/null | tail -n 1)
-BHARATH_PEER_ID=$("$BINARY" key inspect-node-key --file "$HOME/.local/share/cbc-node/bharath/chains/cbc_local/network/secret_ed25519" 2>/dev/null | tail -n 1)
+# Helper function to get valid Peer ID
+get_peer_id() {
+    local key_file="$1"
+    if [ -f "$key_file" ]; then
+        "$BINARY" key inspect-node-key --file "$key_file" 2>/dev/null | grep -E '^12D3K[a-zA-Z0-9]+' | tail -n 1
+    fi
+}
+
+# Helper function to ensure network key exists
+ensure_net_key() {
+    local key_file="$1"
+    if [ ! -f "$key_file" ]; then
+        mkdir -p "$(dirname "$key_file")"
+        "$BINARY" key generate-node-key --file "$key_file" 2>/dev/null || true
+        chmod 600 "$key_file" 2>/dev/null || true
+    fi
+}
+
+# Ensure network keys exist for local nodes
+ensure_net_key "$BASE_PATH/chains/cbc_local/network/secret_ed25519"
+ensure_net_key "$HOME/.local/share/cbc-node/bob/chains/cbc_local/network/secret_ed25519"
+ensure_net_key "$HOME/.local/share/cbc-node/charlie/chains/cbc_local/network/secret_ed25519"
+
+BOB_PEER_ID=$(get_peer_id "$HOME/.local/share/cbc-node/bob/chains/cbc_local/network/secret_ed25519")
+CHARLIE_PEER_ID=$(get_peer_id "$HOME/.local/share/cbc-node/charlie/chains/cbc_local/network/secret_ed25519")
+BHARATH_PEER_ID=$(get_peer_id "$HOME/.local/share/cbc-node/bharath/chains/cbc_local/network/secret_ed25519")
+
+RESERVED_NODES=()
+BOOTNODES=()
+
+if [ -n "$BOB_PEER_ID" ]; then
+    RESERVED_NODES+=("/ip4/127.0.0.1/tcp/30334/p2p/$BOB_PEER_ID")
+    BOOTNODES+=("/ip4/127.0.0.1/tcp/30334/p2p/$BOB_PEER_ID")
+fi
+if [ -n "$CHARLIE_PEER_ID" ]; then
+    RESERVED_NODES+=("/ip4/127.0.0.1/tcp/30335/p2p/$CHARLIE_PEER_ID")
+fi
+if [ -n "$BHARATH_PEER_ID" ]; then
+    RESERVED_NODES+=("/ip4/127.0.0.1/tcp/30336/p2p/$BHARATH_PEER_ID")
+fi
+
+EXTRA_ARGS=()
+if [ ${#RESERVED_NODES[@]} -gt 0 ]; then
+    EXTRA_ARGS+=(--reserved-nodes "${RESERVED_NODES[@]}")
+fi
+if [ ${#BOOTNODES[@]} -gt 0 ]; then
+    EXTRA_ARGS+=(--bootnodes "${BOOTNODES[@]}")
+fi
 
 exec "$BINARY" \
     --base-path "$BASE_PATH" \
@@ -40,6 +84,5 @@ exec "$BINARY" \
     --enable-cbc-extensions \
     --validator \
     --name Alice \
-    --reserved-nodes "/ip4/127.0.0.1/tcp/30334/p2p/$BOB_PEER_ID" "/ip4/127.0.0.1/tcp/30335/p2p/$CHARLIE_PEER_ID" "/ip4/127.0.0.1/tcp/30336/p2p/$BHARATH_PEER_ID" \
-    --bootnodes "/ip4/127.0.0.1/tcp/30334/p2p/$BOB_PEER_ID" \
+    "${EXTRA_ARGS[@]}" \
     >> "$LOG_FILE" 2>&1
