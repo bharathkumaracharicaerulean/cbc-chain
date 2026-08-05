@@ -521,7 +521,7 @@ mod tests {
                 )));
                 assert_ok!(PalletCbcPos::increase_validator_stake(
                     RuntimeOrigin::signed(validator),
-                    10000
+                    5000
                 ));
                 assert_ok!(PalletCbcPos::slash_validator_percentage(
                     RuntimeOrigin::root(),
@@ -609,6 +609,10 @@ mod tests {
                 run_to_block(1);
                 assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
                 assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(2)));
+
+                // Submit scores via extrinsic: val 1 -> 90 (high performer), val 2 -> 70
+                assert_ok!(PalletCbcPos::submit_score(RuntimeOrigin::signed(1), 1, 90));
+                assert_ok!(PalletCbcPos::submit_score(RuntimeOrigin::signed(2), 2, 70));
 
                 // Distribute 10,000 pool:
                 // Active validators = [1, 2] (total 2 validators).
