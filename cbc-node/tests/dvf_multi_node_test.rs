@@ -1040,7 +1040,7 @@ async fn test_byzantine_fault_tolerance() {
         network.nodes[0].weight,
     );
 
-    let double_vote_2 = DvfVote::new(
+    let _double_vote_2 = DvfVote::new(
         1, // epoch_id
         1, // validator_set_id
         0, // same round_number
@@ -1068,7 +1068,7 @@ async fn test_byzantine_fault_tolerance() {
     // Test 3: Conflicting vote detection
     log::info!("\nTest 3: Conflicting vote detection");
 
-    let conflicting_vote = DvfVote::new(
+    let _conflicting_vote = DvfVote::new(
         1, // epoch_id
         1, // validator_set_id
         0, // round_number
