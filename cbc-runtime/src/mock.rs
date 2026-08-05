@@ -5,7 +5,7 @@
 
 use crate::{
     AccountId, Balance, BlockNumber,
-    System, Balances, Runtime,
+    System, Balances, Runtime, PalletCbcPos, RuntimeOrigin,
 };
 use frame_support::{
     parameter_types,
@@ -106,42 +106,22 @@ pub fn new_test_ext_with_config(config: MockRuntimeConfig) -> sp_io::TestExterna
     
     ext.execute_with(|| {
         System::set_block_number(1);
-        let mut set = frame_support::BoundedVec::default();
-        for (i, v) in config.validators.iter().enumerate() {
-            let stake = config.validator_stakes.get(i).cloned().unwrap_or(1000 * crate::CBC);
-            let _ = Balances::deposit_creating(v, stake + 10_000 * crate::CBC);
-            let _ = Balances::reserve(v, stake);
-            pallet_cbc_pos::Stake::<Runtime>::insert(v, stake);
-            pallet_cbc_pos::Validators::<Runtime>::insert(v, true);
-            let state = pallet_cbc_dcf::ValidatorState {
-                last_active_epoch: 0,
-                current: pallet_cbc_dcf::EpochStats {
-                    epoch: 0,
-                    stake_score: 1000,
-                    inference_score: 0,
-                    final_score: 1000,
-                    authored_blocks: 0,
-                    missed_blocks: 0,
-                },
-                history: frame_support::BoundedVec::default(),
-                uptime: 0,
-                inference_success_count: 0,
-                participation_rate: 100,
-                inference_count: 0,
-                last_active_block: 0,
-                name: None,
-                trust_score: 0,
-            };
-            pallet_cbc_dcf::ValidatorStates::<Runtime>::insert(v, state);
-            let _ = set.try_push(v.clone());
-        }
-        pallet_cbc_dcf::ValidatorSet::<Runtime>::put(set.clone());
-        pallet_cbc_dcf::ActiveValidators::<Runtime>::put(set);
         pallet_cbc_dcf::EpochConfigStorage::<Runtime>::put(pallet_cbc_dcf::EpochConfig {
             blocks_per_epoch: 100,
             min_stake: 1000 * crate::CBC,
             max_validators: 100,
         });
+
+        let mut set = frame_support::BoundedVec::default();
+        for (i, v) in config.validators.iter().enumerate() {
+            let stake = config.validator_stakes.get(i).cloned().unwrap_or(1000 * crate::CBC);
+            let _ = Balances::deposit_creating(v, stake + 10_000 * crate::CBC);
+            let _ = Balances::reserve(v, stake);
+            let _ = PalletCbcPos::register_validator(RuntimeOrigin::signed(v.clone()));
+            let _ = PalletCbcPos::bond_stake(RuntimeOrigin::signed(v.clone()), stake);
+            let _ = set.try_push(v.clone());
+        }
+        pallet_cbc_dcf::ActiveValidators::<Runtime>::put(set);
     });
     
     ext
@@ -242,11 +222,12 @@ pub fn create_funded_account(account_id: AccountId, balance: Balance) {
     let _ = Balances::deposit_creating(&account_id, balance);
 }
 
-/// Helper function to setup a validator with stake
+/// Helper function to setup a validator with stake using real extrinsics
 pub fn setup_validator_with_stake(validator: AccountId, stake: Balance) {
     create_funded_account(validator.clone(), stake + 10_000 * crate::CBC);
     let _ = Balances::reserve(&validator, stake);
-    pallet_cbc_pos::Stake::<Runtime>::insert(&validator, stake);
+    frame_support::assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(validator.clone())));
+    frame_support::assert_ok!(PalletCbcPos::bond_stake(RuntimeOrigin::signed(validator.clone()), stake));
 }
 
 /// Helper function to create multiple test validators
