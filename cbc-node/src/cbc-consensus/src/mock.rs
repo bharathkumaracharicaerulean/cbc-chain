@@ -1,8 +1,5 @@
 //! Mock runtime for CBC consensus tests
 
-use super::*;
-use crate::{ConsensusResult, ConsensusError, RealBlockImport, ConsensusParams};
-use crate::types::AuthorSelectionMode;
 use frame_support::{
     parameter_types,
     traits::{ConstU32, ConstU64, ConstU128, ConstU8},
@@ -10,17 +7,12 @@ use frame_support::{
 };
 use sp_runtime::{
     traits::{BlakeTwo256, IdentityLookup},
-    BuildStorage, Perbill,
+    BuildStorage, DispatchResult, DispatchError,
 };
 use sp_core::H256;
-use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
-use std::sync::Arc;
-use std::pin::Pin;
-use std::future::Future;
-use futures::StreamExt;
-
 
 // CBC consensus authority types
+#[allow(dead_code)]
 pub type AuthorityId = u64;
 
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -33,8 +25,9 @@ frame_support::construct_runtime!(
         Balances: pallet_balances,
         Timestamp: pallet_timestamp,
         DcfPallet: pallet_cbc_dcf,
-        PosPallet: pallet_cbc_pos,
-        PoiPallet: pallet_cbc_poi,
+        PalletCbcPos: pallet_cbc_pos,
+        PalletCbcPoi: pallet_cbc_poi,
+        PalletCbcGovernance: pallet_cbc_governance,
     }
 );
 
@@ -73,7 +66,7 @@ impl frame_system::Config for Test {
 
 impl pallet_balances::Config for Test {
     type MaxLocks = ConstU32<50>;
-    type MaxReserves = ();
+    type MaxReserves = ConstU32<50>;
     type ReserveIdentifier = [u8; 8];
     type Balance = u128;
     type RuntimeEvent = RuntimeEvent;
@@ -95,47 +88,104 @@ impl pallet_timestamp::Config for Test {
     type WeightInfo = ();
 }
 
-// CBC PoS pallet configuration
 parameter_types! {
-    pub const PosMaxValidators: u32 = 100;
-    pub const PosMinStake: u128 = 1000;
+    pub const MinStake: u128 = 1000;
+    pub const MaxValidators: u32 = 100;
+    pub const MaxSlashingCount: u32 = 3;
+    pub const MinValidatorScore: u32 = 50;
+    pub const MinActiveValidators: u32 = 3;
+    pub const ValidatorScoreDecay: u32 = 10;
+    pub const MinInferenceConfidence: u32 = 10;
+    pub const MaxInferenceAge: u32 = 10;
+    pub const ChallengeWindow: u32 = 5;
+    pub const InferenceReward: u128 = 1000;
+    pub const ChallengeReward: u128 = 500;
 }
 
 impl pallet_cbc_pos::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type MaxValidators = PosMaxValidators;
-    type MinStake = PosMinStake;
     type Balance = u128;
+    type Currency = Balances;
+    type MinStake = MinStake;
+    type MaxValidators = MaxValidators;
+    type MaxSlashingCount = MaxSlashingCount;
+    type MinValidatorScore = MinValidatorScore;
+    type MinActiveValidators = MinActiveValidators;
+    type ValidatorScoreDecay = ValidatorScoreDecay;
     type WeightInfo = ();
-    type MinValidatorScore = ConstU32<50>;
-    type MinActiveValidators = ConstU32<3>;
-    type ValidatorScoreDecay = ConstU32<10>;
-    type MaxSlashingCount = ConstU32<10>;
+
+    type LeaveCooldown = ConstU32<10>;
+    type ValidatorReward = ConstU128<10000>;
+    type SlashPercent = ConstU32<10>;
+    type MaxSlashPerEpoch = ConstU128<50000>;
+    type MaxSlashPerValidator = ConstU128<20000>;
+    type MaxRewardPerEpoch = ConstU128<30000>;
+    type MaxRewardPerValidator = ConstU128<10000>;
+    type SlashPenaltyDivisor = ConstU64<1000>;
+    type MaxSlashPenalty = ConstU64<50>;
+    type RewardBoostDivisor = ConstU64<1000>;
+    type MaxRewardBoost = ConstU64<20>;
+    type HighPerformanceScore = ConstU64<80>;
+    type TopPerformerPercentage = ConstU32<20>;
+    type ValidatorHandler = ();
 }
 
-// CBC PoI pallet configuration
 impl pallet_cbc_poi::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = ();
-    type MinInferenceConfidence = ConstU32<70>;
-    type MaxInferenceAge = ConstU32<100>;
-    type ChallengeWindow = ConstU32<50>;
-    type InferenceReward = ConstU128<100>;
-    type ChallengeReward = ConstU128<50>;
+    type MinInferenceConfidence = MinInferenceConfidence;
+    type MaxInferenceAge = MaxInferenceAge;
+    type ChallengeWindow = ChallengeWindow;
+    type InferenceReward = InferenceReward;
+    type ChallengeReward = ChallengeReward;
     type PosInterface = MockPosInterface;
-    type DcfInterface = MockDcfInterface;
+    type DcfInterface = DcfPallet;
+    type WeightInfo = ();
+
+    type InferenceBoostLow = ConstU64<2>;
+    type InferenceBoostMedium = ConstU64<5>;
+    type InferenceBoostHigh = ConstU64<10>;
+    type InferencePenaltyLow = ConstU64<3>;
+    type InferencePenaltyMedium = ConstU64<7>;
+    type InferencePenaltyHigh = ConstU64<15>;
+    type InferenceConfidenceThresholdLow = ConstU32<70>;
+    type InferenceConfidenceThresholdHigh = ConstU32<90>;
+    type MaxValidatorScore = ConstU64<10000>;
+    type PercentagePrecision = ConstU32<10000>;
+    type OffchainWorkerInterval = ConstU32<1>;
+    type MaxValidatorIterationWeight = ConstU64<1000000>;
+    type MaxLoopIterations = ConstU32<10>;
 }
 
-// Mock DCF pallet configuration
+pub struct MockProposalExecutor;
+impl pallet_cbc_governance::ProposalExecutor<u64, u128> for MockProposalExecutor {
+    fn slash_validator(_validator: &u64, _amount: u128) -> DispatchResult { Ok(()) }
+    fn reward_validator(_validator: &u64, _amount: u128) -> DispatchResult { Ok(()) }
+    fn eject_validator(_validator: &u64, _reason: pallet_cbc_governance::EjectionReason) -> DispatchResult { Ok(()) }
+    fn add_validator(_validator: &u64) -> DispatchResult { Ok(()) }
+    fn remove_validator(_validator: &u64) -> DispatchResult { Ok(()) }
+}
+
+pub struct MockValidatorProvider;
+impl pallet_cbc_governance::ValidatorProvider<u64, Weight> for MockValidatorProvider {
+    fn active_validators() -> Vec<u64> { vec![1, 2, 3] }
+    fn is_private_chain_mode() -> bool { false }
+    fn validate_governance_in_private_mode(_proposer: &u64) -> DispatchResult { Ok(()) }
+    fn validate_proposal_in_private_mode(_proposer: &u64, _target: &u64) -> DispatchResult { Ok(()) }
+    fn check_rate_limits(_proposer: &u64, _op_type: u8, _weight: Weight) -> Result<(), (DispatchError, Option<(u8, u8, u32, u32)>)> { Ok(()) }
+    fn record_operation(_proposer: &u64, _op_type: u8) {}
+}
+
+impl pallet_cbc_governance::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
+    type Balance = u128;
+    type ProposalExecutor = MockProposalExecutor;
+    type ValidatorProvider = MockValidatorProvider;
+}
+
 parameter_types! {
-    pub const DcfMaxValidators: u32 = 100;
     pub const MaxEpochHistory: u32 = 24;
     pub const DefaultPosWeight: u64 = 6000;
     pub const DefaultPoiWeight: u64 = 4000;
-    pub const MinActiveValidators: u32 = 3;
-    pub const DcfMinValidatorScore: u32 = 50;
-    pub const DcfValidatorScoreDecay: u32 = 10;
-    pub const MaxValidatorScore: u64 = 100;
     pub const BlockAuthorshipBoost: u64 = 10;
     pub const MissedBlockPenalty: u64 = 5;
     pub const InferenceBoostLow: u64 = 2;
@@ -144,80 +194,28 @@ parameter_types! {
     pub const InferencePenaltyLow: u64 = 1;
     pub const InferencePenaltyMedium: u64 = 3;
     pub const InferencePenaltyHigh: u64 = 7;
-    pub const DcfMinStake: u128 = 1000;
 }
 
-// Mock weight info for DCF pallet
-pub struct MockWeightInfo;
-impl pallet_cbc_dcf::WeightInfo for MockWeightInfo {
-    fn on_initialize() -> Weight { Weight::from_parts(10_000, 0) }
-    fn offchain_worker() -> Weight { Weight::from_parts(10_000, 0) }
-    fn update_validator_stake_score() -> Weight { Weight::from_parts(10_000, 0) }
-    fn update_validator_inference_score() -> Weight { Weight::from_parts(10_000, 0) }
-    fn update_consensus_weights() -> Weight { Weight::from_parts(10_000, 0) }
-    fn set_governance_mode() -> Weight { Weight::from_parts(10_000, 0) }
-    fn sudo_advance_epoch() -> Weight { Weight::from_parts(50_000, 0) }
-    fn submit_proposal() -> Weight { Weight::from_parts(20_000, 0) }
-    fn vote_proposal() -> Weight { Weight::from_parts(15_000, 0) }
-    fn execute_proposal() -> Weight { Weight::from_parts(30_000, 0) }
-    fn join_validator_set() -> Weight { Weight::from_parts(25_000, 0) }
-    fn leave_validator_set() -> Weight { Weight::from_parts(25_000, 0) }
-    fn set_validator_name() -> Weight { Weight::from_parts(15_000, 0) }
-    fn apply_offchain_poi_scores() -> Weight { Weight::from_parts(40_000, 0) }
-    fn on_initialize_with_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
-    fn apply_score_decay_multiple(_v: u32) -> Weight { Weight::from_parts(5_000, 0) }
-    fn validator_set_operations(_v: u32) -> Weight { Weight::from_parts(3_000, 0) }
-    fn runtime_api_calls(_v: u32) -> Weight { Weight::from_parts(2_000, 0) }
-    fn epoch_transition_multiple(_v: u32) -> Weight { Weight::from_parts(15_000, 0) }
-    fn governance_with_multiple_voters(_v: u32) -> Weight { Weight::from_parts(8_000, 0) }
-    fn join_validators() -> Weight { Weight::from_parts(10_000, 0) }
-    fn leave_validators() -> Weight { Weight::from_parts(10_000, 0) }
-    fn slash_validator() -> Weight { Weight::from_parts(10_000, 0) }
-    fn cancel_leave_request() -> Weight { Weight::from_parts(10_000, 0) }
-    fn report_validator_misbehavior() -> Weight { Weight::from_parts(10_000, 0) }
-    fn simulate_inference() -> Weight { Weight::from_parts(10_000, 0) }
-    fn propose_slash_validator() -> Weight { Weight::from_parts(10_000, 0) }
-    fn propose_reward_validator() -> Weight { Weight::from_parts(10_000, 0) }
-    fn propose_eject_validator() -> Weight { Weight::from_parts(10_000, 0) }
-    fn increase_validator_stake() -> Weight { Weight::from_parts(10_000, 0) }
-    fn decrease_validator_stake() -> Weight { Weight::from_parts(10_000, 0) }
-    fn slash_validator_percentage() -> Weight { Weight::from_parts(10_000, 0) }
-    fn slash_multiple_validators() -> Weight { Weight::from_parts(10_000, 0) }
-    fn execute_proposals() -> Weight { Weight::from_parts(10_000, 0) }
-    fn epoch_transition() -> Weight { Weight::from_parts(10_000, 0) }
-    fn set_validator_metadata() -> Weight { Weight::from_parts(10_000, 0) }
-    fn update_validator_activity() -> Weight { Weight::from_parts(10_000, 0) }
-    fn distribute_epoch_rewards() -> Weight { Weight::from_parts(10_000, 0) }
-    fn propose_default_reward_validator() -> Weight { Weight::from_parts(10_000, 0) }
-    fn propose_default_reward_multiple_validators() -> Weight { Weight::from_parts(10_000, 0) }
-    fn propose_reward_all_active_validators() -> Weight { Weight::from_parts(10_000, 0) }
-    fn propose_reward_multiple_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
+pub struct DummyWeightFreezer;
+impl pallet_cbc_dcf::traits::WeightFreezer<u64> for DummyWeightFreezer {
+    fn freeze_epoch_weights(_epoch: u32, _validators: &[(u64, u128, u128)]) {}
+}
+
+pub struct DummyDvfFinalizedBlockProvider;
+impl pallet_cbc_dcf::traits::DvfFinalizedBlockProvider for DummyDvfFinalizedBlockProvider {
+    fn dvf_finalized_block() -> u32 { 0 }
 }
 
 impl pallet_cbc_dcf::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type MaxValidators = DcfMaxValidators;
+    type Balance = u128;
     type MaxEpochHistory = MaxEpochHistory;
     type DefaultPosWeight = DefaultPosWeight;
     type DefaultPoiWeight = DefaultPoiWeight;
-    type MinActiveValidators = MinActiveValidators;
-    type MinValidatorScore = DcfMinValidatorScore;
-    type ValidatorScoreDecay = DcfValidatorScoreDecay;
-    type MaxValidatorScore = MaxValidatorScore;
     type BlockAuthorshipBoost = BlockAuthorshipBoost;
     type MissedBlockPenalty = MissedBlockPenalty;
-    type InferenceBoostLow = InferenceBoostLow;
-    type InferenceBoostMedium = InferenceBoostMedium;
-    type InferenceBoostHigh = InferenceBoostHigh;
-    type InferencePenaltyLow = InferencePenaltyLow;
-    type InferencePenaltyMedium = InferencePenaltyMedium;
-    type InferencePenaltyHigh = InferencePenaltyHigh;
-    type MinStake = DcfMinStake;
-    type Balance = u128;
-    type Currency = Balances;
-    type WeightInfo = MockWeightInfo;
+    type WeightInfo = ();
 
-    // Additional required parameters
     type MaxValidatorHistorySize = ConstU32<10>;
     type MaxValidatorNameSize = ConstU32<32>;
     type MaxRuntimeApiBoundedVecSize = ConstU32<100>;
@@ -230,20 +228,9 @@ impl pallet_cbc_dcf::Config for Test {
     type UnderperformanceCheckInterval = ConstU32<50>;
     type ValidatorProposalInterval = ConstU32<200>;
     type HealthMetricsInterval = ConstU32<1000>;
-    type OffchainWorkerInterval = ConstU32<5>;
-    type LeaveCooldown = ConstU32<1000>;
-    type EpochLength = ConstU32<2400>;
-    type PercentagePrecision = ConstU32<10000>;
-    type TrustScoreUptimeWeight = ConstU64<4000>;
-    type TrustScoreInferenceWeight = ConstU64<4000>;
-    type TrustScoreSlashingWeight = ConstU64<2000>;
-    type MaxTrustScore = ConstU64<10000>;
-    type MaxEvidenceLength = ConstU32<1000>;
-    type MisbehaviorSlashThreshold = ConstU32<3>;
     type OffchainWorkerTimeout = ConstU64<5000>;
     type EstimatedBlockTime = ConstU64<6000>;
     type MinPerformanceScore = ConstU64<30>;
-    type HighPerformanceScore = ConstU64<80>;
     type MinParticipationRate = ConstU32<50>;
     type HighParticipationRate = ConstU32<90>;
     type MaxMissedBlocks = ConstU32<10>;
@@ -258,21 +245,6 @@ impl pallet_cbc_dcf::Config for Test {
     type MaxPosContribution = ConstU32<90>;
     type MaxPoiContribution = ConstU32<90>;
     type ImbalanceWarningThreshold = ConstU32<85>;
-    type LeaveRequestCheckInterval = ConstU32<10>;
-    type MetricsUpdateInterval = ConstU32<10>;
-    type ScoreRefreshInterval = ConstU32<50>;
-    type DetailedLoggingInterval = ConstU32<100>;
-    type ImbalanceCheckInterval = ConstU32<500>;
-    type TopValidatorsDisplayCount = ConstU32<5>;
-    type HealthCheckSampleSize = ConstU32<5>;
-    type InferenceConfidenceThresholdLow = ConstU32<70>;
-    type InferenceConfidenceThresholdHigh = ConstU32<90>;
-    type MaxSlashPenalty = ConstU64<50>;
-    type MaxRewardBoost = ConstU64<20>;
-    type SlashPenaltyDivisor = ConstU64<1000>;
-    type RewardBoostDivisor = ConstU64<1000>;
-    type SlashPercent = ConstU32<10>;
-    type ValidatorReward = ConstU128<10000>;
     type MaxValidatorNameLength = ConstU32<32>;
     type MaxValidatorWebsiteLength = ConstU32<64>;
     type MaxValidatorContactLength = ConstU32<64>;
@@ -283,210 +255,123 @@ impl pallet_cbc_dcf::Config for Test {
     type MaxCommissionRate = ConstU32<10000>;
     type FullPercentage = ConstU32<100>;
     type HighPerformancePercentage = ConstU32<80>;
-    type TopPerformerPercentage = ConstU32<20>;
     type BaseRewardPercentage = ConstU32<60>;
     type PerformanceRewardPercentage = ConstU32<25>;
     type TopPerformerRewardPercentage = ConstU32<15>;
-    type MaxSlashPerEpoch = ConstU128<1000>;
-    type MaxSlashPerValidator = ConstU128<500>;
-    type MaxRewardPerEpoch = ConstU128<2000>;
-    type MaxRewardPerValidator = ConstU128<1000>;
     type MinTrustScore = ConstU64<0>;
     type MaxTrustScoreGrowthRate = ConstU32<20>;
     type MaxTrustScoreDecayRate = ConstU32<10>;
     type TrustScoreStabilityFactor = ConstU32<5>;
+    type TrustScoreUptimeWeight = ConstU64<4000>;
+    type TrustScoreInferenceWeight = ConstU64<4000>;
+    type TrustScoreSlashingWeight = ConstU64<2000>;
+    type MaxTrustScore = ConstU64<10000>;
+    type MaxEvidenceLength = ConstU32<1000>;
+    type MisbehaviorSlashThreshold = ConstU32<3>;
+    type EpochLength = ConstU32<2400>;
+
+    type LeaveRequestCheckInterval = ConstU32<100>;
+    type MetricsUpdateInterval = ConstU32<10>;
+    type ScoreRefreshInterval = ConstU32<50>;
+    type DetailedLoggingInterval = ConstU32<100>;
+    type ImbalanceCheckInterval = ConstU32<100>;
+    type TopValidatorsDisplayCount = ConstU32<5>;
+    type HealthCheckSampleSize = ConstU32<5>;
+
+    type WeightFreezer = DummyWeightFreezer;
+    type DvfFinalizedBlockProvider = DummyDvfFinalizedBlockProvider;
+    type ValidatorRegistry = MockValidatorRegistry;
 }
 
-use frame_support::traits::ConstBool;
-
-// Type aliases for test infrastructure - simplified for compilation
-pub type TestBlock = frame_system::mocking::MockBlock<Test>;
-pub type TestClient = ();
-pub type DcfBlockImport = ();
-pub type MockTransactionPool = ();
-
-// Helper functions for test infrastructure - simplified for compilation
-pub fn create_test_client() -> TestClient {
-    ()
-}
-
-pub fn create_test_consensus_params() -> ConsensusParams {
-    ConsensusParams {
-        author_selection_mode: AuthorSelectionMode::RoundRobin,
-        finality_threshold: 10,
-        block_time: 6,
-        max_block_size: 1024 * 1024,
-        max_transactions_per_block: 1000,
-        slot_duration: std::time::Duration::from_secs(6),
-        min_block_time: 6000,
-        metrics_update_interval: 10,
-        score_refresh_interval: 50,
-        consensus_loop_interval: 1000,
-        detailed_logging_interval: 100,
-        health_check_interval: 1000,
-        min_performance_score: 30,
-        high_performance_score: 80,
-        min_participation_rate: 50,
-        high_participation_rate: 90,
-        max_missed_blocks: 10,
-        max_missed_blocks_high: 2,
-        healthy_validator_score: 50,
-        healthy_participation_rate: 80,
-        healthy_missed_blocks_max: 5,
-        top_validators_display_count: 5,
-        health_check_sample_size: 5,
+pub struct MockValidatorRegistry;
+impl pallet_cbc_dcf::traits::ValidatorRegistryProvider<u64, u128, u64> for MockValidatorRegistry {
+    fn get_active_validators() -> Vec<u64> {
+        vec![1, 2, 3]
     }
+    fn get_validator_profile(_validator: &u64) -> Option<pallet_cbc_dcf::ValidatorProfile<u64, u128, u64>> { None }
+    fn get_validator_status(_validator: &u64) -> Option<pallet_cbc_dcf::ValidatorStatus> { None }
+    fn get_validator_set() -> Vec<u64> { vec![1, 2, 3] }
+    fn update_validator_set(_set: Vec<u64>) {}
+    fn is_validator_active(_validator: &u64) -> bool { true }
+    fn eject_validator(_validator: &u64, _reason: pallet_cbc_dcf::EjectionReason) -> DispatchResult { Ok(()) }
+    fn get_validator_state(_validator: &u64) -> Option<pallet_cbc_dcf::traits::ValidatorState> { None }
+    fn update_validator_state(_validator: &u64, _state: pallet_cbc_dcf::traits::ValidatorState) {}
+    fn contains_validator_state(_validator: &u64) -> bool { false }
+    fn remove_validator_state(_validator: &u64) {}
+    fn get_validator_name(_validator: &u64) -> Option<Vec<u8>> { None }
+    fn set_validator_name(_validator: &u64, _name: Vec<u8>) {}
+    fn get_validator_metadata(_validator: &u64) -> Option<pallet_cbc_dcf::ValidatorMetadataInfo> { None }
+    fn set_validator_metadata(_validator: &u64, _metadata: pallet_cbc_dcf::ValidatorMetadataInfo) {}
+    fn remove_validator_metadata(_validator: &u64) {}
+    fn get_validator_detailed_cooldown_status(_validator: &u64) -> Option<(u32, bool)> { None }
+    fn get_validator_leave_request(_validator: &u64) -> Option<u32> { None }
+    fn get_pending_actions() -> Vec<(u64, pallet_cbc_dcf::ValidatorAction)> { Vec::new() }
+    fn remove_pending_action(_validator: &u64) {}
+    fn add_pending_action(_validator: &u64, _action: pallet_cbc_dcf::ValidatorAction) {}
+    fn update_active_validators(_active: Vec<u64>) {}
+    fn get_validator_join_time(_validator: &u64) -> Option<u32> { None }
+    fn set_validator_join_time(_validator: &u64, _val: u32) {}
+    fn remove_validator_join_time(_validator: &u64) {}
+    fn set_validator_leave_request(_validator: &u64, _val: u32) {}
+    fn remove_validator_leave_request(_validator: &u64) {}
+    fn get_recently_removed_validator(_validator: &u64) -> Option<u32> { None }
+    fn set_recently_removed_validator(_validator: &u64, _val: u32) {}
+    fn remove_recently_removed_validator(_validator: &u64) {}
+    fn get_validator_performance_history(_validator: &u64) -> Vec<pallet_cbc_dcf::PerformanceRecord> { Vec::new() }
+    fn set_validator_performance_history(_validator: &u64, _history: Vec<pallet_cbc_dcf::PerformanceRecord>) {}
+    fn remove_validator_performance_history(_validator: &u64) {}
+    fn get_validator_last_seen(_validator: &u64) -> u32 { 0 }
+    fn set_validator_last_seen(_validator: &u64, _val: u32) {}
+    fn remove_validator_last_seen(_validator: &u64) {}
+    fn get_validator_blocks_authored(_validator: &u64) -> u32 { 0 }
+    fn set_validator_blocks_authored(_validator: &u64, _val: u32) {}
+    fn remove_validator_blocks_authored(_validator: &u64) {}
+    fn get_validator_blocks_missed(_validator: &u64) -> u32 { 0 }
+    fn set_validator_blocks_missed(_validator: &u64, _val: u32) {}
+    fn remove_validator_blocks_missed(_validator: &u64) {}
 }
 
 // Mock interfaces for CBC pallets
 pub struct MockPosInterface;
 impl pallet_cbc_poi::PosInterface<u64> for MockPosInterface {
-    fn boost_score(_validator: &u64, _weight: u32) -> frame_support::dispatch::DispatchResult {
+    fn boost_score(_validator: &u64, _weight: u32) -> DispatchResult {
         Ok(())
     }
     
-    fn slash_score(_validator: &u64, _weight: u32) -> frame_support::dispatch::DispatchResult {
+    fn slash_score(_validator: &u64, _weight: u32) -> DispatchResult {
         Ok(())
+    }
+
+    fn get_active_validators() -> Vec<u64> {
+        vec![1, 2, 3]
     }
 }
 
+#[allow(dead_code)]
 pub struct MockDcfInterface;
 impl pallet_cbc_poi::DcfInterface<u64> for MockDcfInterface {
-    fn record_inference_activity(_validator: &u64) -> frame_support::dispatch::DispatchResult {
+    fn record_inference_activity(_validator: &u64) -> DispatchResult {
+        Ok(())
+    }
+    fn eject_validator(_validator: &u64, _reason: &'static str) -> DispatchResult {
+        Ok(())
+    }
+    fn update_final_score(_validator: &u64) -> DispatchResult {
         Ok(())
     }
 }
 
-// Helper functions for testing
+// Build genesis storage according to mock runtime
 pub fn new_test_ext() -> sp_io::TestExternalities {
-    let mut storage = frame_system::GenesisConfig::<Test>::default()
+    let t = frame_system::GenesisConfig::<Test>::default()
         .build_storage()
         .unwrap();
 
-    pallet_balances::GenesisConfig::<Test> {
-        balances: vec![
-            (1, 10000),
-            (2, 10000),
-            (3, 10000),
-            (4, 10000),
-        ],
-        dev_accounts: None,
-    }
-    .assimilate_storage(&mut storage)
-    .unwrap();
-
-    let mut ext = sp_io::TestExternalities::from(storage);
-    
-    // Setup keystore for consensus testing
-    let keystore = MemoryKeystore::new();
-    ext.register_extension(KeystoreExt(Arc::new(keystore)));
-    
-    ext
-}
-
-pub fn new_test_ext_with_validators(validators: Vec<u64>) -> sp_io::TestExternalities {
-    let mut ext = new_test_ext();
-    
+    let mut ext = sp_io::TestExternalities::new(t);
     ext.execute_with(|| {
-        // Initialize CBC consensus with validators
-        let bounded_validators = frame_support::BoundedVec::try_from(validators.clone())
-            .expect("Too many validators for test");
-        pallet_cbc_dcf::ValidatorSet::<Test>::put(bounded_validators.clone());
-        pallet_cbc_dcf::ActiveValidators::<Test>::put(bounded_validators);
+        System::set_block_number(1);
+        let active: frame_support::BoundedVec<u64, MaxValidators> = vec![1, 2, 3].try_into().unwrap();
+        pallet_cbc_dcf::ActiveValidators::<Test>::put(active);
     });
-    
-    ext
-}
-
-// Helper to create test authorities (CBC consensus uses validator IDs)
-pub fn create_test_authorities(count: u32) -> Vec<u64> {
-    (1..=count as u64).collect()
-}
-
-// Helper to create test validator set
-pub fn create_test_validator_set(count: u32) -> Vec<u64> {
-    (1..=count as u64).collect()
-}
-
-// Mock consensus configuration
-pub struct MockConsensusConfig {
-    pub slot_duration: u64,
-    pub epoch_length: u32,
-    pub validators: Vec<u64>,
-}
-
-impl Default for MockConsensusConfig {
-    fn default() -> Self {
-        Self {
-            slot_duration: 6000, // 6 seconds
-            epoch_length: 2400,  // 4 hours at 6s per block
-            validators: create_test_validator_set(4),
-        }
-    }
-}
-
-// Helper to setup consensus test environment
-pub fn setup_consensus_test(config: MockConsensusConfig) -> sp_io::TestExternalities {
-    let mut ext = new_test_ext_with_validators(config.validators.clone());
-    
-    ext.execute_with(|| {
-        // Setup DCF pallet with test validators
-        let genesis_config = pallet_cbc_dcf::GenesisConfig::<Test> {
-            validators: config.validators.clone(),
-            validator_scores: vec![6000; config.validators.len()],
-            validator_stakes: vec![1000; config.validators.len()],
-            validator_names: vec![],
-            current_epoch: 0,
-            epoch_config: pallet_cbc_dcf::EpochConfig {
-                blocks_per_epoch: config.epoch_length,
-                min_stake: 1000,
-                max_validators: 100,
-            },
-            strict_validation: false,
-        };
-        
-        // Manually initialize DCF storage
-        for (i, validator) in config.validators.iter().enumerate() {
-            let validator_state = pallet_cbc_dcf::ValidatorState {
-                last_active_epoch: 0,
-                current: pallet_cbc_dcf::EpochStats {
-                    epoch: 0,
-                    stake_score: 80,
-                    inference_score: 70,
-                    final_score: 75,
-                    authored_blocks: 0,
-                    missed_blocks: 0,
-                },
-                history: frame_support::BoundedVec::default(),
-                uptime: 0,
-                inference_success_count: 0,
-                participation_rate: 100,
-                inference_count: 0,
-                last_active_block: 0,
-                name: None,
-                trust_score: 0,
-            };
-            
-            pallet_cbc_dcf::ValidatorStates::<Test>::insert(validator, validator_state);
-            pallet_cbc_dcf::ValidatorStake::<Test>::insert(validator, 1000u128);
-        }
-        
-        let bounded_validators = frame_support::BoundedVec::try_from(config.validators.clone())
-            .expect("Too many validators for test");
-        pallet_cbc_dcf::ValidatorSet::<Test>::put(bounded_validators.clone());
-        pallet_cbc_dcf::ActiveValidators::<Test>::put(bounded_validators);
-        
-        pallet_cbc_dcf::CurrentEpoch::<Test>::put(0);
-        pallet_cbc_dcf::EpochConfigStorage::<Test>::put(pallet_cbc_dcf::EpochConfig {
-            blocks_per_epoch: config.epoch_length,
-            min_stake: 1000,
-            max_validators: 100,
-        });
-        
-        // Initialize consensus weights
-        pallet_cbc_dcf::PosWeight::<Test>::put(60u64);
-        pallet_cbc_dcf::PoiWeight::<Test>::put(40u64);
-    });
-    
     ext
 }

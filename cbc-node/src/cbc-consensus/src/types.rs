@@ -42,7 +42,7 @@ pub struct ValidatorInfo {
 }
 
 /// Mode for selecting block authors
-#[derive(Debug, Clone, Encode, Decode, TypeInfo)]
+#[derive(Debug, Clone, Encode, Decode, TypeInfo, PartialEq, Eq)]
 pub enum AuthorSelectionMode {
     /// Round-robin selection
     RoundRobin,
@@ -105,6 +105,36 @@ pub struct ConsensusParams {
     pub top_validators_display_count: u32,
     /// Number of validators to sample for health checks
     pub health_check_sample_size: u32,
+}
+
+impl Default for ConsensusParams {
+    fn default() -> Self {
+        Self {
+            author_selection_mode: AuthorSelectionMode::Hybrid,
+            finality_threshold: 67,
+            block_time: 6,
+            max_block_size: 4_194_304,
+            max_transactions_per_block: 10_000,
+            slot_duration: std::time::Duration::from_secs(6),
+            min_block_time: 6000,
+            metrics_update_interval: 10,
+            score_refresh_interval: 50,
+            consensus_loop_interval: 1000,
+            detailed_logging_interval: 100,
+            health_check_interval: 1000,
+            min_performance_score: 30,
+            high_performance_score: 80,
+            min_participation_rate: 50,
+            high_participation_rate: 90,
+            max_missed_blocks: 10,
+            max_missed_blocks_high: 2,
+            healthy_validator_score: 50,
+            healthy_participation_rate: 80,
+            healthy_missed_blocks_max: 5,
+            top_validators_display_count: 5,
+            health_check_sample_size: 5,
+        }
+    }
 }
 
 /// Block import result

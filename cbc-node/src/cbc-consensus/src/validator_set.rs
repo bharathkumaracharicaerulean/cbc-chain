@@ -168,7 +168,6 @@ pub mod utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mock::*;
     
     #[test]
     fn test_validator_info_creation() {

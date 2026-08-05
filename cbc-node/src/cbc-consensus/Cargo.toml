@@ -39,6 +39,7 @@ pallet-cbc-dcf = { workspace = true }
 pallet-cbc-dvf = { workspace = true }
 pallet-cbc-pos = { workspace = true }
 pallet-cbc-poi = { workspace = true }
+pallet-cbc-governance = { workspace = true }
 pallet-balances = { workspace = true }
 pallet-timestamp = { workspace = true }
 prometheus = { version = "0.13", default-features = false }
@@ -57,6 +58,7 @@ sp-io = { default-features = true, workspace = true }
 sp-runtime = { default-features = true, workspace = true }
 pallet-balances = { workspace = true }
 pallet-timestamp = { workspace = true }
+tempfile = "3.8"
 
 [features]
 default = ["std"]
@@ -76,6 +78,7 @@ std = [
 	"pallet-cbc-dvf/std",
 	"pallet-cbc-pos/std",
 	"pallet-cbc-poi/std",
+	"pallet-cbc-governance/std",
 	"pallet-balances/std",
 	"pallet-timestamp/std"
 ]
