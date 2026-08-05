@@ -18,10 +18,30 @@ mod tests {
     use frame_support::{assert_noop, assert_ok, traits::Get};
     use sp_runtime::{BuildStorage, DispatchError};
 
+    // Named account constants to avoid magic numbers across tests
+    const VALIDATOR_A: u64 = 1;
+    const VALIDATOR_B: u64 = 2;
+    const UNREGISTERED_VAL: u64 = 999;
+
+    /// Helper function to advance to a specific block number for system event triggers
     fn run_to_block(n: u64) {
         while System::block_number() < n {
             System::set_block_number(System::block_number() + 1);
         }
+    }
+
+    /// Common setup helper to register a validator via origin
+    fn register_validator(validator: u64) {
+        assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(validator)));
+    }
+
+    /// Common setup helper to register and increase stake for a validator
+    fn register_and_stake(validator: u64, amount: u64) {
+        register_validator(validator);
+        assert_ok!(PalletCbcPos::increase_validator_stake(
+            RuntimeOrigin::signed(validator),
+            amount
+        ));
     }
 
     // ============================================================================
@@ -37,22 +57,22 @@ mod tests {
                 .unwrap();
 
             GenesisConfig::<Test> {
-                validators: vec![1, 2],
+                validators: vec![VALIDATOR_A, VALIDATOR_B],
                 validator_scores: vec![100, 80],
                 current_epoch: 5,
-                slashing_count: vec![(1, 1)],
+                slashing_count: vec![(VALIDATOR_A, 1)],
             }
             .assimilate_storage(&mut storage)
             .unwrap();
 
             let mut ext = sp_io::TestExternalities::from(storage);
             ext.execute_with(|| {
-                assert_eq!(PalletCbcPos::validators(1), Some(true));
-                assert_eq!(PalletCbcPos::validators(2), Some(true));
-                assert_eq!(PalletCbcPos::validator_scores(1), Some(100));
-                assert_eq!(PalletCbcPos::validator_scores(2), Some(80));
+                assert_eq!(Validators::<Test>::get(VALIDATOR_A), Some(true));
+                assert_eq!(Validators::<Test>::get(VALIDATOR_B), Some(true));
+                assert_eq!(ValidatorScores::<Test>::get(VALIDATOR_A), Some(100));
+                assert_eq!(ValidatorScores::<Test>::get(VALIDATOR_B), Some(80));
                 assert_eq!(PalletCbcPos::current_epoch(), 5);
-                assert_eq!(PalletCbcPos::slashing_count(1), Some(1));
+                assert_eq!(SlashingCount::<Test>::get(VALIDATOR_A), Some(1));
             });
         }
     }
@@ -67,10 +87,10 @@ mod tests {
         fn test_register_validator_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
-                assert_eq!(PalletCbcPos::validators(1), Some(true));
+                register_validator(VALIDATOR_A);
+                assert_eq!(Validators::<Test>::get(VALIDATOR_A), Some(true));
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ValidatorRegistered {
-                    validator: 1,
+                    validator: VALIDATOR_A,
                 }));
             });
         }
@@ -78,9 +98,9 @@ mod tests {
         #[test]
         fn test_register_validator_already_registered() {
             new_test_ext().execute_with(|| {
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
+                register_validator(VALIDATOR_A);
                 assert_noop!(
-                    PalletCbcPos::register_validator(RuntimeOrigin::signed(1)),
+                    PalletCbcPos::register_validator(RuntimeOrigin::signed(VALIDATOR_A)),
                     Error::<Test>::ValidatorAlreadyRegistered
                 );
             });
@@ -91,9 +111,7 @@ mod tests {
             new_test_ext().execute_with(|| {
                 let max_validators: u32 = <Test as crate::Config>::MaxValidators::get();
                 for i in 1..=max_validators {
-                    assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                        i as u64
-                    )));
+                    register_validator(i as u64);
                 }
                 assert_noop!(
                     PalletCbcPos::register_validator(RuntimeOrigin::signed(
@@ -118,18 +136,18 @@ mod tests {
         fn test_activate_and_deactivate_validator_internal() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
+                register_validator(VALIDATOR_A);
 
-                assert_ok!(PalletCbcPos::deactivate_validator(&1));
-                assert_eq!(PalletCbcPos::validators(1), Some(false));
+                assert_ok!(PalletCbcPos::deactivate_validator(&VALIDATOR_A));
+                assert_eq!(Validators::<Test>::get(VALIDATOR_A), Some(false));
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ValidatorDeactivated {
-                    validator: 1,
+                    validator: VALIDATOR_A,
                 }));
 
-                assert_ok!(PalletCbcPos::activate_validator(&1));
-                assert_eq!(PalletCbcPos::validators(1), Some(true));
+                assert_ok!(PalletCbcPos::activate_validator(&VALIDATOR_A));
+                assert_eq!(Validators::<Test>::get(VALIDATOR_A), Some(true));
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ValidatorActivated {
-                    validator: 1,
+                    validator: VALIDATOR_A,
                 }));
             });
         }
@@ -138,7 +156,7 @@ mod tests {
         fn test_activate_validator_unregistered() {
             new_test_ext().execute_with(|| {
                 assert_noop!(
-                    PalletCbcPos::activate_validator(&999),
+                    PalletCbcPos::activate_validator(&UNREGISTERED_VAL),
                     Error::<Test>::ValidatorNotRegistered
                 );
             });
@@ -148,7 +166,7 @@ mod tests {
         fn test_deactivate_validator_unregistered() {
             new_test_ext().execute_with(|| {
                 assert_noop!(
-                    PalletCbcPos::deactivate_validator(&999),
+                    PalletCbcPos::deactivate_validator(&UNREGISTERED_VAL),
                     Error::<Test>::ValidatorNotRegistered
                 );
             });
@@ -165,18 +183,15 @@ mod tests {
         fn test_bond_stake_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::bond_stake(
-                    RuntimeOrigin::signed(validator),
+                    RuntimeOrigin::signed(VALIDATOR_A),
                     min_stake
                 ));
-                assert_eq!(PalletCbcPos::stake(validator), min_stake);
+                assert_eq!(Stake::<Test>::get(VALIDATOR_A), min_stake);
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::StakeBonded {
-                    validator,
+                    validator: VALIDATOR_A,
                     amount: min_stake,
                 }));
             });
@@ -185,13 +200,10 @@ mod tests {
         #[test]
         fn test_bond_stake_insufficient_stake() {
             new_test_ext().execute_with(|| {
-                let validator = 1u64;
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_noop!(
-                    PalletCbcPos::bond_stake(RuntimeOrigin::signed(validator), min_stake - 1),
+                    PalletCbcPos::bond_stake(RuntimeOrigin::signed(VALIDATOR_A), min_stake - 1),
                     Error::<Test>::InsufficientStake
                 );
             });
@@ -202,7 +214,7 @@ mod tests {
             new_test_ext().execute_with(|| {
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
                 assert_noop!(
-                    PalletCbcPos::bond_stake(RuntimeOrigin::signed(1), min_stake),
+                    PalletCbcPos::bond_stake(RuntimeOrigin::signed(VALIDATOR_A), min_stake),
                     Error::<Test>::ValidatorNotRegistered
                 );
             });
@@ -212,22 +224,19 @@ mod tests {
         fn test_unbond_stake_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::bond_stake(
-                    RuntimeOrigin::signed(validator),
+                    RuntimeOrigin::signed(VALIDATOR_A),
                     min_stake * 2
                 ));
                 assert_ok!(PalletCbcPos::unbond_stake(
-                    RuntimeOrigin::signed(validator),
+                    RuntimeOrigin::signed(VALIDATOR_A),
                     min_stake
                 ));
-                assert_eq!(PalletCbcPos::stake(validator), min_stake);
+                assert_eq!(Stake::<Test>::get(VALIDATOR_A), min_stake);
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::StakeUnbonded {
-                    validator,
+                    validator: VALIDATOR_A,
                     amount: min_stake,
                 }));
             });
@@ -236,17 +245,14 @@ mod tests {
         #[test]
         fn test_unbond_stake_below_minimum() {
             new_test_ext().execute_with(|| {
-                let validator = 1u64;
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::bond_stake(
-                    RuntimeOrigin::signed(validator),
+                    RuntimeOrigin::signed(VALIDATOR_A),
                     min_stake
                 ));
                 assert_noop!(
-                    PalletCbcPos::unbond_stake(RuntimeOrigin::signed(validator), 1),
+                    PalletCbcPos::unbond_stake(RuntimeOrigin::signed(VALIDATOR_A), 1),
                     Error::<Test>::InsufficientStake
                 );
             });
@@ -255,17 +261,14 @@ mod tests {
         #[test]
         fn test_unbond_stake_excessive() {
             new_test_ext().execute_with(|| {
-                let validator = 1u64;
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::bond_stake(
-                    RuntimeOrigin::signed(validator),
+                    RuntimeOrigin::signed(VALIDATOR_A),
                     min_stake
                 ));
                 assert_noop!(
-                    PalletCbcPos::unbond_stake(RuntimeOrigin::signed(validator), min_stake + 100),
+                    PalletCbcPos::unbond_stake(RuntimeOrigin::signed(VALIDATOR_A), min_stake + 100),
                     Error::<Test>::InsufficientStake
                 );
             });
@@ -275,18 +278,15 @@ mod tests {
         fn test_increase_validator_stake_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::increase_validator_stake(
-                    RuntimeOrigin::signed(validator),
+                    RuntimeOrigin::signed(VALIDATOR_A),
                     min_stake
                 ));
-                assert_eq!(Stake::<Test>::get(&validator), min_stake);
+                assert_eq!(Stake::<Test>::get(&VALIDATOR_A), min_stake);
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ValidatorStakeIncreased {
-                    validator,
+                    validator: VALIDATOR_A,
                     amount: min_stake,
                 }));
             });
@@ -296,7 +296,7 @@ mod tests {
         fn test_increase_validator_stake_not_registered() {
             new_test_ext().execute_with(|| {
                 assert_noop!(
-                    PalletCbcPos::increase_validator_stake(RuntimeOrigin::signed(999), 1000),
+                    PalletCbcPos::increase_validator_stake(RuntimeOrigin::signed(UNREGISTERED_VAL), 1000),
                     Error::<Test>::ValidatorNotInSet
                 );
             });
@@ -306,22 +306,15 @@ mod tests {
         fn test_decrease_validator_stake_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
-                assert_ok!(PalletCbcPos::increase_validator_stake(
-                    RuntimeOrigin::signed(validator),
-                    min_stake * 3
-                ));
+                register_and_stake(VALIDATOR_A, min_stake * 3);
                 assert_ok!(PalletCbcPos::decrease_validator_stake(
-                    RuntimeOrigin::signed(validator),
+                    RuntimeOrigin::signed(VALIDATOR_A),
                     min_stake
                 ));
-                assert_eq!(Stake::<Test>::get(&validator), min_stake * 2);
+                assert_eq!(Stake::<Test>::get(&VALIDATOR_A), min_stake * 2);
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ValidatorStakeDecreased {
-                    validator,
+                    validator: VALIDATOR_A,
                     amount: min_stake,
                 }));
             });
@@ -330,17 +323,10 @@ mod tests {
         #[test]
         fn test_decrease_validator_stake_below_min() {
             new_test_ext().execute_with(|| {
-                let validator = 1u64;
                 let min_stake: u64 = <Test as crate::Config>::MinStake::get();
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
-                assert_ok!(PalletCbcPos::increase_validator_stake(
-                    RuntimeOrigin::signed(validator),
-                    min_stake
-                ));
+                register_and_stake(VALIDATOR_A, min_stake);
                 assert_noop!(
-                    PalletCbcPos::decrease_validator_stake(RuntimeOrigin::signed(validator), 1),
+                    PalletCbcPos::decrease_validator_stake(RuntimeOrigin::signed(VALIDATOR_A), 1),
                     Error::<Test>::InsufficientStake
                 );
             });
@@ -357,22 +343,19 @@ mod tests {
         fn test_submit_score_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 let min_score: u32 = <Test as crate::Config>::MinValidatorScore::get();
                 assert_ok!(PalletCbcPos::submit_score(
-                    RuntimeOrigin::signed(validator),
-                    validator,
+                    RuntimeOrigin::signed(VALIDATOR_A),
+                    VALIDATOR_A,
                     min_score + 10
                 ));
                 assert_eq!(
-                    ValidatorScores::<Test>::get(&validator),
+                    ValidatorScores::<Test>::get(&VALIDATOR_A),
                     Some(min_score + 10)
                 );
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ScoreSubmitted {
-                    validator,
+                    validator: VALIDATOR_A,
                     score: min_score + 10,
                 }));
             });
@@ -381,15 +364,12 @@ mod tests {
         #[test]
         fn test_submit_score_too_low() {
             new_test_ext().execute_with(|| {
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 let min_score: u32 = <Test as crate::Config>::MinValidatorScore::get();
                 assert_noop!(
                     PalletCbcPos::submit_score(
-                        RuntimeOrigin::signed(validator),
-                        validator,
+                        RuntimeOrigin::signed(VALIDATOR_A),
+                        VALIDATOR_A,
                         min_score - 1
                     ),
                     Error::<Test>::ScoreTooLow
@@ -401,18 +381,15 @@ mod tests {
         fn test_boost_score_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::boost_score(
-                    RuntimeOrigin::signed(validator),
-                    validator,
+                    RuntimeOrigin::signed(VALIDATOR_A),
+                    VALIDATOR_A,
                     20
                 ));
-                assert_eq!(ValidatorScores::<Test>::get(&validator), Some(20));
+                assert_eq!(ValidatorScores::<Test>::get(&VALIDATOR_A), Some(20));
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ScoreBoosted {
-                    validator,
+                    validator: VALIDATOR_A,
                     old_score: 0,
                     new_score: 20,
                     boost_amount: 20,
@@ -424,23 +401,20 @@ mod tests {
         fn test_slash_score_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::boost_score(
-                    RuntimeOrigin::signed(validator),
-                    validator,
+                    RuntimeOrigin::signed(VALIDATOR_A),
+                    VALIDATOR_A,
                     50
                 ));
                 assert_ok!(PalletCbcPos::slash_score(
-                    RuntimeOrigin::signed(validator),
-                    validator,
+                    RuntimeOrigin::signed(VALIDATOR_A),
+                    VALIDATOR_A,
                     20
                 ));
-                assert_eq!(ValidatorScores::<Test>::get(&validator), Some(30));
+                assert_eq!(ValidatorScores::<Test>::get(&VALIDATOR_A), Some(30));
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ScoreSlashed {
-                    validator,
+                    validator: VALIDATOR_A,
                     old_score: 50,
                     new_score: 30,
                     slash_amount: 20,
@@ -452,17 +426,14 @@ mod tests {
         fn test_slash_validator_call_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::slash_validator_call(
-                    RuntimeOrigin::signed(validator),
-                    validator
+                    RuntimeOrigin::signed(VALIDATOR_A),
+                    VALIDATOR_A
                 ));
-                assert_eq!(SlashingCount::<Test>::get(&validator), Some(1));
+                assert_eq!(SlashingCount::<Test>::get(&VALIDATOR_A), Some(1));
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ValidatorSlashed {
-                    validator,
+                    validator: VALIDATOR_A,
                     slashing_count: 1,
                 }));
             });
@@ -472,20 +443,17 @@ mod tests {
         fn test_slash_validator_call_max_count_removal() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 let max_slash: u32 = <Test as crate::Config>::MaxSlashingCount::get();
                 for _ in 0..max_slash {
                     assert_ok!(PalletCbcPos::slash_validator_call(
-                        RuntimeOrigin::signed(validator),
-                        validator
+                        RuntimeOrigin::signed(VALIDATOR_A),
+                        VALIDATOR_A
                     ));
                 }
-                assert!(!Validators::<Test>::contains_key(&validator));
+                assert!(!Validators::<Test>::contains_key(&VALIDATOR_A));
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::ValidatorRemoved {
-                    validator,
+                    validator: VALIDATOR_A,
                     reason: b"Max slashing count reached".to_vec(),
                 }));
             });
@@ -495,17 +463,14 @@ mod tests {
         fn test_slash_validator_root_only() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::slash_validator(
                     RuntimeOrigin::root(),
-                    validator,
+                    VALIDATOR_A,
                     500
                 ));
                 assert_noop!(
-                    PalletCbcPos::slash_validator(RuntimeOrigin::signed(1), validator, 500),
+                    PalletCbcPos::slash_validator(RuntimeOrigin::signed(VALIDATOR_A), VALIDATOR_A, 500),
                     DispatchError::BadOrigin
                 );
             });
@@ -515,21 +480,14 @@ mod tests {
         fn test_slash_validator_percentage_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
-                assert_ok!(PalletCbcPos::increase_validator_stake(
-                    RuntimeOrigin::signed(validator),
-                    5000
-                ));
+                register_and_stake(VALIDATOR_A, 5000);
                 assert_ok!(PalletCbcPos::slash_validator_percentage(
                     RuntimeOrigin::root(),
-                    validator,
+                    VALIDATOR_A,
                     50
                 ));
                 assert_noop!(
-                    PalletCbcPos::slash_validator_percentage(RuntimeOrigin::root(), validator, 150),
+                    PalletCbcPos::slash_validator_percentage(RuntimeOrigin::root(), VALIDATOR_A, 150),
                     Error::<Test>::InvalidStakeAmount
                 );
             });
@@ -539,11 +497,11 @@ mod tests {
         fn test_slash_multiple_validators() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(2)));
+                register_validator(VALIDATOR_A);
+                register_validator(VALIDATOR_B);
                 assert_ok!(PalletCbcPos::slash_multiple_validators(
                     RuntimeOrigin::root(),
-                    vec![1, 2],
+                    vec![VALIDATOR_A, VALIDATOR_B],
                     100
                 ));
             });
@@ -560,17 +518,14 @@ mod tests {
         fn test_reward_validator_call_root_only() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 assert_ok!(PalletCbcPos::reward_validator_call(
                     RuntimeOrigin::root(),
-                    validator,
+                    VALIDATOR_A,
                     1000
                 ));
                 assert_noop!(
-                    PalletCbcPos::reward_validator_call(RuntimeOrigin::signed(1), validator, 1000),
+                    PalletCbcPos::reward_validator_call(RuntimeOrigin::signed(VALIDATOR_A), VALIDATOR_A, 1000),
                     DispatchError::BadOrigin
                 );
             });
@@ -580,11 +535,11 @@ mod tests {
         fn test_reward_multiple_validators() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(2)));
+                register_validator(VALIDATOR_A);
+                register_validator(VALIDATOR_B);
                 assert_ok!(PalletCbcPos::reward_multiple_validators(
                     RuntimeOrigin::root(),
-                    vec![1, 2],
+                    vec![VALIDATOR_A, VALIDATOR_B],
                     500
                 ));
             });
@@ -594,8 +549,8 @@ mod tests {
         fn test_reward_all_active_validators() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(2)));
+                register_validator(VALIDATOR_A);
+                register_validator(VALIDATOR_B);
                 assert_ok!(PalletCbcPos::reward_all_active_validators(
                     RuntimeOrigin::root(),
                     500
@@ -607,27 +562,27 @@ mod tests {
         fn test_distribute_epoch_rewards_success() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(2)));
+                register_validator(VALIDATOR_A);
+                register_validator(VALIDATOR_B);
 
-                // Submit scores via extrinsic: val 1 -> 90 (high performer), val 2 -> 70
-                assert_ok!(PalletCbcPos::submit_score(RuntimeOrigin::signed(1), 1, 90));
-                assert_ok!(PalletCbcPos::submit_score(RuntimeOrigin::signed(2), 2, 70));
+                // Submit scores via extrinsic: val A -> 90 (high performer), val B -> 70
+                assert_ok!(PalletCbcPos::submit_score(RuntimeOrigin::signed(VALIDATOR_A), VALIDATOR_A, 90));
+                assert_ok!(PalletCbcPos::submit_score(RuntimeOrigin::signed(VALIDATOR_B), VALIDATOR_B, 70));
 
                 // Distribute 10,000 pool:
                 // Active validators = [1, 2] (total 2 validators).
-                // Base pool (60%) = 6,000 -> split equally: 3,000 to val 1, 3,000 to val 2.
-                // Performance pool (25%) = 2,500 -> val 1 score 90 >= threshold 80 -> 2,500 to val 1.
+                // Base pool (60%) = 6,000 -> split equally: 3,000 to val A, 3,000 to val B.
+                // Performance pool (25%) = 2,500 -> val A score 90 >= threshold 80 -> 2,500 to val A.
                 // Top performer pool (15%) = 1,500 -> top_performer_count = (2 * 20%) / 100 = 0 (no validator qualifies).
-                // Total credited rewards: Val 1 = 3000 + 2500 = 5500; Val 2 = 3000; Total EpochTotalRewarded = 8500.
+                // Total credited rewards: Val A = 3000 + 2500 = 5500; Val B = 3000; Total EpochTotalRewarded = 8500.
                 // Event reports full pool budget (10,000).
                 assert_ok!(PalletCbcPos::distribute_epoch_rewards(
                     RuntimeOrigin::root(),
                     10000
                 ));
 
-                assert_eq!(ValidatorEpochRewarded::<Test>::get(1), 5500);
-                assert_eq!(ValidatorEpochRewarded::<Test>::get(2), 3000);
+                assert_eq!(ValidatorEpochRewarded::<Test>::get(VALIDATOR_A), 5500);
+                assert_eq!(ValidatorEpochRewarded::<Test>::get(VALIDATOR_B), 3000);
                 assert_eq!(EpochTotalRewarded::<Test>::get(), 8500);
                 System::assert_has_event(RuntimeEvent::PalletCbcPos(Event::EpochRewardsDistributed {
                     epoch: 0,
@@ -640,7 +595,7 @@ mod tests {
         fn test_distribute_epoch_rewards_bad_origin() {
             new_test_ext().execute_with(|| {
                 assert_noop!(
-                    PalletCbcPos::distribute_epoch_rewards(RuntimeOrigin::signed(1), 10000),
+                    PalletCbcPos::distribute_epoch_rewards(RuntimeOrigin::signed(VALIDATOR_A), 10000),
                     DispatchError::BadOrigin
                 );
             });
@@ -650,13 +605,10 @@ mod tests {
         fn test_reward_validator_bounds_exceeded_validator() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 let max_reward: u64 = <Test as crate::Config>::MaxRewardPerValidator::get();
                 assert_noop!(
-                    PalletCbcPos::reward_validator_call(RuntimeOrigin::root(), validator, max_reward + 1),
+                    PalletCbcPos::reward_validator_call(RuntimeOrigin::root(), VALIDATOR_A, max_reward + 1),
                     Error::<Test>::RewardBoundsExceeded
                 );
             });
@@ -666,14 +618,11 @@ mod tests {
         fn test_reward_validator_bounds_exceeded_epoch() {
             new_test_ext().execute_with(|| {
                 run_to_block(1);
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
+                register_validator(VALIDATOR_A);
                 let max_epoch_reward: u64 = <Test as crate::Config>::MaxRewardPerEpoch::get();
                 EpochTotalRewarded::<Test>::put(max_epoch_reward);
                 assert_noop!(
-                    PalletCbcPos::reward_validator_call(RuntimeOrigin::root(), validator, 100),
+                    PalletCbcPos::reward_validator_call(RuntimeOrigin::root(), VALIDATOR_A, 100),
                     Error::<Test>::RewardBoundsExceeded
                 );
             });
@@ -689,15 +638,8 @@ mod tests {
         #[test]
         fn test_calculate_slash_amount() {
             new_test_ext().execute_with(|| {
-                let validator = 1u64;
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(
-                    validator
-                )));
-                assert_ok!(PalletCbcPos::increase_validator_stake(
-                    RuntimeOrigin::signed(validator),
-                    1000
-                ));
-                let slash_amount = PalletCbcPos::calculate_slash_amount(&validator).unwrap();
+                register_and_stake(VALIDATOR_A, 1000);
+                let slash_amount = PalletCbcPos::calculate_slash_amount(&VALIDATOR_A).unwrap();
                 let slash_percent: u32 = <Test as crate::Config>::SlashPercent::get();
                 assert_eq!(slash_amount, (1000 * slash_percent as u64) / 100);
             });
@@ -719,34 +661,33 @@ mod tests {
             new_test_ext().execute_with(|| {
                 EpochTotalRewarded::<Test>::put(5000);
                 EpochTotalSlashed::<Test>::put(2000);
-                ValidatorEpochRewarded::<Test>::insert(1, 1000);
-                ValidatorEpochSlashed::<Test>::insert(1, 500);
+                ValidatorEpochRewarded::<Test>::insert(VALIDATOR_A, 1000);
+                ValidatorEpochSlashed::<Test>::insert(VALIDATOR_A, 500);
 
                 PalletCbcPos::reset_epoch_totals();
 
                 assert_eq!(EpochTotalRewarded::<Test>::get(), 0);
                 assert_eq!(EpochTotalSlashed::<Test>::get(), 0);
-                assert_eq!(ValidatorEpochRewarded::<Test>::get(1), 0);
-                assert_eq!(ValidatorEpochSlashed::<Test>::get(1), 0);
+                assert_eq!(ValidatorEpochRewarded::<Test>::get(VALIDATOR_A), 0);
+                assert_eq!(ValidatorEpochSlashed::<Test>::get(VALIDATOR_A), 0);
             });
         }
 
         #[test]
         fn test_get_active_validators() {
             new_test_ext().execute_with(|| {
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(1)));
-                assert_ok!(PalletCbcPos::register_validator(RuntimeOrigin::signed(2)));
+                register_validator(VALIDATOR_A);
+                register_validator(VALIDATOR_B);
                 let active = PalletCbcPos::get_active_validators();
-                assert!(active.contains(&1));
-                assert!(active.contains(&2));
+                assert!(active.contains(&VALIDATOR_A));
+                assert!(active.contains(&VALIDATOR_B));
             });
         }
 
         #[test]
         fn test_get_slashing_history() {
             new_test_ext().execute_with(|| {
-                let validator = 1u64;
-                let history = PalletCbcPos::get_slashing_history(validator);
+                let history = PalletCbcPos::get_slashing_history(VALIDATOR_A);
                 assert!(history.is_empty());
             });
         }
