@@ -4,21 +4,18 @@
 //! the entire CBC system including all pallets and their interactions.
 
 use crate::{
-    AccountId, Balance, BlockNumber, RuntimeOrigin,
+    AccountId, Balance, BlockNumber,
     System, Balances, Runtime,
 };
 use frame_support::{
     parameter_types,
-    traits::{ConstU32, ConstU64, ConstU128, ConstU8, Everything, Hooks, Currency, ReservableCurrency},
+    traits::{Currency, ReservableCurrency},
     weights::Weight,
-    PalletId,
 };
 use sp_runtime::{
-    traits::{BlakeTwo256, IdentityLookup, Verify},
     BuildStorage, Perbill,
+    AccountId32,
 };
-use sp_core::{H256, Ed25519};
-use sp_runtime::AccountId32;
 
 /// Helper function to create AccountId from u64
 pub fn account_id(id: u64) -> AccountId {
@@ -65,16 +62,21 @@ impl Default for MockRuntimeConfig {
                 AccountId32::from([3u8; 32]),
                 AccountId32::from([4u8; 32]),
             ],
-            validator_stakes: vec![10000, 10000, 10000, 10000],
+            validator_stakes: vec![
+                1000 * crate::CBC,
+                1000 * crate::CBC,
+                1000 * crate::CBC,
+                1000 * crate::CBC,
+            ],
             validator_scores: vec![60, 70, 80, 90], // Changed to u32
             endowed_accounts: vec![
-                (AccountId32::from([1u8; 32]), 100000),
-                (AccountId32::from([2u8; 32]), 100000),
-                (AccountId32::from([3u8; 32]), 100000),
-                (AccountId32::from([4u8; 32]), 100000),
-                (AccountId32::from([5u8; 32]), 100000),
+                (AccountId32::from([1u8; 32]), 100_000 * crate::CBC),
+                (AccountId32::from([2u8; 32]), 100_000 * crate::CBC),
+                (AccountId32::from([3u8; 32]), 100_000 * crate::CBC),
+                (AccountId32::from([4u8; 32]), 100_000 * crate::CBC),
+                (AccountId32::from([5u8; 32]), 100_000 * crate::CBC),
                 // Add test accounts
-                (AccountId32::from([99u8; 32]), 100000), // For test_account
+                (AccountId32::from([99u8; 32]), 100_000 * crate::CBC), // For test_account
             ],
             sudo_key: AccountId32::from([1u8; 32]),
         }
@@ -83,17 +85,7 @@ impl Default for MockRuntimeConfig {
 
 /// Create a test externalities with default configuration
 pub fn new_test_ext() -> sp_io::TestExternalities {
-    // Create minimal configuration for testing
-    let config = MockRuntimeConfig {
-        validators: vec![],
-        validator_stakes: vec![],
-        validator_scores: vec![],
-        endowed_accounts: vec![
-            (AccountId32::from([1u8; 32]), 1000000), // Ensure well above existential deposit
-        ],
-        sudo_key: AccountId32::from([1u8; 32]),
-    };
-    new_test_ext_with_config(config)
+    new_test_ext_with_config(MockRuntimeConfig::default())
 }
 
 /// Create a test externalities with custom configuration
@@ -110,18 +102,46 @@ pub fn new_test_ext_with_config(config: MockRuntimeConfig) -> sp_io::TestExterna
     .assimilate_storage(&mut storage)
     .unwrap();
 
-    // Skip sudo configuration for now to isolate the issue
-
-    // Configure DCF pallet - simplified for testing
-    // Skip DCF genesis configuration to avoid balance issues during testing
-
     let mut ext = sp_io::TestExternalities::from(storage);
-    
-    // Setup keystore for consensus testing
-    // Keystore setup removed for simplicity
     
     ext.execute_with(|| {
         System::set_block_number(1);
+        let mut set = frame_support::BoundedVec::default();
+        for (i, v) in config.validators.iter().enumerate() {
+            let stake = config.validator_stakes.get(i).cloned().unwrap_or(1000 * crate::CBC);
+            let _ = Balances::deposit_creating(v, stake + 10_000 * crate::CBC);
+            let _ = Balances::reserve(v, stake);
+            pallet_cbc_pos::Stake::<Runtime>::insert(v, stake);
+            pallet_cbc_pos::Validators::<Runtime>::insert(v, true);
+            let state = pallet_cbc_dcf::ValidatorState {
+                last_active_epoch: 0,
+                current: pallet_cbc_dcf::EpochStats {
+                    epoch: 0,
+                    stake_score: 1000,
+                    inference_score: 0,
+                    final_score: 1000,
+                    authored_blocks: 0,
+                    missed_blocks: 0,
+                },
+                history: frame_support::BoundedVec::default(),
+                uptime: 0,
+                inference_success_count: 0,
+                participation_rate: 100,
+                inference_count: 0,
+                last_active_block: 0,
+                name: None,
+                trust_score: 0,
+            };
+            pallet_cbc_dcf::ValidatorStates::<Runtime>::insert(v, state);
+            let _ = set.try_push(v.clone());
+        }
+        pallet_cbc_dcf::ValidatorSet::<Runtime>::put(set.clone());
+        pallet_cbc_dcf::ActiveValidators::<Runtime>::put(set);
+        pallet_cbc_dcf::EpochConfigStorage::<Runtime>::put(pallet_cbc_dcf::EpochConfig {
+            blocks_per_epoch: 100,
+            min_stake: 1000 * crate::CBC,
+            max_validators: 100,
+        });
     });
     
     ext
@@ -132,18 +152,18 @@ pub fn new_test_ext_with_validators(validator_count: u32) -> sp_io::TestExternal
     let validators: Vec<AccountId> = (1..=validator_count as u64)
         .map(|i| AccountId32::from([i as u8; 32]))
         .collect();
-    let validator_stakes: Vec<Balance> = vec![10000; validator_count as usize];
+    let validator_stakes: Vec<Balance> = vec![1000 * crate::CBC; validator_count as usize];
     let validator_scores: Vec<u32> = (60..60 + validator_count).collect();
     let mut endowed_accounts: Vec<(AccountId, Balance)> = validators
         .iter()
-        .map(|v| (v.clone(), 100000))
+        .map(|v| (v.clone(), 100_000 * crate::CBC))
         .collect();
     
     // Add some additional accounts
     endowed_accounts.extend(vec![
-        (AccountId32::from([100u8; 32]), 1000000), // Rich account for testing
-        (AccountId32::from([101u8; 32]), 1000000),
-        (AccountId32::from([102u8; 32]), 1000000),
+        (AccountId32::from([100u8; 32]), 100_000 * crate::CBC), // Rich account for testing
+        (AccountId32::from([101u8; 32]), 100_000 * crate::CBC),
+        (AccountId32::from([102u8; 32]), 100_000 * crate::CBC),
     ]);
 
     let config = MockRuntimeConfig {
@@ -163,8 +183,7 @@ pub fn new_test_ext_for_governance() -> sp_io::TestExternalities {
     
     ext.execute_with(|| {
         // Enable governance mode
-        // Enable governance mode for testing
-        pallet_cbc_dcf::GovernanceModeEnabled::<Runtime>::put(true);
+        pallet_cbc_governance::GovernanceModeEnabled::<Runtime>::put(true);
     });
     
     ext
@@ -220,14 +239,14 @@ pub fn advance_to_next_epoch() {
 
 /// Helper function to create a test account with balance
 pub fn create_funded_account(account_id: AccountId, balance: Balance) {
-    let _ = Balances::make_free_balance_be(&account_id, balance);
+    let _ = Balances::deposit_creating(&account_id, balance);
 }
 
 /// Helper function to setup a validator with stake
 pub fn setup_validator_with_stake(validator: AccountId, stake: Balance) {
-    create_funded_account(validator.clone(), stake * 2);
+    create_funded_account(validator.clone(), stake + 10_000 * crate::CBC);
     let _ = Balances::reserve(&validator, stake);
-    pallet_cbc_dcf::ValidatorStake::<Runtime>::insert(&validator, stake);
+    pallet_cbc_pos::Stake::<Runtime>::insert(&validator, stake);
 }
 
 /// Helper function to create multiple test validators
@@ -237,7 +256,7 @@ pub fn create_test_validators(count: u32) -> Vec<AccountId> {
         .collect();
     
     for validator in &validators {
-        setup_validator_with_stake(validator.clone(), 10000);
+        setup_validator_with_stake(validator.clone(), 1000 * crate::CBC);
         
         // Create validator state
         let validator_state = pallet_cbc_dcf::ValidatorState {
