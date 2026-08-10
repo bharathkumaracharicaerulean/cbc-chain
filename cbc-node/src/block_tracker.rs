@@ -14,7 +14,7 @@ use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use cbc_runtime::AccountId;
 
 /// Statistics for a single validator's block authoring performance
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ValidatorBlockStats {
     pub authored_blocks: u32,
     pub missed_blocks: u32,
@@ -22,6 +22,19 @@ pub struct ValidatorBlockStats {
     pub participation_rate: f64, // Percentage (0.0 to 100.0)
     pub last_authored_block: Option<u32>,
     pub consecutive_misses: u32,
+}
+
+impl Default for ValidatorBlockStats {
+    fn default() -> Self {
+        Self {
+            authored_blocks: 0,
+            missed_blocks: 0,
+            expected_blocks: 0,
+            participation_rate: 100.0, // New validators start at 100%
+            last_authored_block: None,
+            consecutive_misses: 0,
+        }
+    }
 }
 
 impl ValidatorBlockStats {

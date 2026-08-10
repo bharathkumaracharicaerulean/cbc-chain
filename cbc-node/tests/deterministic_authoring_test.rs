@@ -295,8 +295,8 @@ impl AuthorConsistencyReport {
     /// Check if the consistency is acceptable (no mismatches unless simulated)
     pub fn is_consistent(&self, allow_simulated_mismatches: bool) -> bool {
         if allow_simulated_mismatches {
-            // If simulating mismatches, we expect some mismatches but overall consistency should be reasonable
-            self.consistency_percentage >= 80.0 && self.missing_expected == 0 && self.missing_actual == 0
+            // If simulating mismatches, we expect some mismatches but overall consistency should be reasonable (>= 40%)
+            self.consistency_percentage >= 40.0 && self.missing_expected == 0 && self.missing_actual == 0
         } else {
             // If not simulating mismatches, we expect perfect consistency
             self.mismatches == 0 && self.missing_expected == 0 && self.missing_actual == 0

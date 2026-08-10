@@ -35,28 +35,16 @@ fn test_fork_report_serialization() {
 
 #[test]
 fn test_fork_detection_threshold_logic() {
-    // Test divergence calculation
-    let local_best = 100u32;
-    let peer_best = 95u32;
+    // Test divergence calculation using production ForkReport implementation
     let threshold = 10u32;
-    
-    let divergence = if local_best > peer_best {
-        local_best - peer_best
-    } else {
-        peer_best - local_best
-    };
-    
-    assert_eq!(divergence, 5);
-    assert!(divergence <= threshold, "Divergence should be within threshold");
-    
-    // Test case where divergence exceeds threshold
-    let peer_best_far = 80u32;
-    let divergence_far = if local_best > peer_best_far {
-        local_best - peer_best_far
-    } else {
-        peer_best_far - local_best
-    };
-    
-    assert_eq!(divergence_far, 20);
-    assert!(divergence_far > threshold, "Large divergence should exceed threshold");
+    let report_normal = ForkReport::new("peer-1", 100, 95);
+
+    assert_eq!(report_normal.divergence, 5);
+    assert!(!report_normal.is_divergent(threshold), "Divergence of 5 should be within threshold of 10");
+
+    // Test case where divergence exceeds threshold using production logic
+    let report_far = ForkReport::new("peer-2", 100, 80);
+
+    assert_eq!(report_far.divergence, 20);
+    assert!(report_far.is_divergent(threshold), "Divergence of 20 should exceed threshold of 10");
 }

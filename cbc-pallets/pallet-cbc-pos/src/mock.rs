@@ -87,14 +87,24 @@ impl pallet_cbc_pos::ValidatorHandler<u64, u64> for TestValidatorHandler {
     fn on_slashed(_validator: &u64, _amount: u64, _penalty: u64) -> sp_runtime::DispatchResult { Ok(()) }
     fn on_rewarded(_validator: &u64, _amount: u64, _boost: u64) -> sp_runtime::DispatchResult { Ok(()) }
     fn get_validator_score(validator: &u64) -> u64 {
-        match validator {
-            1 => 90,
-            2 => 60,
-            _ => 50,
-        }
+        crate::ValidatorScores::<Test>::get(validator).map(|s| s as u64).unwrap_or_else(|| {
+            match validator {
+                1 => 90,
+                2 => 60,
+                _ => 50,
+            }
+        })
     }
     fn get_active_validators() -> Vec<u64> {
-        vec![1, 2]
+        let active: Vec<u64> = crate::Validators::<Test>::iter()
+            .filter(|(_, is_active)| *is_active)
+            .map(|(v, _)| v)
+            .collect();
+        if active.is_empty() {
+            vec![1, 2]
+        } else {
+            active
+        }
     }
 }
 

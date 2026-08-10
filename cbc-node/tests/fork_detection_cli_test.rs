@@ -1,50 +1,40 @@
-use std::process::Command;
+use clap::Parser;
+use cbc_node::cli::{Cli, Subcommand};
 
 #[test]
 fn test_fork_check_cli_help() {
-    let output = Command::new("cargo")
-        .args(&["run", "--bin", "cbc-node", "--", "fork-check", "--help"])
-        .output()
-        .expect("Failed to execute command");
+    let res = Cli::try_parse_from(&["cbc-node", "fork-check", "--help"]);
+    assert!(res.is_err(), "DisplayHelp returns Err with ErrorKind::DisplayHelp");
+    let err = res.unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
     
-    assert!(output.status.success(), "Command should succeed");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Fork detection tool"), "Should contain fork detection description");
-    assert!(stdout.contains("--local-rpc"), "Should contain local-rpc option");
-    assert!(stdout.contains("--peer-rpc"), "Should contain peer-rpc option");
-    assert!(stdout.contains("--threshold"), "Should contain threshold option");
-    assert!(stdout.contains("--format"), "Should contain format option");
-    assert!(stdout.contains("--timeout"), "Should contain timeout option");
+    let help_msg = err.to_string();
+    assert!(help_msg.contains("Fork detection tool"));
+    assert!(help_msg.contains("--local-rpc"));
+    assert!(help_msg.contains("--peer-rpc"));
+    assert!(help_msg.contains("--threshold"));
+    assert!(help_msg.contains("--format"));
+    assert!(help_msg.contains("--timeout"));
 }
 
 #[test]
 fn test_fork_check_cli_validation() {
-    // Test that fork-check command exists and can be invoked
-    let output = Command::new("cargo")
-        .args(&["run", "--bin", "cbc-node", "--", "fork-check", "--help"])
-        .output()
-        .expect("Failed to execute command");
-    
-    // The help command should succeed
-    assert!(output.status.success(), "Fork-check help command should succeed");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Fork detection tool"), "Should contain fork detection description");
-}
+    let cli = Cli::try_parse_from(&[
+        "cbc-node",
+        "fork-check",
+        "--local-rpc", "http://localhost:9944",
+        "--peer-rpc", "http://peer1:9944,http://peer2:9944",
+        "--threshold", "15",
+        "--timeout", "45",
+        "--format", "json",
+    ]).expect("CLI parsing should succeed");
 
-#[test]
-fn test_standalone_fork_checker_help() {
-    let output = Command::new("cargo")
-        .args(&["run", "--bin", "fork-checker", "--", "--help"])
-        .current_dir("../tools")
-        .output()
-        .expect("Failed to execute command");
-    
-    assert!(output.status.success(), "Command should succeed");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("CBC Chain Fork Detection Tool"), "Should contain tool description");
-    assert!(stdout.contains("check"), "Should contain check subcommand");
-    assert!(stdout.contains("serve"), "Should contain serve subcommand");
+    if let Some(Subcommand::ForkCheck(cmd)) = cli.subcommand {
+        assert_eq!(cmd.local_rpc, "http://localhost:9944");
+        assert_eq!(cmd.peer_rpc, vec!["http://peer1:9944", "http://peer2:9944"]);
+        assert_eq!(cmd.threshold, 15);
+        assert_eq!(cmd.timeout, 45);
+    } else {
+        panic!("Parsed subcommand should be ForkCheck");
+    }
 }

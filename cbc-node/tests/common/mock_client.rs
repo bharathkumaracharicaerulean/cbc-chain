@@ -189,7 +189,7 @@ impl MockRuntimeApi {
         Ok(self.current_block)
     }
     
-    /// Calculate trust score using the same logic as the real implementation
+    /// Calculate trust score delegating to production TrustScore calculation
     pub fn calculate_trust_score(&self, validator: &AccountId) -> Result<Option<u64>, String> {
         if self.should_fail {
             return Err("Runtime API call failed".to_string());
@@ -206,12 +206,12 @@ impl MockRuntimeApi {
         };
         
         let (pos_weight, poi_weight) = self.consensus_weights;
-        let trust_score = (pos_score * pos_weight + poi_score * poi_weight) / (pos_weight + poi_weight);
+        let score = cbc_node::rpc::TrustScore::calculate(pos_score, poi_score, pos_weight, poi_weight);
         
-        Ok(Some(trust_score))
+        Ok(Some(score.total))
     }
     
-    /// Determine validator status based on active list and slashing count
+    /// Determine validator status delegating to production ValidatorStatus determination
     pub fn get_validator_status(&self, validator: &AccountId) -> Result<String, String> {
         if self.should_fail {
             return Err("Runtime API call failed".to_string());
@@ -219,16 +219,15 @@ impl MockRuntimeApi {
         
         let is_active = self.active_validators.contains(validator);
         let slashing_count = self.slashing_counts.get(validator).copied().unwrap_or(0);
+        let status = cbc_node::rpc::ValidatorStatus::determine(is_active, slashing_count);
         
-        let status = if !is_active {
-            "Inactive"
-        } else if slashing_count > 0 {
-            "Slashed"
-        } else {
-            "Active"
+        let status_str = match status {
+            cbc_node::rpc::ValidatorStatus::Active => "Active",
+            cbc_node::rpc::ValidatorStatus::Inactive => "Inactive",
+            cbc_node::rpc::ValidatorStatus::Slashed => "Slashed",
         };
         
-        Ok(status.to_string())
+        Ok(status_str.to_string())
     }
 }
 

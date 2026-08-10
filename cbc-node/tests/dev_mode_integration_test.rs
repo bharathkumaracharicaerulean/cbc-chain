@@ -147,9 +147,7 @@ impl MockDevModeNode {
         log::info!("Mock: Starting CBC node in dev mode");
         log::info!("Mock: Node configuration: {:?}", self.config);
         
-        // Simulate startup delay
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        
+        // Immediate startup for fast unit test execution
         self.is_running = true;
         self.current_block = 1;
         
@@ -166,7 +164,6 @@ impl MockDevModeNode {
         log::info!("Mock: Producing {} blocks", target_blocks);
         
         for _ in 0..target_blocks {
-            tokio::time::sleep(Duration::from_millis(50)).await;
             self.current_block += 1;
             
             // Simulate epoch transitions every 10 blocks

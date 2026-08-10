@@ -98,23 +98,27 @@ impl pallet_cbc_governance::ProposalExecutor<u64, u64> for MockProposalExecutor 
     }
 }
 
+// Designated test fixture accounts for scenario testing
+pub const FORBIDDEN_PROPOSER_ACCOUNT: u64 = 999;
+pub const FORBIDDEN_TARGET_ACCOUNT: u64 = 999;
+pub const RATE_LIMITED_ACCOUNT: u64 = 888;
+
 pub struct MockValidatorProvider;
 impl pallet_cbc_governance::ValidatorProvider<u64, Weight> for MockValidatorProvider {
     fn active_validators() -> Vec<u64> {
         vec![1, 2, 3]
     }
     fn is_private_chain_mode() -> bool {
-        // Return true if account 999 is involved to test private mode validation
         false
     }
     fn validate_governance_in_private_mode(proposer: &u64) -> DispatchResult {
-        if *proposer == 999 {
+        if *proposer == FORBIDDEN_PROPOSER_ACCOUNT {
             return Err(DispatchError::Other("PrivateModeGovernanceForbidden"));
         }
         Ok(())
     }
     fn validate_proposal_in_private_mode(_proposer: &u64, target: &u64) -> DispatchResult {
-        if *target == 999 {
+        if *target == FORBIDDEN_TARGET_ACCOUNT {
             return Err(DispatchError::Other("PrivateModeTargetForbidden"));
         }
         Ok(())
@@ -124,7 +128,7 @@ impl pallet_cbc_governance::ValidatorProvider<u64, Weight> for MockValidatorProv
         op_type: u8,
         _weight: Weight,
     ) -> Result<(), (DispatchError, Option<(u8, u8, u32, u32)>)> {
-        if *proposer == 888 {
+        if *proposer == RATE_LIMITED_ACCOUNT {
             return Err((
                 crate::Error::<Test>::RateLimitExceeded.into(),
                 Some((op_type, 1u8, 10u32, 5u32)),

@@ -28,6 +28,27 @@ pub struct ForkReport {
     pub divergence: u32,
 }
 
+impl ForkReport {
+    pub fn new(peer_id: impl Into<String>, local_best: u32, peer_best: u32) -> Self {
+        let peer_id = peer_id.into();
+        let divergence = if local_best > peer_best {
+            local_best - peer_best
+        } else {
+            peer_best - local_best
+        };
+        Self {
+            peer_id,
+            local_best,
+            peer_best,
+            divergence,
+        }
+    }
+
+    pub fn is_divergent(&self, threshold: u32) -> bool {
+        self.divergence > threshold
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct BlockInfo {
     number: u32,

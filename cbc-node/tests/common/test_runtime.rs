@@ -156,13 +156,13 @@ impl TestClient {
             .map(|(_, score)| *score)
     }
     
-    /// Calculate trust score for a validator
+    /// Calculate trust score for a validator using production TrustScore calculation
     pub fn calculate_trust_score(&self, validator: &AccountId) -> Option<u64> {
         let pos_score = self.get_validator_pos_score(validator)? as u64;
         let poi_score = self.get_validator_poi_score(validator)? as u64;
         let (pos_weight, poi_weight) = self.config.consensus_weights;
-        
-        Some((pos_score * pos_weight + poi_score * poi_weight) / (pos_weight + poi_weight))
+        let score = cbc_node::rpc::TrustScore::calculate(pos_score, poi_score, pos_weight, poi_weight);
+        Some(score.total)
     }
     
     /// Check if a validator is active

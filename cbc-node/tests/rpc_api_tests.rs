@@ -3,56 +3,23 @@
 //! These tests verify the actual RPC implementations in cbc-node/src/rpc.rs
 //! by testing the production types, serialization, and logic used in deployment.
 
-use std::sync::Arc;
-use std::time::Duration;
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::Instant;
 use jsonrpsee::RpcModule;
 use sp_core::crypto::AccountId32;
-use cbc_runtime::{AccountId, Balance};
 
-// We need to test the actual RPC types and implementations
-// Since we can't easily import from cbc_node::rpc due to module structure,
-// we'll test the core functionality by recreating the key components
+use cbc_node::rpc::{
+    RateLimiter, ValidatorStatus, ValidatorProfile, TrustScore, SystemStatus, ConsensusHealth,
+    RpcSecurityConfig, BlockAuthoringStats,
+};
+use cbc_node::block_tracker::ValidatorBlockStats;
 
 // =============================================================================
 // RATE LIMITER TESTS (Production Implementation)
 // =============================================================================
 
-#[derive(Clone)]
-pub struct TestRateLimiter {
-    window: Duration,
-    max_requests: u32,
-    requests: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
-}
-
-impl TestRateLimiter {
-    pub fn new(window_secs: u64, max_requests: u32) -> Self {
-        Self {
-            window: Duration::from_secs(window_secs),
-            max_requests,
-            requests: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
-    pub fn check_rate_limit(&self, ip: &str) -> bool {
-        let now = Instant::now();
-        let mut requests = self.requests.lock().unwrap();
-        let history = requests.entry(ip.to_string()).or_insert_with(Vec::new);
-        history.retain(|&time| now.duration_since(time) <= self.window);
-        if history.len() as u32 >= self.max_requests {
-            return false;
-        }
-        history.push(now);
-        true
-    }
-}
-
 #[test]
 fn test_production_rate_limiter_implementation() {
-    // This tests the exact same logic as in production RPC code
-    let limiter = TestRateLimiter::new(1, 2); // 2 requests per second
+    // Tests the production RateLimiter struct directly
+    let limiter = RateLimiter::new(1, 2); // 2 requests per second
     
     // First two requests should pass
     assert!(limiter.check_rate_limit("127.0.0.1"));
@@ -72,7 +39,7 @@ fn test_rate_limiter_concurrent_access() {
     use std::thread;
     use std::sync::Arc;
     
-    let limiter = Arc::new(TestRateLimiter::new(1, 10)); // 10 requests per second
+    let limiter = Arc::new(RateLimiter::new(1, 10)); // 10 requests per second
     let mut handles = vec![];
     
     // Spawn 5 threads making requests
@@ -110,61 +77,14 @@ fn test_rate_limiter_concurrent_access() {
 // RPC TYPE TESTS (Production Types)
 // =============================================================================
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TestValidatorStatus {
-    Active,
-    Inactive,
-    Slashed,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TestValidatorProfile {
-    pub account: AccountId,
-    pub stake: Balance,
-    pub pos_score: u32,
-    pub poi_score: u64,
-    pub trust_score: u64,
-    pub status: TestValidatorStatus,
-    pub authored_blocks: u32,
-    pub missed_blocks: u32,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TestTrustScore {
-    pub total: u64,
-    pub pos_component: u64,
-    pub poi_component: u64,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum TestConsensusHealth {
-    Healthy,
-    Degraded,
-    Critical,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TestSystemStatus {
-    pub current_epoch: u32,
-    pub active_validators: u32,
-    pub total_validators: u32,
-    pub last_finalized_block: u32,
-    pub consensus_health: TestConsensusHealth,
-}
-
 #[test]
 fn test_production_validator_status_serialization() {
     use serde_json;
     
     // Test the exact same serialization as production code
-    let active = TestValidatorStatus::Active;
-    let inactive = TestValidatorStatus::Inactive;
-    let slashed = TestValidatorStatus::Slashed;
+    let active = ValidatorStatus::Active;
+    let inactive = ValidatorStatus::Inactive;
+    let slashed = ValidatorStatus::Slashed;
     
     // Test JSON serialization with lowercase
     assert_eq!(serde_json::to_string(&active).unwrap(), "\"active\"");
@@ -172,13 +92,13 @@ fn test_production_validator_status_serialization() {
     assert_eq!(serde_json::to_string(&slashed).unwrap(), "\"slashed\"");
     
     // Test deserialization
-    let active_from_json: TestValidatorStatus = serde_json::from_str("\"active\"").unwrap();
-    let inactive_from_json: TestValidatorStatus = serde_json::from_str("\"inactive\"").unwrap();
-    let slashed_from_json: TestValidatorStatus = serde_json::from_str("\"slashed\"").unwrap();
+    let active_from_json: ValidatorStatus = serde_json::from_str("\"active\"").unwrap();
+    let inactive_from_json: ValidatorStatus = serde_json::from_str("\"inactive\"").unwrap();
+    let slashed_from_json: ValidatorStatus = serde_json::from_str("\"slashed\"").unwrap();
     
-    assert!(matches!(active_from_json, TestValidatorStatus::Active));
-    assert!(matches!(inactive_from_json, TestValidatorStatus::Inactive));
-    assert!(matches!(slashed_from_json, TestValidatorStatus::Slashed));
+    assert!(matches!(active_from_json, ValidatorStatus::Active));
+    assert!(matches!(inactive_from_json, ValidatorStatus::Inactive));
+    assert!(matches!(slashed_from_json, ValidatorStatus::Slashed));
     
     println!("✓ Production ValidatorStatus serialization test passed");
 }
@@ -188,13 +108,13 @@ fn test_production_validator_profile_serialization() {
     use serde_json;
     
     let test_account = AccountId32::from([1u8; 32]);
-    let profile = TestValidatorProfile {
+    let profile = ValidatorProfile {
         account: test_account.clone(),
         stake: 1000u128,
         pos_score: 85u32,
         poi_score: 75u64,
         trust_score: 81u64,
-        status: TestValidatorStatus::Active,
+        status: ValidatorStatus::Active,
         authored_blocks: 95u32,
         missed_blocks: 5u32,
     };
@@ -212,7 +132,7 @@ fn test_production_validator_profile_serialization() {
     assert!(json.contains("\"missedBlocks\":5"));
     
     // Test deserialization
-    let profile_from_json: TestValidatorProfile = serde_json::from_str(&json).unwrap();
+    let profile_from_json: ValidatorProfile = serde_json::from_str(&json).unwrap();
     assert_eq!(profile_from_json.stake, 1000u128);
     assert_eq!(profile_from_json.pos_score, 85u32);
     assert_eq!(profile_from_json.trust_score, 81u64);
@@ -224,7 +144,7 @@ fn test_production_validator_profile_serialization() {
 fn test_production_trust_score_serialization() {
     use serde_json;
     
-    let trust_score = TestTrustScore {
+    let trust_score = TrustScore {
         total: 81u64,
         pos_component: 5100u64,
         poi_component: 3000u64,
@@ -238,7 +158,7 @@ fn test_production_trust_score_serialization() {
     assert!(json.contains("\"poiComponent\":3000"));
     
     // Test deserialization
-    let trust_from_json: TestTrustScore = serde_json::from_str(&json).unwrap();
+    let trust_from_json: TrustScore = serde_json::from_str(&json).unwrap();
     assert_eq!(trust_from_json.total, 81u64);
     assert_eq!(trust_from_json.pos_component, 5100u64);
     assert_eq!(trust_from_json.poi_component, 3000u64);
@@ -250,12 +170,12 @@ fn test_production_trust_score_serialization() {
 fn test_production_system_status_serialization() {
     use serde_json;
     
-    let status = TestSystemStatus {
+    let status = SystemStatus {
         current_epoch: 42u32,
         active_validators: 5u32,
         total_validators: 10u32,
         last_finalized_block: 1000u32,
-        consensus_health: TestConsensusHealth::Healthy,
+        consensus_health: ConsensusHealth::Healthy,
     };
     
     let json = serde_json::to_string(&status).unwrap();
@@ -265,7 +185,7 @@ fn test_production_system_status_serialization() {
     assert!(json.contains("\"activeValidators\":5"));
     assert!(json.contains("\"totalValidators\":10"));
     assert!(json.contains("\"lastFinalizedBlock\":1000"));
-    assert!(json.contains("\"consensusHealth\":\"Healthy\""));
+    assert!(json.contains("\"consensusHealth\":\"healthy\""));
     
     println!("✓ Production SystemStatus serialization test passed");
 }
@@ -276,123 +196,45 @@ fn test_production_system_status_serialization() {
 
 #[test]
 fn test_production_trust_score_calculation() {
-    // This tests the exact trust score calculation logic from production
-    let pos_score = 85u64;
-    let poi_score = 75u64;
-    let pos_weight = 60u64;
-    let poi_weight = 40u64;
+    let score = TrustScore::calculate(85, 75, 60, 40);
+    assert_eq!(score.pos_component, 5100);
+    assert_eq!(score.poi_component, 3000);
+    assert_eq!(score.total, 81);
     
-    // Production calculation logic
-    let pos_component = pos_score * pos_weight;
-    let poi_component = poi_score * poi_weight;
-    let total = (pos_component + poi_component) / (pos_weight + poi_weight);
+    let score_alt = TrustScore::calculate(85, 75, 65, 35);
+    assert_eq!(score_alt.total, 81);
     
-    assert_eq!(pos_component, 5100u64);
-    assert_eq!(poi_component, 3000u64);
-    assert_eq!(total, 81u64);
-    
-    // Test with different weights (65% PoS, 35% PoI as in integration tests)
-    let pos_weight_alt = 65u64;
-    let poi_weight_alt = 35u64;
-    let total_alt = (pos_score * pos_weight_alt + poi_score * poi_weight_alt) / (pos_weight_alt + poi_weight_alt);
-    
-    // (85 * 65 + 75 * 35) / 100 = (5525 + 2625) / 100 = 81.5 -> 81
-    assert_eq!(total_alt, 81u64);
-    
-    // Test edge case: zero weights
-    let safe_total = if pos_weight + poi_weight > 0 {
-        (pos_component + poi_component) / (pos_weight + poi_weight)
-    } else {
-        0u64
-    };
-    assert_eq!(safe_total, 81u64);
-    
-    println!("✓ Production trust score calculation test passed");
+    let score_zero = TrustScore::calculate(85, 75, 0, 0);
+    assert_eq!(score_zero.total, 0);
 }
 
 #[test]
 fn test_production_consensus_health_logic() {
-    // This tests the exact consensus health determination logic from production
-    
-    fn determine_consensus_health(active_count: u32) -> TestConsensusHealth {
-        if active_count >= 3 {
-            TestConsensusHealth::Healthy
-        } else if active_count >= 1 {
-            TestConsensusHealth::Degraded
-        } else {
-            TestConsensusHealth::Critical
-        }
-    }
-    
-    // Test all scenarios
-    assert!(matches!(determine_consensus_health(5), TestConsensusHealth::Healthy));
-    assert!(matches!(determine_consensus_health(3), TestConsensusHealth::Healthy));
-    assert!(matches!(determine_consensus_health(2), TestConsensusHealth::Degraded));
-    assert!(matches!(determine_consensus_health(1), TestConsensusHealth::Degraded));
-    assert!(matches!(determine_consensus_health(0), TestConsensusHealth::Critical));
-    
-    println!("✓ Production consensus health logic test passed");
+    assert_eq!(ConsensusHealth::determine(5), ConsensusHealth::Healthy);
+    assert_eq!(ConsensusHealth::determine(3), ConsensusHealth::Healthy);
+    assert_eq!(ConsensusHealth::determine(2), ConsensusHealth::Degraded);
+    assert_eq!(ConsensusHealth::determine(1), ConsensusHealth::Degraded);
+    assert_eq!(ConsensusHealth::determine(0), ConsensusHealth::Critical);
 }
 
 #[test]
 fn test_production_validator_status_determination() {
-    // This tests the exact validator status determination logic from production
-    
-    fn determine_validator_status(is_active: bool, slashing_count: u32) -> TestValidatorStatus {
-        if !is_active {
-            TestValidatorStatus::Inactive
-        } else if slashing_count > 0 {
-            TestValidatorStatus::Slashed
-        } else {
-            TestValidatorStatus::Active
-        }
-    }
-    
-    // Test all combinations
-    assert!(matches!(determine_validator_status(true, 0), TestValidatorStatus::Active));
-    assert!(matches!(determine_validator_status(true, 1), TestValidatorStatus::Slashed));
-    assert!(matches!(determine_validator_status(false, 0), TestValidatorStatus::Inactive));
-    assert!(matches!(determine_validator_status(false, 1), TestValidatorStatus::Inactive));
-    
-    println!("✓ Production validator status determination test passed");
+    assert_eq!(ValidatorStatus::determine(true, 0), ValidatorStatus::Active);
+    assert_eq!(ValidatorStatus::determine(true, 1), ValidatorStatus::Slashed);
+    assert_eq!(ValidatorStatus::determine(false, 0), ValidatorStatus::Inactive);
+    assert_eq!(ValidatorStatus::determine(false, 1), ValidatorStatus::Inactive);
 }
 
 // =============================================================================
 // SECURITY LOGIC TESTS (Production Security)
 // =============================================================================
 
-#[derive(Clone, Debug)]
-pub struct TestRpcSecurityConfig {
-    pub enable_cbc_extensions: bool,
-    pub expose_unsafe_methods: bool,
-    pub rate_limit_window: u64,
-    pub rate_limit_requests: u32,
-}
-
-impl Default for TestRpcSecurityConfig {
-    fn default() -> Self {
-        Self {
-            enable_cbc_extensions: false,
-            expose_unsafe_methods: false,
-            rate_limit_window: 60,
-            rate_limit_requests: 100,
-        }
-    }
-}
-
-impl TestRpcSecurityConfig {
-    fn check_cbc_extensions_enabled(&self) -> Result<(), String> {
-        if !self.enable_cbc_extensions {
-            return Err("CBC RPC extensions are disabled. Use --enable-cbc-extensions flag.".to_string());
-        }
-        Ok(())
-    }
-}
+// Using production RpcSecurityConfig imported from cbc_node::rpc
 
 #[test]
 fn test_production_security_config() {
     // Test default security configuration
-    let default_config = TestRpcSecurityConfig::default();
+    let default_config = RpcSecurityConfig::default();
     assert!(!default_config.enable_cbc_extensions);
     assert!(!default_config.expose_unsafe_methods);
     assert_eq!(default_config.rate_limit_window, 60);
@@ -402,7 +244,7 @@ fn test_production_security_config() {
     assert!(default_config.check_cbc_extensions_enabled().is_err());
     
     // Test enabled configuration
-    let enabled_config = TestRpcSecurityConfig {
+    let enabled_config = RpcSecurityConfig {
         enable_cbc_extensions: true,
         expose_unsafe_methods: false,
         rate_limit_window: 60,
@@ -450,7 +292,7 @@ fn test_production_rpc_error_creation() {
 fn test_production_rate_limiter_performance() {
     use std::time::Instant;
     
-    let limiter = TestRateLimiter::new(60, 1000); // 1000 requests per minute
+    let limiter = RateLimiter::new(60, 1000); // 1000 requests per minute
     
     let start = Instant::now();
     
@@ -475,13 +317,13 @@ fn test_production_serialization_performance() {
     use serde_json;
     
     let test_account = AccountId32::from([1u8; 32]);
-    let profile = TestValidatorProfile {
+    let profile = ValidatorProfile {
         account: test_account,
         stake: 1000u128,
         pos_score: 85u32,
         poi_score: 75u64,
         trust_score: 81u64,
-        status: TestValidatorStatus::Active,
+        status: ValidatorStatus::Active,
         authored_blocks: 95u32,
         missed_blocks: 5u32,
     };
@@ -518,6 +360,33 @@ fn test_production_rpc_module_creation() {
     println!("✓ Production RPC module creation test passed");
 }
 
+#[tokio::test]
+async fn test_live_jsonrpsee_server_wire_calls() {
+    use jsonrpsee::server::ServerBuilder;
+    use jsonrpsee::http_client::HttpClientBuilder;
+    use jsonrpsee::core::client::ClientT;
+
+    let mut module = RpcModule::new(());
+    module.register_method("system_name", |_, _, _| -> jsonrpsee::core::RpcResult<&'static str> { Ok("cbc-node") }).unwrap();
+    module.register_method("cbc_getCurrentEpoch", |_, _, _| -> jsonrpsee::core::RpcResult<u32> { Ok(42u32) }).unwrap();
+    module.register_method("cbc_getConsensusHealth", |_, _, _| -> jsonrpsee::core::RpcResult<ConsensusHealth> { Ok(ConsensusHealth::Healthy) }).unwrap();
+
+    let server = ServerBuilder::default().build("127.0.0.1:0").await.unwrap();
+    let addr = server.local_addr().unwrap();
+    let _handle = server.start(module);
+
+    let client = HttpClientBuilder::default().build(format!("http://{}", addr)).unwrap();
+    
+    let name: String = client.request("system_name", jsonrpsee::rpc_params![]).await.unwrap();
+    assert_eq!(name, "cbc-node");
+
+    let epoch: u32 = client.request("cbc_getCurrentEpoch", jsonrpsee::rpc_params![]).await.unwrap();
+    assert_eq!(epoch, 42);
+
+    let health: ConsensusHealth = client.request("cbc_getConsensusHealth", jsonrpsee::rpc_params![]).await.unwrap();
+    assert_eq!(health, ConsensusHealth::Healthy);
+}
+
 #[test]
 fn test_production_account_id_handling() {
     // Test AccountId handling as done in production
@@ -549,23 +418,23 @@ fn test_comprehensive_production_rpc_functionality() {
     println!("\n=== Comprehensive Production RPC Functionality Test ===");
     
     // Test 1: Rate limiting (core security feature)
-    let rate_limiter = TestRateLimiter::new(60, 100);
+    let rate_limiter = RateLimiter::new(60, 100);
     assert!(rate_limiter.check_rate_limit("test_client"));
     println!("  ✓ Rate limiting functionality verified");
     
     // Test 2: Security configuration (access control)
-    let security_config = TestRpcSecurityConfig::default();
+    let security_config = RpcSecurityConfig::default();
     assert!(security_config.check_cbc_extensions_enabled().is_err());
     println!("  ✓ Security configuration verified");
     
     // Test 3: Type serialization (API responses)
-    let validator_profile = TestValidatorProfile {
+    let validator_profile = ValidatorProfile {
         account: AccountId32::from([1u8; 32]),
         stake: 5000u128,
         pos_score: 95u32,
         poi_score: 90u64,
         trust_score: 93u64,
-        status: TestValidatorStatus::Active,
+        status: ValidatorStatus::Active,
         authored_blocks: 190u32,
         missed_blocks: 10u32,
     };
@@ -596,82 +465,33 @@ fn test_comprehensive_production_rpc_functionality() {
     // Test 6: Performance (production readiness)
     let start = std::time::Instant::now();
     for _ in 0..100 {
-        let _profile = TestValidatorProfile {
+        let _profile = ValidatorProfile {
             account: AccountId32::from([1u8; 32]),
             stake: 1000u128,
             pos_score: 85u32,
             poi_score: 75u64,
             trust_score: 81u64,
-            status: TestValidatorStatus::Active,
+            status: ValidatorStatus::Active,
             authored_blocks: 95u32,
             missed_blocks: 5u32,
         };
     }
     let duration = start.elapsed();
     assert!(duration.as_millis() < 10);
-    println!("  ✓ Performance characteristics verified");
-    
-    println!("\nCOMPREHENSIVE PRODUCTION RPC TEST RESULTS:");
-    println!("Rate Limiting: Production-ready security controls");
-    println!("Access Control: Proper extension flag enforcement");
-    println!("Serialization: Correct camelCase JSON output");
-    println!("Business Logic: Accurate trust score calculations");
-    println!("Error Handling: Proper error codes and messages");
-    println!("Performance: Sub-millisecond response times");
-    
-    println!("\nALL PRODUCTION RPC FUNCTIONALITY VERIFIED!");
-    println!("Ready for deployment with 19 RPC APIs");
-    println!("Security, performance, and correctness confirmed");
+    // Performance characteristics verified
 }
 
 // =============================================================================
 // BLOCK AUTHORING TRACKING TESTS (Production Block Tracking)
 // =============================================================================
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TestBlockAuthoringStats {
-    pub authored_blocks: u32,
-    pub missed_blocks: u32,
-    pub expected_blocks: u32,
-    pub participation_rate: f64,
-    pub consecutive_misses: u32,
-    pub last_authored_block: Option<u32>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct TestValidatorBlockStats {
-    pub authored_blocks: u32,
-    pub missed_blocks: u32,
-    pub expected_blocks: u32,
-    pub participation_rate: f64,
-    pub last_authored_block: Option<u32>,
-    pub consecutive_misses: u32,
-}
-
-impl TestValidatorBlockStats {
-    pub fn calculate_participation_rate(&mut self) {
-        if self.expected_blocks > 0 {
-            self.participation_rate = (self.authored_blocks as f64 / self.expected_blocks as f64) * 100.0;
-        } else {
-            self.participation_rate = 100.0; // New validators start at 100%
-        }
-    }
-    
-    pub fn is_underperforming(&self, threshold: f64) -> bool {
-        self.participation_rate < threshold && self.expected_blocks >= 10
-    }
-    
-    pub fn has_concerning_misses(&self, max_consecutive: u32) -> bool {
-        self.consecutive_misses >= max_consecutive
-    }
-}
+// Using production BlockAuthoringStats and ValidatorBlockStats imported from cbc_node
 
 #[test]
 fn test_production_block_authoring_stats_serialization() {
     use serde_json;
     
-    let stats = TestBlockAuthoringStats {
+    let stats = BlockAuthoringStats {
         authored_blocks: 95u32,
         missed_blocks: 5u32,
         expected_blocks: 100u32,
@@ -691,7 +511,7 @@ fn test_production_block_authoring_stats_serialization() {
     assert!(json.contains("\"lastAuthoredBlock\":1000"));
     
     // Test deserialization
-    let stats_from_json: TestBlockAuthoringStats = serde_json::from_str(&json).unwrap();
+    let stats_from_json: BlockAuthoringStats = serde_json::from_str(&json).unwrap();
     assert_eq!(stats_from_json.authored_blocks, 95u32);
     assert_eq!(stats_from_json.missed_blocks, 5u32);
     assert_eq!(stats_from_json.participation_rate, 95.0);
@@ -701,7 +521,7 @@ fn test_production_block_authoring_stats_serialization() {
 
 #[test]
 fn test_production_participation_rate_calculation() {
-    let mut stats = TestValidatorBlockStats {
+    let mut stats = ValidatorBlockStats {
         authored_blocks: 85,
         missed_blocks: 15,
         expected_blocks: 100,
@@ -735,7 +555,7 @@ fn test_production_participation_rate_calculation() {
 
 #[test]
 fn test_production_underperformance_detection() {
-    let mut stats = TestValidatorBlockStats {
+    let mut stats = ValidatorBlockStats {
         authored_blocks: 70,
         missed_blocks: 30,
         expected_blocks: 100,
@@ -757,7 +577,7 @@ fn test_production_underperformance_detection() {
 
 #[test]
 fn test_production_consecutive_misses_detection() {
-    let stats = TestValidatorBlockStats {
+    let stats = ValidatorBlockStats {
         consecutive_misses: 7,
         ..Default::default()
     };
@@ -772,7 +592,7 @@ fn test_production_consecutive_misses_detection() {
 #[test]
 fn test_production_block_tracking_edge_cases() {
     // Test with zero authored blocks
-    let mut stats = TestValidatorBlockStats {
+    let mut stats = ValidatorBlockStats {
         authored_blocks: 0,
         missed_blocks: 10,
         expected_blocks: 10,
@@ -802,7 +622,7 @@ fn test_production_block_tracking_edge_cases() {
 #[test]
 fn test_production_block_authoring_performance_scenarios() {
     // Scenario 1: Excellent validator (95%+ participation)
-    let mut excellent_validator = TestValidatorBlockStats {
+    let mut excellent_validator = ValidatorBlockStats {
         authored_blocks: 190,
         missed_blocks: 10,
         expected_blocks: 200,
@@ -817,7 +637,7 @@ fn test_production_block_authoring_performance_scenarios() {
     assert!(!excellent_validator.has_concerning_misses(5));
     
     // Scenario 2: Good validator (85-95% participation)
-    let mut good_validator = TestValidatorBlockStats {
+    let mut good_validator = ValidatorBlockStats {
         authored_blocks: 170,
         missed_blocks: 30,
         expected_blocks: 200,
@@ -832,7 +652,7 @@ fn test_production_block_authoring_performance_scenarios() {
     assert!(!good_validator.has_concerning_misses(5));
     
     // Scenario 3: Underperforming validator (<80% participation)
-    let mut poor_validator = TestValidatorBlockStats {
+    let mut poor_validator = ValidatorBlockStats {
         authored_blocks: 120,
         missed_blocks: 80,
         expected_blocks: 200,
@@ -847,7 +667,7 @@ fn test_production_block_authoring_performance_scenarios() {
     assert!(poor_validator.has_concerning_misses(5));
     
     // Scenario 4: New validator (limited history)
-    let mut new_validator = TestValidatorBlockStats {
+    let mut new_validator = ValidatorBlockStats {
         authored_blocks: 3,
         missed_blocks: 2,
         expected_blocks: 5,
@@ -867,21 +687,21 @@ fn test_production_block_authoring_performance_scenarios() {
 fn test_production_block_tracking_statistics_aggregation() {
     // Test aggregating statistics from multiple validators
     let validators = vec![
-        TestValidatorBlockStats {
+        ValidatorBlockStats {
             authored_blocks: 95,
             missed_blocks: 5,
             expected_blocks: 100,
             participation_rate: 95.0,
             ..Default::default()
         },
-        TestValidatorBlockStats {
+        ValidatorBlockStats {
             authored_blocks: 85,
             missed_blocks: 15,
             expected_blocks: 100,
             participation_rate: 85.0,
             ..Default::default()
         },
-        TestValidatorBlockStats {
+        ValidatorBlockStats {
             authored_blocks: 75,
             missed_blocks: 25,
             expected_blocks: 100,
@@ -924,7 +744,7 @@ fn test_production_block_tracking_rpc_response_format() {
     let test_account = AccountId32::from([1u8; 32]);
     
     // Single validator stats response
-    let single_stats = TestBlockAuthoringStats {
+    let single_stats = BlockAuthoringStats {
         authored_blocks: 95,
         missed_blocks: 5,
         expected_blocks: 100,
@@ -939,7 +759,7 @@ fn test_production_block_tracking_rpc_response_format() {
     // Multiple validators stats response (as returned by cbc_getAllBlockAuthoringStats)
     let multiple_stats = vec![
         (test_account.clone(), single_stats.clone()),
-        (AccountId32::from([2u8; 32]), TestBlockAuthoringStats {
+        (AccountId32::from([2u8; 32]), BlockAuthoringStats {
             authored_blocks: 80,
             missed_blocks: 20,
             expected_blocks: 100,
@@ -965,7 +785,7 @@ fn test_comprehensive_production_block_tracking_functionality() {
     println!("\n=== Comprehensive Production Block Tracking Functionality Test ===");
     
     // Test 1: Basic statistics calculation
-    let mut validator_stats = TestValidatorBlockStats {
+    let mut validator_stats = ValidatorBlockStats {
         authored_blocks: 90,
         missed_blocks: 10,
         expected_blocks: 100,
@@ -986,7 +806,7 @@ fn test_comprehensive_production_block_tracking_functionality() {
     println!("  ✓ Consecutive miss detection verified");
     
     // Test 4: RPC response serialization
-    let rpc_stats = TestBlockAuthoringStats {
+    let rpc_stats = BlockAuthoringStats {
         authored_blocks: validator_stats.authored_blocks,
         missed_blocks: validator_stats.missed_blocks,
         expected_blocks: validator_stats.expected_blocks,
@@ -1001,16 +821,16 @@ fn test_comprehensive_production_block_tracking_functionality() {
     println!("  ✓ RPC response serialization verified");
     
     // Test 5: Edge case handling
-    let mut new_validator = TestValidatorBlockStats::default();
+    let mut new_validator = ValidatorBlockStats::default();
     new_validator.calculate_participation_rate();
     assert_eq!(new_validator.participation_rate, 100.0); // Default for new validators
     println!("  ✓ Edge case handling verified");
     
     // Test 6: Multi-validator aggregation
     let validators = vec![
-        TestValidatorBlockStats { authored_blocks: 95, missed_blocks: 5, expected_blocks: 100, participation_rate: 95.0, ..Default::default() },
-        TestValidatorBlockStats { authored_blocks: 85, missed_blocks: 15, expected_blocks: 100, participation_rate: 85.0, ..Default::default() },
-        TestValidatorBlockStats { authored_blocks: 75, missed_blocks: 25, expected_blocks: 100, participation_rate: 75.0, ..Default::default() },
+        ValidatorBlockStats { authored_blocks: 95, missed_blocks: 5, expected_blocks: 100, participation_rate: 95.0, ..Default::default() },
+        ValidatorBlockStats { authored_blocks: 85, missed_blocks: 15, expected_blocks: 100, participation_rate: 85.0, ..Default::default() },
+        ValidatorBlockStats { authored_blocks: 75, missed_blocks: 25, expected_blocks: 100, participation_rate: 75.0, ..Default::default() },
     ];
     
     let total_authored: u32 = validators.iter().map(|v| v.authored_blocks).sum();
@@ -1046,21 +866,21 @@ fn test_final_comprehensive_production_rpc_suite() {
     println!("\nTesting Core RPC Functionality...");
     
     // 1. Rate Limiting & Security
-    let rate_limiter = TestRateLimiter::new(60, 100);
+    let rate_limiter = RateLimiter::new(60, 100);
     assert!(rate_limiter.check_rate_limit("production_client"));
     
-    let security_config = TestRpcSecurityConfig::default();
+    let security_config = RpcSecurityConfig::default();
     assert!(security_config.check_cbc_extensions_enabled().is_err());
     println!("  Rate limiting and security controls: PASSED");
     
     // 2. Core RPC Types
-    let validator_profile = TestValidatorProfile {
+    let validator_profile = ValidatorProfile {
         account: AccountId32::from([1u8; 32]),
         stake: 10_000_000u128,
         pos_score: 92u32,
         poi_score: 88u64,
         trust_score: 90u64,
-        status: TestValidatorStatus::Active,
+        status: ValidatorStatus::Active,
         authored_blocks: 285u32,
         missed_blocks: 15u32,
     };
@@ -1071,7 +891,7 @@ fn test_final_comprehensive_production_rpc_suite() {
     println!("  Core RPC types and serialization: PASSED");
     
     // 3. Block Authoring Tracking
-    let mut block_stats = TestValidatorBlockStats {
+    let mut block_stats = ValidatorBlockStats {
         authored_blocks: 285,
         missed_blocks: 15,
         expected_blocks: 300,
@@ -1093,28 +913,28 @@ fn test_final_comprehensive_production_rpc_suite() {
     println!("  Trust score calculations: PASSED");
     
     // 5. Network Health Assessment
-    let system_status = TestSystemStatus {
+    let system_status = SystemStatus {
         current_epoch: 150u32,
         active_validators: 7u32,
         total_validators: 10u32,
         last_finalized_block: 45000u32,
-        consensus_health: TestConsensusHealth::Healthy,
+        consensus_health: ConsensusHealth::Healthy,
     };
     
     let status_json = serde_json::to_string(&system_status).unwrap();
-    assert!(status_json.contains("\"consensusHealth\":\"Healthy\""));
+    assert!(status_json.contains("\"consensusHealth\":\"healthy\""));
     println!("  Network health assessment: PASSED");
     
     // 6. Performance Benchmarks
     let start = std::time::Instant::now();
     for _ in 0..1000 {
-        let _profile = TestValidatorProfile {
+        let _profile = ValidatorProfile {
             account: AccountId32::from([1u8; 32]),
             stake: 1_000_000u128,
             pos_score: 85u32,
             poi_score: 80u64,
             trust_score: 83u64,
-            status: TestValidatorStatus::Active,
+            status: ValidatorStatus::Active,
             authored_blocks: 190u32,
             missed_blocks: 10u32,
         };
@@ -1142,41 +962,11 @@ fn test_final_comprehensive_production_rpc_suite() {
     println!("  Multi-validator statistics: PASSED (avg: {:.1}%)", avg_participation);
     
     // 8. Error Handling & Edge Cases
-    let mut edge_case_validator = TestValidatorBlockStats::default();
+    let mut edge_case_validator = ValidatorBlockStats::default();
     edge_case_validator.calculate_participation_rate();
     assert_eq!(edge_case_validator.participation_rate, 100.0);
     
     let error = jsonrpsee::types::ErrorObjectOwned::owned(-32000, "Test error".to_string(), None::<()>);
     assert_eq!(error.code(), -32000);
-    println!("  Error handling and edge cases: PASSED");
-    
-    println!("\n{}", "=".repeat(80));
-    println!("PRODUCTION RPC IMPLEMENTATION VERIFICATION COMPLETE");
-    println!("{}", "=".repeat(80));
-    
-    println!("\nFINAL TEST SUMMARY:");
-    println!("┌─────────────────────────────────────────────────────────────┐");
-    println!("│ Component                    │ Status    │ Details          │");
-    println!("├─────────────────────────────────────────────────────────────┤");
-    println!("│ Rate Limiting                │ PASSED    │ Security ready   │");
-    println!("│ Access Control               │ PASSED    │ Extension flags  │");
-    println!("│ Type Serialization           │ PASSED    │ camelCase JSON   │");
-    println!("│ Block Authoring Tracking     │ PASSED    │ Real-time stats  │");
-    println!("│ Trust Score Calculation      │ PASSED    │ PoS+PoI weights  │");
-    println!("│ Network Health Monitoring    │ PASSED    │ Status reporting │");
-    println!("│ Performance Optimization     │ PASSED    │ <50ms response   │");
-    println!("│ Multi-Validator Analytics    │ PASSED    │ Network metrics  │");
-    println!("│ Error Handling               │ PASSED    │ Robust errors    │");
-    println!("│ Edge Case Management         │ PASSED    │ Zero-value safe  │");
-    println!("└─────────────────────────────────────────────────────────────┘");
-    
-    println!("\nDEPLOYMENT READINESS CONFIRMED:");
-    println!("   • 21 RPC Methods Implemented and Tested");
-    println!("   • Block Authoring Tracking: FULLY OPERATIONAL");
-    println!("   • Missed Block Detection: FULLY OPERATIONAL");
-    println!("   • Real-time Performance Monitoring: ENABLED");
-    println!("   • Production Security Controls: ACTIVE");
-    println!("   • Sub-millisecond Response Times: VERIFIED");
-    
-    println!("\nREADY FOR PRODUCTION DEPLOYMENT!");
+    // Error handling and edge cases verified
 }

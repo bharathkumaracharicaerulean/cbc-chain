@@ -66,12 +66,24 @@ impl RateLimiter {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ValidatorStatus {
     Active,
     Inactive,
     Slashed,
+}
+
+impl ValidatorStatus {
+    pub fn determine(is_active: bool, slashing_count: u32) -> Self {
+        if !is_active {
+            ValidatorStatus::Inactive
+        } else if slashing_count > 0 {
+            ValidatorStatus::Slashed
+        } else {
+            ValidatorStatus::Active
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -118,12 +130,30 @@ pub struct ValidatorProfile {
     pub missed_blocks: u32,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrustScore {
     pub total: u64,
     pub pos_component: u64,
     pub poi_component: u64,
+}
+
+impl TrustScore {
+    pub fn calculate(pos_score: u64, poi_score: u64, pos_weight: u64, poi_weight: u64) -> Self {
+        let pos_component = pos_score * pos_weight;
+        let poi_component = poi_score * poi_weight;
+        let total_weight = pos_weight + poi_weight;
+        let total = if total_weight > 0 {
+            (pos_component + poi_component) / total_weight
+        } else {
+            0
+        };
+        Self {
+            total,
+            pos_component,
+            poi_component,
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -136,12 +166,24 @@ pub struct SystemStatus {
     pub consensus_health: ConsensusHealth,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ConsensusHealth {
     Healthy,
     Degraded,
     Critical,
+}
+
+impl ConsensusHealth {
+    pub fn determine(active_count: u32) -> Self {
+        if active_count >= 3 {
+            ConsensusHealth::Healthy
+        } else if active_count >= 1 {
+            ConsensusHealth::Degraded
+        } else {
+            ConsensusHealth::Critical
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -187,6 +229,15 @@ impl Default for RpcSecurityConfig {
             rate_limit_window: 60,
             rate_limit_requests: 100,
         }
+    }
+}
+
+impl RpcSecurityConfig {
+    pub fn check_cbc_extensions_enabled(&self) -> Result<(), String> {
+        if !self.enable_cbc_extensions {
+            return Err("CBC RPC extensions are disabled. Use --enable-cbc-extensions flag.".to_string());
+        }
+        Ok(())
     }
 }
 

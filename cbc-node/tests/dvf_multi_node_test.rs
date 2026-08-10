@@ -680,12 +680,14 @@ async fn test_vote_propagation() {
     for node in &network.nodes {
         let pool = node.vote_pool.read().unwrap();
         if let Some(votes) = pool.get(&checkpoint_block) {
-            assert_eq!(votes.len(), 2, "Node {} should have 2 votes in pool", node.name);
+            assert_eq!(votes.len(), 3, "Node {} should have 3 votes in pool (1 own + 2 received)", node.name);
+        }
 
-            // Verify votes are from other validators
-            for vote in votes {
-                assert_ne!(vote.validator_account, node.account, "Node {} should not have its own vote in received pool", node.name);
-            }
+        // Verify received votes are from other validators
+        let received = node.received_votes.read().unwrap();
+        assert_eq!(received.len(), 2, "Node {} should have 2 received votes", node.name);
+        for vote in received.iter() {
+            assert_ne!(vote.validator_account, node.account, "Node {} should not have its own vote in received pool", node.name);
         }
     }
 

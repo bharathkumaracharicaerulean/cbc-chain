@@ -12,7 +12,6 @@
 use std::time::Duration;
 use std::process::Command;
 use std::collections::HashMap;
-use tokio::time::sleep;
 
 /// Configuration for multi-node testing
 #[derive(Debug, Clone)]
@@ -150,7 +149,6 @@ impl MockNode {
     
     pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Mock: Starting node {}", self.index);
-        sleep(Duration::from_millis(100)).await;
         self.is_running = true;
         self.current_block = 1;
         Ok(())
@@ -167,7 +165,6 @@ impl MockNode {
         }
         
         log::info!("Mock: Node {} connecting to {} peers", self.index, expected_peers);
-        sleep(Duration::from_millis(50)).await;
         self.peer_count = expected_peers;
         Ok(())
     }
@@ -180,7 +177,6 @@ impl MockNode {
         log::info!("Mock: Node {} producing blocks to {}", self.index, target_blocks);
         
         while self.current_block < target_blocks {
-            sleep(Duration::from_millis(20)).await;
             self.current_block += 1;
             
             // Simulate epoch transitions
