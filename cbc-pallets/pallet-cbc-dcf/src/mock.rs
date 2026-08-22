@@ -208,21 +208,12 @@ impl pallet_cbc_governance::ProposalExecutor<u64, u128> for MockProposalExecutor
     fn remove_validator(_validator: &u64) -> DispatchResult { Ok(()) }
 }
 
-pub struct MockValidatorProvider;
-impl pallet_cbc_governance::ValidatorProvider<u64, Weight> for MockValidatorProvider {
-    fn active_validators() -> Vec<u64> { vec![1, 2, 3] }
-    fn is_private_chain_mode() -> bool { false }
-    fn validate_governance_in_private_mode(_proposer: &u64) -> DispatchResult { Ok(()) }
-    fn validate_proposal_in_private_mode(_proposer: &u64, _target: &u64) -> DispatchResult { Ok(()) }
-    fn check_rate_limits(_proposer: &u64, _op_type: u8, _weight: Weight) -> Result<(), (DispatchError, Option<(u8, u8, u32, u32)>)> { Ok(()) }
-    fn record_operation(_proposer: &u64, _op_type: u8) {}
-}
-
 impl pallet_cbc_governance::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type Balance = u128;
-    type ProposalExecutor = MockProposalExecutor;
-    type ValidatorProvider = MockValidatorProvider;
+    type ProposalExecutor = DcfPallet;
+    type ValidatorProvider = DcfPallet;
+    type WeightInfo = ();
 }
 
 // Mock weight info
@@ -310,6 +301,13 @@ impl WeightInfo for MockWeightInfo {
     fn propose_default_reward_multiple_validators() -> Weight { Weight::from_parts(10_000, 0) }
     fn propose_reward_all_active_validators() -> Weight { Weight::from_parts(10_000, 0) }
     fn propose_reward_multiple_validators(_v: u32) -> Weight { Weight::from_parts(10_000, 0) }
+    fn update_rate_limit_config() -> Weight { Weight::from_parts(10_000, 0) }
+    fn validate_genesis_configuration() -> Weight { Weight::from_parts(10_000, 0) }
+    fn dry_run_genesis_configuration() -> Weight { Weight::from_parts(10_000, 0) }
+    fn enable_private_chain() -> Weight { Weight::from_parts(10_000, 0) }
+    fn disable_private_chain() -> Weight { Weight::from_parts(10_000, 0) }
+    fn add_validator_to_allowlist() -> Weight { Weight::from_parts(10_000, 0) }
+    fn remove_validator_from_allowlist() -> Weight { Weight::from_parts(10_000, 0) }
 }
 
 impl Config for Test {

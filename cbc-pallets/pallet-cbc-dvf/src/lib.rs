@@ -2,6 +2,9 @@
 
 pub use pallet::*;
 
+pub mod weights;
+pub use weights::WeightInfo;
+
 use sp_runtime::SaturatedConversion;
 use frame_support::traits::Get;
 use frame_support::{ensure, BoundedVec};
@@ -19,6 +22,7 @@ mod tests;
 
 #[frame_support::pallet]
 pub mod pallet {
+	use super::WeightInfo;
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
     use sp_runtime::traits::{SaturatedConversion, Verify, IdentifyAccount};
@@ -164,6 +168,9 @@ sp_api::decl_runtime_apis! {
 
         #[pallet::constant]
         type MaxValidatorNameSize: Get<u32>;
+
+        /// Type representing the weight of this pallet
+        type WeightInfo: WeightInfo;
 	}
 
     /// Frozen weights for active validators during the current epoch.
@@ -495,7 +502,7 @@ sp_api::decl_runtime_apis! {
 	impl<T: Config> Pallet<T> {
         /// Primary Extrinsic / Inherent entrypoint to submit a vote.
         #[pallet::call_index(0)]
-        #[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1,1))]
+        #[pallet::weight(<T as Config>::WeightInfo::submit_dvf_vote())]
         pub fn submit_dvf_vote(
             origin: OriginFor<T>,
             vote: DvfVote<T::Hash, T::AccountId, T::Signature>,
@@ -547,7 +554,7 @@ sp_api::decl_runtime_apis! {
 
         /// Submit a DVF justification to finalize a block.
         #[pallet::call_index(1)]
-        #[pallet::weight(Weight::from_parts(100_000, 0) + T::DbWeight::get().reads_writes(10, 10))]
+        #[pallet::weight(<T as Config>::WeightInfo::submit_justification())]
         pub fn submit_justification(
             origin: OriginFor<T>,
             justification: DvfJustification<T::Hash, T::AccountId, T::Signature>,
@@ -559,7 +566,7 @@ sp_api::decl_runtime_apis! {
 
 
         #[pallet::call_index(4)]
-        #[pallet::weight(Weight::from_parts(50_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::join_validators())]
         pub fn join_validators(
             origin: OriginFor<T>,
             _name: Option<BoundedVec<u8, ConstU32<32>>>,
@@ -634,7 +641,7 @@ sp_api::decl_runtime_apis! {
         }
 
         #[pallet::call_index(5)]
-        #[pallet::weight(Weight::from_parts(50_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::leave_validators())]
         pub fn leave_validators(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
@@ -667,7 +674,7 @@ sp_api::decl_runtime_apis! {
         }
 
         #[pallet::call_index(6)]
-        #[pallet::weight(Weight::from_parts(50_000, 0))]
+        #[pallet::weight(<T as Config>::WeightInfo::cancel_leave_request())]
         pub fn cancel_leave_request(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
 

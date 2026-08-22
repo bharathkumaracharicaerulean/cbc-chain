@@ -37,6 +37,7 @@ impl pallet_todo::Config for Test {
     type MaxTitleLength = MaxTitleLength;
     type MaxDescriptionLength = MaxDescriptionLength;
     type MaxTodosPerAccount = MaxTodosPerAccount;
+    type WeightInfo = ();
 }
 
 // ── Test externalities builder ────────────────────────────────

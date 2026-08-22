@@ -152,6 +152,13 @@ pub trait WeightInfo {
     fn propose_default_reward_multiple_validators() -> Weight;
     fn propose_reward_all_active_validators() -> Weight;
     fn propose_reward_multiple_validators(v: u32) -> Weight;
+    fn update_rate_limit_config() -> Weight;
+    fn validate_genesis_configuration() -> Weight;
+    fn dry_run_genesis_configuration() -> Weight;
+    fn enable_private_chain() -> Weight;
+    fn disable_private_chain() -> Weight;
+    fn add_validator_to_allowlist() -> Weight;
+    fn remove_validator_from_allowlist() -> Weight;
 }
 
 /// Weights for the pallet using the Substrate node and recommended hardware.
@@ -591,6 +598,46 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().writes(2)) // Proposals, NextProposalId
     }
 
+    fn update_rate_limit_config() -> Weight {
+        Weight::from_parts(30_000, 1000)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+
+    fn validate_genesis_configuration() -> Weight {
+        Weight::from_parts(100_000, 2000)
+            .saturating_add(T::DbWeight::get().reads(5))
+    }
+
+    fn dry_run_genesis_configuration() -> Weight {
+        Weight::from_parts(150_000, 3000)
+            .saturating_add(T::DbWeight::get().reads(10))
+    }
+
+    fn enable_private_chain() -> Weight {
+        Weight::from_parts(40_000, 1000)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    fn disable_private_chain() -> Weight {
+        Weight::from_parts(30_000, 1000)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    fn add_validator_to_allowlist() -> Weight {
+        Weight::from_parts(35_000, 1000)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
+    fn remove_validator_from_allowlist() -> Weight {
+        Weight::from_parts(35_000, 1000)
+            .saturating_add(T::DbWeight::get().reads(2))
+            .saturating_add(T::DbWeight::get().writes(2))
+    }
+
 }
 
 // For backwards compatibility and tests
@@ -766,6 +813,46 @@ impl WeightInfo for () {
             .saturating_add(Weight::from_parts(5_000, 0).saturating_mul(v.into()))
             .saturating_add(RocksDbWeight::get().reads(3))
             .saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(v.into())))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn update_rate_limit_config() -> Weight {
+        Weight::from_parts(30_000, 1000)
+            .saturating_add(RocksDbWeight::get().reads(1))
+            .saturating_add(RocksDbWeight::get().writes(1))
+    }
+
+    fn validate_genesis_configuration() -> Weight {
+        Weight::from_parts(100_000, 2000)
+            .saturating_add(RocksDbWeight::get().reads(5))
+    }
+
+    fn dry_run_genesis_configuration() -> Weight {
+        Weight::from_parts(150_000, 3000)
+            .saturating_add(RocksDbWeight::get().reads(10))
+    }
+
+    fn enable_private_chain() -> Weight {
+        Weight::from_parts(40_000, 1000)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn disable_private_chain() -> Weight {
+        Weight::from_parts(30_000, 1000)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn add_validator_to_allowlist() -> Weight {
+        Weight::from_parts(35_000, 1000)
+            .saturating_add(RocksDbWeight::get().reads(2))
+            .saturating_add(RocksDbWeight::get().writes(2))
+    }
+
+    fn remove_validator_from_allowlist() -> Weight {
+        Weight::from_parts(35_000, 1000)
+            .saturating_add(RocksDbWeight::get().reads(2))
             .saturating_add(RocksDbWeight::get().writes(2))
     }
 

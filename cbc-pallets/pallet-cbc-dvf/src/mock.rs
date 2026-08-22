@@ -154,6 +154,7 @@ impl pallet_cbc_dvf::Config for Test {
     type UnderperformanceCheckInterval = ConstU64<50>;
     type MaxValidatorHistorySize = ConstU32<100>;
     type MaxValidatorNameSize = ConstU32<32>;
+    type WeightInfo = ();
 }
 
 // Build genesis storage according to the mock runtime.

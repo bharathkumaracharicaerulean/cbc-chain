@@ -18,6 +18,9 @@
 
 pub use pallet::*;
 
+pub mod weights;
+pub use weights::WeightInfo;
+
 #[cfg(test)]
 mod mock;
 
@@ -26,6 +29,7 @@ mod tests;
 
 #[frame_support::pallet]
 pub mod pallet {
+    use super::*;
     use frame_support::{
         pallet_prelude::*,
         traits::Get,
@@ -81,6 +85,9 @@ pub mod pallet {
         /// Maximum number of todos a single account may have at any time.
         #[pallet::constant]
         type MaxTodosPerAccount: Get<u32>;
+
+        /// Type representing the weight of this pallet
+        type WeightInfo: WeightInfo;
     }
 
     // ──────────────────────────────────────────────────────────
@@ -157,7 +164,7 @@ pub mod pallet {
         /// - `title`       – short name for the task (≤ MaxTitleLength bytes)
         /// - `description` – optional longer description (≤ MaxDescriptionLength bytes)
         #[pallet::call_index(0)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(T::WeightInfo::create_todo())]
         pub fn create_todo(
             origin: OriginFor<T>,
             title: BoundedVec<u8, T::MaxTitleLength>,
@@ -191,7 +198,7 @@ pub mod pallet {
 
         /// Mark an existing todo as completed.
         #[pallet::call_index(1)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(T::WeightInfo::complete_todo())]
         pub fn complete_todo(origin: OriginFor<T>, todo_id: TodoId) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
@@ -208,7 +215,7 @@ pub mod pallet {
 
         /// Remove a todo item permanently.
         #[pallet::call_index(2)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(T::WeightInfo::remove_todo())]
         pub fn remove_todo(origin: OriginFor<T>, todo_id: TodoId) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
@@ -226,7 +233,7 @@ pub mod pallet {
 
         /// Update the title and/or description of an existing (non-completed) todo.
         #[pallet::call_index(3)]
-        #[pallet::weight(Weight::from_parts(10_000, 0))]
+        #[pallet::weight(T::WeightInfo::update_todo())]
         pub fn update_todo(
             origin: OriginFor<T>,
             todo_id: TodoId,

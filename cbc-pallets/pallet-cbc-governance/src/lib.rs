@@ -11,6 +11,9 @@ use serde::{Serialize, Deserialize};
 
 pub use pallet::*;
 
+pub mod weights;
+pub use weights::WeightInfo;
+
 #[cfg(test)]
 mod mock;
 
@@ -95,6 +98,8 @@ pub mod pallet {
         type Balance: Parameter + Member + AtLeast32BitUnsigned + Default + Copy + MaxEncodedLen + Serialize + for<'de> Deserialize<'de>;
         type ProposalExecutor: ProposalExecutor<Self::AccountId, Self::Balance>;
         type ValidatorProvider: ValidatorProvider<Self::AccountId, Weight>;
+        /// Information on runtime weights.
+        type WeightInfo: WeightInfo;
     }
 
     #[pallet::storage]
@@ -179,7 +184,7 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Enable or disable governance mode (Root only).
         #[pallet::call_index(0)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+        #[pallet::weight(T::WeightInfo::set_governance_mode())]
         pub fn set_governance_mode(
             origin: OriginFor<T>,
             enabled: bool,
@@ -192,7 +197,7 @@ pub mod pallet {
 
         /// Submit a governance proposal (slash, reward, eject, add/remove validator).
         #[pallet::call_index(1)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(4, 2))]
+        #[pallet::weight(T::WeightInfo::submit_proposal())]
         pub fn submit_proposal(
             origin: OriginFor<T>,
             action: ProposalAction<T::AccountId, T::Balance>,
@@ -204,7 +209,7 @@ pub mod pallet {
 
         /// Vote on a governance proposal.
         #[pallet::call_index(2)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(3, 2))]
+        #[pallet::weight(T::WeightInfo::vote_proposal())]
         pub fn vote_proposal(
             origin: OriginFor<T>,
             proposal_id: u32,
@@ -213,7 +218,7 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             
             // Check rate limits
-            let weight = T::DbWeight::get().reads_writes(3, 2);
+            let weight = T::WeightInfo::vote_proposal();
             if let Err((e, violation_opt)) = T::ValidatorProvider::check_rate_limits(&who, 6u8, weight) {
                 if let Some((operation_code, violation_type, current_count, limit)) = violation_opt {
                     Self::deposit_event(Event::RateLimitViolation {
@@ -268,7 +273,7 @@ pub mod pallet {
 
         /// Execute an approved governance proposal (sudo only).
         #[pallet::call_index(3)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(3, 2))]
+        #[pallet::weight(T::WeightInfo::execute_proposal())]
         pub fn execute_proposal(
             origin: OriginFor<T>,
             proposal_id: u32,
@@ -315,7 +320,7 @@ pub mod pallet {
 
         /// Propose validator slashing.
         #[pallet::call_index(4)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(4, 2))]
+        #[pallet::weight(T::WeightInfo::propose_slash_validator())]
         pub fn propose_slash_validator(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -328,7 +333,7 @@ pub mod pallet {
 
         /// Propose validator reward.
         #[pallet::call_index(5)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(4, 2))]
+        #[pallet::weight(T::WeightInfo::propose_reward_validator())]
         pub fn propose_reward_validator(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -341,7 +346,7 @@ pub mod pallet {
 
         /// Propose default validator reward.
         #[pallet::call_index(6)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(4, 2))]
+        #[pallet::weight(T::WeightInfo::propose_default_reward_validator())]
         pub fn propose_default_reward_validator(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -354,7 +359,7 @@ pub mod pallet {
 
         /// Propose rewards for multiple validators.
         #[pallet::call_index(7)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(4, 2))]
+        #[pallet::weight(T::WeightInfo::propose_reward_multiple_validators())]
         pub fn propose_reward_multiple_validators(
             origin: OriginFor<T>,
             validators: Vec<T::AccountId>,
@@ -367,7 +372,7 @@ pub mod pallet {
 
         /// Propose default rewards for multiple validators.
         #[pallet::call_index(8)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(4, 2))]
+        #[pallet::weight(T::WeightInfo::propose_default_reward_multiple_validators())]
         pub fn propose_default_reward_multiple_validators(
             origin: OriginFor<T>,
             validators: Vec<T::AccountId>,
@@ -380,7 +385,7 @@ pub mod pallet {
 
         /// Propose rewards for all active validators.
         #[pallet::call_index(9)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(5, 2))]
+        #[pallet::weight(T::WeightInfo::propose_reward_all_active_validators())]
         pub fn propose_reward_all_active_validators(
             origin: OriginFor<T>,
             amount: T::Balance,
@@ -397,7 +402,7 @@ pub mod pallet {
 
         /// Propose validator ejection.
         #[pallet::call_index(10)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(4, 2))]
+        #[pallet::weight(T::WeightInfo::propose_eject_validator())]
         pub fn propose_eject_validator(
             origin: OriginFor<T>,
             validator: T::AccountId,

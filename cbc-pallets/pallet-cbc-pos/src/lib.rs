@@ -75,6 +75,25 @@ impl<AccountId, Balance> ValidatorHandler<AccountId, Balance> for () {
     fn get_active_validators() -> Vec<AccountId> { Vec::new() }
 }
 
+impl<T: Config> ValidatorHandler<T::AccountId, <T as Config>::Balance> for Pallet<T> {
+    fn on_joined(_validator: &T::AccountId, _stake: <T as Config>::Balance) -> sp_runtime::DispatchResult { Ok(()) }
+    fn on_leave_requested(_validator: &T::AccountId) -> sp_runtime::DispatchResult { Ok(()) }
+    fn on_left(_validator: &T::AccountId) -> sp_runtime::DispatchResult { Ok(()) }
+    fn on_stake_increased(_validator: &T::AccountId, _amount: <T as Config>::Balance) -> sp_runtime::DispatchResult { Ok(()) }
+    fn on_stake_decreased(_validator: &T::AccountId, _amount: <T as Config>::Balance) -> sp_runtime::DispatchResult { Ok(()) }
+    fn on_slashed(_validator: &T::AccountId, _amount: <T as Config>::Balance, _penalty: u64) -> sp_runtime::DispatchResult { Ok(()) }
+    fn on_rewarded(_validator: &T::AccountId, _amount: <T as Config>::Balance, _boost: u64) -> sp_runtime::DispatchResult { Ok(()) }
+    fn get_validator_score(validator: &T::AccountId) -> u64 {
+        ValidatorScores::<T>::get(validator).map(|s| s as u64).unwrap_or(0)
+    }
+    fn get_active_validators() -> Vec<T::AccountId> {
+        Validators::<T>::iter()
+            .filter(|(_, is_active)| *is_active)
+            .map(|(v, _)| v)
+            .collect()
+    }
+}
+
 // Runtime API declaration
 sp_api::decl_runtime_apis! {
     pub trait PosApi<AccountId, Balance> 
@@ -429,6 +448,12 @@ pub mod pallet {
             ensure!(amount >= T::MinStake::get(), Error::<T>::InsufficientStake);
             ensure!(Validators::<T>::contains_key(&who), Error::<T>::ValidatorNotRegistered);
             
+            let free_balance = T::Currency::free_balance(&who);
+            ensure!(free_balance >= amount, Error::<T>::InsufficientStake);
+            
+            T::Currency::reserve(&who, amount)
+                .map_err(|_| Error::<T>::InsufficientStake)?;
+
             let current_stake = Stake::<T>::get(&who);
             let new_stake = current_stake.checked_add(&amount).ok_or(Error::<T>::InvalidStakeAmount)?;
             
@@ -462,8 +487,11 @@ pub mod pallet {
             let new_stake = current_stake.checked_sub(&amount).ok_or(Error::<T>::InvalidStakeAmount)?;
             ensure!(new_stake >= T::MinStake::get(), Error::<T>::InsufficientStake);
             
+            let unreserved_deficit = T::Currency::unreserve(&who, amount);
+            let actual_unreserved = amount.saturating_sub(unreserved_deficit);
+
             Stake::<T>::insert(&who, &new_stake);
-            Self::deposit_event(Event::StakeUnbonded { validator: who.clone(), amount });
+            Self::deposit_event(Event::StakeUnbonded { validator: who.clone(), amount: actual_unreserved });
             Self::deposit_event(Event::StakeUpdated { 
                 validator: who, 
                 old_stake: current_stake, 
@@ -474,7 +502,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(5)]
-        #[pallet::weight(T::WeightInfo::submit_score())] 
+        #[pallet::weight(T::WeightInfo::boost_score())] 
         pub fn boost_score(origin: OriginFor<T>, validator: T::AccountId, weight: u32) -> DispatchResult {
             let _who = ensure_signed(origin)?;
             ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
@@ -494,7 +522,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(6)]
-        #[pallet::weight(T::WeightInfo::submit_score())] 
+        #[pallet::weight(T::WeightInfo::slash_score())] 
         pub fn slash_score(origin: OriginFor<T>, validator: T::AccountId, weight: u32) -> DispatchResult {
             let _who = ensure_signed(origin)?;
             ensure!(Validators::<T>::contains_key(&validator), Error::<T>::ValidatorNotRegistered);
@@ -516,7 +544,7 @@ pub mod pallet {
         // join_validators, leave_validators, cancel_leave_request moved to pallet-cbc-dvf.
 
         #[pallet::call_index(11)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::increase_validator_stake())]
         pub fn increase_validator_stake(
             origin: OriginFor<T>,
             additional_amount: BalanceOf<T>,
@@ -557,7 +585,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(12)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::decrease_validator_stake())]
         pub fn decrease_validator_stake(
             origin: OriginFor<T>,
             decrease_amount: BalanceOf<T>,
@@ -600,7 +628,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(13)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::slash_validator())]
         pub fn slash_validator(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -611,7 +639,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(14)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::slash_validator_percentage())]
         pub fn slash_validator_percentage(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -626,7 +654,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(15)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::slash_multiple_validators())]
         pub fn slash_multiple_validators(
             origin: OriginFor<T>,
             validators: Vec<T::AccountId>,
@@ -640,7 +668,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(16)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::reward_validator_call())]
         pub fn reward_validator_call(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -651,7 +679,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(17)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::reward_multiple_validators())]
         pub fn reward_multiple_validators(
             origin: OriginFor<T>,
             validators: Vec<T::AccountId>,
@@ -665,7 +693,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(18)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::reward_all_active_validators())]
         pub fn reward_all_active_validators(
             origin: OriginFor<T>,
             amount: BalanceOf<T>,
@@ -679,7 +707,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(19)]
-        #[pallet::weight(T::WeightInfo::register_validator())]
+        #[pallet::weight(T::WeightInfo::distribute_epoch_rewards())]
         pub fn distribute_epoch_rewards(
             origin: OriginFor<T>,
             total_reward_pool: BalanceOf<T>,
@@ -780,7 +808,7 @@ pub mod pallet {
         pub fn execute_slash_validator_with_reason(
             validator: &T::AccountId,
             amount: BalanceOf<T>,
-            _reason: SlashReason,
+            reason: SlashReason,
         ) -> DispatchResult {
             ensure!(
                 Validators::<T>::contains_key(validator),
@@ -817,8 +845,12 @@ pub mod pallet {
                 Error::<T>::SlashingBoundsExceeded
             );
 
-            let (_negative_imbalance, unslashed_deficit) = T::Currency::slash(validator, slash_amount);
+            let (_negative_imbalance, unslashed_deficit) = T::Currency::slash_reserved(validator, slash_amount);
             let slashed_amount = slash_amount.saturating_sub(unslashed_deficit);
+
+            Stake::<T>::mutate(validator, |current_stake| {
+                *current_stake = current_stake.saturating_sub(slashed_amount);
+            });
 
             EpochTotalSlashed::<T>::mutate(|total| {
                 *total = total.saturating_add(slashed_amount);
@@ -835,6 +867,16 @@ pub mod pallet {
             };
 
             T::ValidatorHandler::on_slashed(validator, slashed_amount, score_penalty)?;
+
+            let record = SlashingRecord {
+                block_number: frame_system::Pallet::<T>::block_number(),
+                amount: slashed_amount,
+                reason: reason,
+                epoch: CurrentEpoch::<T>::get(),
+            };
+            ValidatorSlashingHistory::<T>::mutate(validator, |history| {
+                let _ = history.try_push(record);
+            });
 
             Ok(())
         }
@@ -885,6 +927,7 @@ pub mod pallet {
                 BalanceOf::<T>::default()
             };
 
+            let mut actual_total_distributed = BalanceOf::<T>::default();
             for (validator, score) in &validator_scores {
                 let mut total_reward = base_reward_per_validator;
 
@@ -896,12 +939,15 @@ pub mod pallet {
                     total_reward = total_reward.saturating_add(top_performer_reward_per_validator);
                 }
 
-                Self::execute_reward_validator(validator, total_reward)?;
+                if !total_reward.is_zero() {
+                    Self::execute_reward_validator(validator, total_reward)?;
+                    actual_total_distributed = actual_total_distributed.saturating_add(total_reward);
+                }
             }
 
             Self::deposit_event(Event::EpochRewardsDistributed {
                 epoch: CurrentEpoch::<T>::get(),
-                total_distributed: base_reward_pool + performance_reward_pool + top_performer_reward_pool,
+                total_distributed: actual_total_distributed,
             });
 
             Ok(())

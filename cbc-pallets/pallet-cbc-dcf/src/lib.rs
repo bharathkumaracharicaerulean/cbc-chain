@@ -5569,7 +5569,7 @@ pub mod pallet {
         /// - `BadOrigin`: If caller is not root
         /// - `InvalidRateLimitConfig`: If configuration values are invalid
         #[pallet::call_index(35)]
-        #[pallet::weight(Weight::from_parts(50_000_000, 0))] // Fixed weight for config update
+        #[pallet::weight(<T as Config>::WeightInfo::update_rate_limit_config())]
         pub fn update_rate_limit_config(
             origin: OriginFor<T>,
             max_proposals_per_block: u32,
@@ -5626,7 +5626,7 @@ pub mod pallet {
         /// * 11.2: Checks active set size not exceeding MaxValidators
         /// * 11.3: Provides dry-run capabilities for genesis validation
         #[pallet::call_index(36)]
-        #[pallet::weight(Weight::from_parts(100_000_000, 0))] // Fixed weight for validation
+        #[pallet::weight(<T as Config>::WeightInfo::validate_genesis_configuration())]
         pub fn validate_genesis_configuration(
             origin: OriginFor<T>,
             validators: Vec<T::AccountId>,
@@ -5689,7 +5689,7 @@ pub mod pallet {
         /// * 11.3: Implements dry-run function that builds genesis and asserts all invariants
         /// * 11.4: Provides comprehensive validation without side effects
         #[pallet::call_index(37)]
-        #[pallet::weight(Weight::from_parts(150_000_000, 0))] // Higher weight for comprehensive analysis
+        #[pallet::weight(<T as Config>::WeightInfo::dry_run_genesis_configuration())]
         pub fn dry_run_genesis_configuration(
             origin: OriginFor<T>,
             validators: Vec<T::AccountId>,
@@ -5984,7 +5984,7 @@ pub mod pallet {
 
         /// Enable private chain mode with initial allowlist.
         #[pallet::call_index(38)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(2, 2))]
+        #[pallet::weight(<T as Config>::WeightInfo::enable_private_chain())]
         pub fn enable_private_chain(
             origin: OriginFor<T>,
             initial_allowlist: Vec<T::AccountId>,
@@ -5996,7 +5996,7 @@ pub mod pallet {
 
         /// Disable private chain mode.
         #[pallet::call_index(39)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(2, 2))]
+        #[pallet::weight(<T as Config>::WeightInfo::disable_private_chain())]
         pub fn disable_private_chain(
             origin: OriginFor<T>,
         ) -> DispatchResult {
@@ -6006,7 +6006,7 @@ pub mod pallet {
 
         /// Add a validator to allowlist.
         #[pallet::call_index(40)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(2, 2))]
+        #[pallet::weight(<T as Config>::WeightInfo::add_validator_to_allowlist())]
         pub fn add_validator_to_allowlist(
             origin: OriginFor<T>,
             validator: T::AccountId,
@@ -6017,7 +6017,7 @@ pub mod pallet {
 
         /// Remove a validator from allowlist.
         #[pallet::call_index(41)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(2, 2))]
+        #[pallet::weight(<T as Config>::WeightInfo::remove_validator_from_allowlist())]
         pub fn remove_validator_from_allowlist(
             origin: OriginFor<T>,
             validator: T::AccountId,

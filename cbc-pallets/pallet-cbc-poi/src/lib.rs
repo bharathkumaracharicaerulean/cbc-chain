@@ -446,7 +446,7 @@ pub mod pallet {
 
 		/// Simulate inference computation (moved from DCF).
 		#[pallet::call_index(2)]
-		#[pallet::weight(T::WeightInfo::submit_inference())]
+		#[pallet::weight(T::WeightInfo::simulate_inference())]
 		pub fn simulate_inference(
 			origin: OriginFor<T>,
 			target_validator: T::AccountId,
@@ -482,7 +482,7 @@ pub mod pallet {
 
 		/// Apply PoI scores computed by off-chain worker (moved from DCF).
 		#[pallet::call_index(3)]
-		#[pallet::weight(T::WeightInfo::submit_inference())]
+		#[pallet::weight(T::WeightInfo::apply_offchain_poi_scores())]
 		pub fn apply_offchain_poi_scores(
 			origin: OriginFor<T>,
 			block_number: u32,
@@ -521,7 +521,7 @@ pub mod pallet {
 
 		/// Update a validator's inference score (moved from DCF).
 		#[pallet::call_index(4)]
-		#[pallet::weight(T::WeightInfo::submit_inference())]
+		#[pallet::weight(T::WeightInfo::update_validator_inference_score())]
 		pub fn update_validator_inference_score(
 			origin: OriginFor<T>,
 			validator: T::AccountId,

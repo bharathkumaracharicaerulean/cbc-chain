@@ -347,6 +347,7 @@ impl pallet_cbc_governance::Config for Runtime {
     type Balance = Balance;
     type ProposalExecutor = pallet_cbc_dcf::Pallet<Runtime>;
     type ValidatorProvider = pallet_cbc_dcf::Pallet<Runtime>;
+    type WeightInfo = pallet_cbc_governance::weights::SubstrateWeight<Runtime>;
 }
 
 // === CBC DCF Pallet Configuration ===
@@ -479,6 +480,7 @@ impl pallet_cbc_dvf::Config for Runtime {
     type UnderperformanceCheckInterval = ConstU32<50>;
     type MaxValidatorHistorySize = ConstU32<100>;
     type MaxValidatorNameSize = ConstU32<32>;
+    type WeightInfo = pallet_cbc_dvf::weights::SubstrateWeight<Runtime>;
 }
 
 // ── Todo pallet runtime configuration ────────────────────────
@@ -493,4 +495,5 @@ impl pallet_todo::Config for Runtime {
     type MaxDescriptionLength = TodoConstU32<1024>;
     /// Allow up to 500 todos per account.
     type MaxTodosPerAccount = TodoConstU32<500>;
+    type WeightInfo = pallet_todo::weights::SubstrateWeight<Runtime>;
 }
