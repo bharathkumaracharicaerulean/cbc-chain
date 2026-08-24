@@ -45,6 +45,7 @@ where
     last_metrics_update_slot: u64,
     last_score_refresh_slot: u64,
     failed_blocks: u32,
+    validator_account: Option<AccountId>,
     _phantom: std::marker::PhantomData<(B, P, TP)>,
 }
 
@@ -84,6 +85,7 @@ where
             last_metrics_update_slot: 0,
             last_score_refresh_slot: 0,
             failed_blocks: 0,
+            validator_account: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -117,8 +119,15 @@ where
             last_metrics_update_slot: 0,
             last_score_refresh_slot: 0,
             failed_blocks: 0,
+            validator_account: None,
             _phantom: std::marker::PhantomData,
         }
+    }
+
+    /// Set the local validator account for this node
+    pub fn with_validator_account(mut self, validator_account: AccountId) -> Self {
+        self.validator_account = Some(validator_account);
+        self
     }
 
     /// Start the DCF consensus engine
@@ -179,6 +188,22 @@ where
                                 Ok(author) => {
                                     // STEP 43: Expected author selected
                                     let author_account: AccountId = author.clone().into();
+
+                                    // Check if local node is the elected author for this block.
+                                    // If another validator is author, wait for them to produce and broadcast it.
+                                    if let Some(ref local_account) = self.validator_account {
+                                        if author_account != *local_account {
+                                            debug!(
+                                                "DCF: Expected author for block {} is {:?}, local node is {:?}. Waiting for block from network.",
+                                                block_number, author_account, local_account
+                                            );
+                                            self.last_block_time = std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap_or(Duration::ZERO);
+                                            continue;
+                                        }
+                                    }
+
                                     let mut metadata = TraceMetadata::new();
                                     metadata.block_number = Some(block_number);
                                     metadata.author = Some(format!("{:?}", author_account));

@@ -65,18 +65,37 @@ impl<Hash: std::cmp::Eq + std::hash::Hash + Clone, AccountId: std::cmp::Eq + std
     }
 
     /// Inserts a vote into the pool.
+    ///
+    /// Returns `true` if the vote is valid (either a newly inserted vote or a duplicate receipt
+    /// of an existing vote for the same block hash).
+    /// Returns `false` if a double vote (equivocation) is detected (the validator has already
+    /// voted for a DIFFERENT block hash in the same round).
     pub fn insert_vote(&self, vote: DvfVoteMessage<Hash, AccountId>) -> bool {
+        let participation = self.participation.read();
+        if let Some(voters) = participation.get(&vote.round_number) {
+            if voters.contains(&vote.validator_account_id) {
+                // Check if this vote is for the same block hash (valid duplicate) or a different block hash (double vote)
+                let votes = self.votes.read();
+                if let Some(block_votes) = votes.get(&(vote.round_number, vote.block_hash.clone())) {
+                    if block_votes.iter().any(|v| v.validator_account_id == vote.validator_account_id) {
+                        // Same vote already inserted (e.g. locally by VoteCreator or duplicate gossip message)
+                        return true;
+                    }
+                }
+                // Validator voted for a DIFFERENT block hash in the same round -> Double vote / Equivocation!
+                return false;
+            }
+        }
+        drop(participation);
+
         let mut participation = self.participation.write();
         let round_voters = participation.entry(vote.round_number).or_insert_with(HashSet::new);
-        
-        if !round_voters.insert(vote.validator_account_id.clone()) {
-            return false;
-        }
-        
+        round_voters.insert(vote.validator_account_id.clone());
+
         let mut votes = self.votes.write();
         let block_votes = votes.entry((vote.round_number, vote.block_hash.clone())).or_insert_with(Vec::new);
         block_votes.push(vote);
-        
+
         true
     }
 

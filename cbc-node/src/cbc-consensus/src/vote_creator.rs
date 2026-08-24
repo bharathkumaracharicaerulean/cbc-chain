@@ -19,6 +19,8 @@ use crate::metrics::DvfMetrics;
 use pallet_cbc_dcf::DcfApi as RuntimeDcfApi;
 use pallet_cbc_dvf::DvfApi as RuntimeDvfApi;
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 /// Vote Creator Service
 ///
 /// Monitors imported blocks and creates votes for checkpoint blocks when the node
@@ -33,6 +35,7 @@ where
     vote_pool: Arc<DvfVotePool<Block::Hash, AccountId>>,
     validator_account: AccountId,
     metrics: Option<Arc<DvfMetrics>>,
+    last_voted_round: Arc<AtomicU32>,
 }
 
 impl<Block, Client, AccountId> VoteCreatorService<Block, Client, AccountId>
@@ -64,6 +67,7 @@ where
             vote_pool,
             validator_account,
             metrics: None,
+            last_voted_round: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -81,6 +85,11 @@ where
         let mut import_notifications = self.client.import_notification_stream();
 
         while let Some(notification) = import_notifications.next().await {
+            // Only process blocks on the canonical best chain to avoid voting on forks
+            if !notification.is_new_best {
+                continue;
+            }
+
             let block_number = *notification.header.number();
             let block_hash = notification.hash;
 
@@ -210,6 +219,15 @@ where
             .get_current_round(best_hash)
             .map_err(|e| format!("Failed to get current round: {:?}", e))?;
 
+        // Guard against voting twice in the same DVF round
+        if round_number > 0 && self.last_voted_round.load(Ordering::Relaxed) == round_number {
+            debug!(
+                "DVF Vote Creator: Already voted in round {}, skipping duplicate vote creation for block #{}",
+                round_number, block_number
+            );
+            return Ok(());
+        }
+
         // Get validator public key from keystore
         let public_key = self.get_validator_public_key()?;
 
@@ -235,6 +253,9 @@ where
 
         // Broadcast the vote
         self.broadcast_vote(vote).await?;
+
+        // Track that we have voted in this round
+        self.last_voted_round.store(round_number, Ordering::Relaxed);
 
         Ok(())
     }

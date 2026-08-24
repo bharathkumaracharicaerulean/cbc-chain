@@ -435,6 +435,8 @@ where
 		);
 	}
 
+	let mut local_validator_account: Option<AccountId> = None;
+
 	// Start DVF Vote Creator Service (if node is authority)
 	if config.role.is_authority() {
 		// Get validator account from keystore
@@ -523,6 +525,7 @@ where
 			// Convert ed25519 public key to AccountId
 			// In Substrate, AccountId32 is typically derived from the public key
 			let validator_account = AccountId::from(public_keys[0].0);
+			local_validator_account = Some(validator_account.clone());
 			
 			// Create DVF Finality Notifier
 			let finality_notifier = Arc::new(cbc_consensus::FinalityNotifier::new());
@@ -719,6 +722,10 @@ where
                 consensus_params.clone(),
             )
         };
+        
+        if let Some(account) = local_validator_account {
+            dcf_consensus = dcf_consensus.with_validator_account(account);
+        }
         
         // STEP 22: DCF consensus engine initialized
         LifecycleTracer::global().trace_step(
