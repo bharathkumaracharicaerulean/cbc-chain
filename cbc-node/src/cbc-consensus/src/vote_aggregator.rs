@@ -199,25 +199,19 @@ where
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
 
-        // Get all candidate blocks from the vote pool for this target round
+        // Get all candidate blocks (hash and block_number) from the vote pool for this target round
         let mut candidate_blocks = self.vote_pool.get_candidate_blocks(target_round);
 
-        // Filter out blocks we have already triggered justification for locally
+        // Filter out blocks we have already triggered justification for locally or that are already finalized
         let last_triggered = *self.last_triggered_block.read().unwrap();
         
-        // Also query the actual pallet finalized head to avoid re-justifying what others already finalized
         let dvf_finalized = api
             .get_dvf_finalized_block(best_hash)
             .map_err(|e| format!("Failed to get DVF finalized block: {:?}", e))?
             .saturated_into::<u32>();
 
-        candidate_blocks.retain(|hash| {
-            if let Ok(Some(header)) = self.client.header(*hash) {
-                let num = header.number().clone().saturated_into::<u32>();
-                num > last_triggered && num > dvf_finalized
-            } else {
-                false
-            }
+        candidate_blocks.retain(|(_hash, num)| {
+            *num > last_triggered && *num > dvf_finalized
         });
 
         // Fast-path: If there are no candidate blocks (or all are already triggered/finalized), 
@@ -266,7 +260,7 @@ where
         let mut best_weight: u128 = 0;
 
         // Check each candidate block
-        for block_hash in candidate_blocks {
+        for (block_hash, _block_num) in candidate_blocks {
             let accumulated_weight = self.calculate_accumulated_weight(target_round, &block_hash)?;
 
             info!(

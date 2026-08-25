@@ -105,14 +105,18 @@ impl<Hash: std::cmp::Eq + std::hash::Hash + Clone, AccountId: std::cmp::Eq + std
         votes.get(&(round, block_hash.clone())).cloned().unwrap_or_default()
     }
 
-    /// Gets all candidate blocks (block hashes) for a specific round.
-    pub fn get_candidate_blocks(&self, round: u32) -> Vec<Hash> {
+    /// Gets all candidate blocks (block hashes and block numbers) for a specific round.
+    pub fn get_candidate_blocks(&self, round: u32) -> Vec<(Hash, u32)> {
         let votes = self.votes.read();
-        votes
-            .keys()
-            .filter(|(r, _)| *r == round)
-            .map(|(_, hash)| hash.clone())
-            .collect()
+        let mut candidates = Vec::new();
+        for ((r, hash), vote_list) in votes.iter() {
+            if *r == round {
+                if let Some(first_vote) = vote_list.first() {
+                    candidates.push((hash.clone(), first_vote.block_number));
+                }
+            }
+        }
+        candidates
     }
 
     /// Gets all active round numbers that currently have votes in the pool.
