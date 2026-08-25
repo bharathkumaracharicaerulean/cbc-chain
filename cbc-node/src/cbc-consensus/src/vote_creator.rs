@@ -36,6 +36,7 @@ where
     validator_account: AccountId,
     metrics: Option<Arc<DvfMetrics>>,
     last_voted_round: Arc<AtomicU32>,
+    last_voted_block_number: Arc<AtomicU32>,
 }
 
 impl<Block, Client, AccountId> VoteCreatorService<Block, Client, AccountId>
@@ -68,6 +69,7 @@ where
             validator_account,
             metrics: None,
             last_voted_round: Arc::new(AtomicU32::new(0)),
+            last_voted_block_number: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -202,6 +204,20 @@ where
             block_number, block_hash
         );
 
+        // Convert block_number to u32
+        let block_num_u32: u32 = block_number
+            .try_into()
+            .map_err(|_| "Block number conversion failed")?;
+
+        // Guard against voting twice for the same checkpoint block height
+        if block_num_u32 > 0 && self.last_voted_block_number.load(Ordering::Relaxed) >= block_num_u32 {
+            debug!(
+                "DVF Vote Creator: Already voted for block #{}, skipping duplicate vote creation",
+                block_number
+            );
+            return Ok(());
+        }
+
         // Get runtime state
         let api = self.client.runtime_api();
         let best_hash = self.client.info().best_hash;
@@ -214,27 +230,27 @@ where
             .get_validator_set_id(best_hash)
             .map_err(|e| format!("Failed to get validator set ID: {:?}", e))?;
 
-        // Get current round number from runtime
-        let round_number = api
-            .get_current_round(best_hash)
-            .map_err(|e| format!("Failed to get current round: {:?}", e))?;
+        // Get checkpoint interval to compute expected round for this block height
+        let checkpoint_interval: u32 = api
+            .get_finality_checkpoint_interval(best_hash)
+            .map_err(|e| format!("Failed to get FinalityCheckpointInterval: {:?}", e))?
+            .try_into()
+            .map_err(|_| "FinalityCheckpointInterval conversion failed")?;
 
-        // Guard against voting twice in the same DVF round
-        if round_number > 0 && self.last_voted_round.load(Ordering::Relaxed) == round_number {
-            debug!(
-                "DVF Vote Creator: Already voted in round {}, skipping duplicate vote creation for block #{}",
-                round_number, block_number
-            );
-            return Ok(());
-        }
+        let runtime_round = api
+            .get_current_round(best_hash)
+            .unwrap_or(0);
+
+        let computed_round = if checkpoint_interval > 0 {
+            (block_num_u32 / checkpoint_interval).saturating_sub(1)
+        } else {
+            0
+        };
+
+        let round_number = runtime_round.max(computed_round);
 
         // Get validator public key from keystore
         let public_key = self.get_validator_public_key()?;
-
-        // Convert block_number to u32
-        let block_num_u32: u32 = block_number
-            .try_into()
-            .map_err(|_| "Block number conversion failed")?;
 
         // Construct vote message with placeholder signature
         let mut vote = DvfVoteMessage {
@@ -254,7 +270,8 @@ where
         // Broadcast the vote
         self.broadcast_vote(vote).await?;
 
-        // Track that we have voted in this round
+        // Track that we have voted for this block height and round
+        self.last_voted_block_number.store(block_num_u32, Ordering::Relaxed);
         self.last_voted_round.store(round_number, Ordering::Relaxed);
 
         Ok(())

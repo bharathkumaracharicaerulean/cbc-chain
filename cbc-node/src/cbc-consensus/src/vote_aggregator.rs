@@ -162,6 +162,7 @@ where
     ///
     /// This method queries the runtime for the current round and finality threshold,
     /// then checks if any candidate blocks have accumulated enough weight to be finalized.
+    /// Checks vote accumulation across all active rounds in the vote pool
     async fn check_vote_accumulation(&self) -> Result<(), String> {
         // Get runtime state
         let api = self.client.runtime_api();
@@ -175,8 +176,31 @@ where
         // Check for finality stall (important to run even if pool is empty)
         self.check_finality_stall(current_round);
 
-        // Get all candidate blocks from the vote pool
-        let mut candidate_blocks = self.vote_pool.get_candidate_blocks(current_round);
+        // Get all active rounds from vote pool plus the current round
+        let mut active_rounds = self.vote_pool.get_active_rounds();
+        if !active_rounds.contains(&current_round) {
+            active_rounds.push(current_round);
+        }
+
+        for round in active_rounds {
+            if let Err(e) = self.check_vote_accumulation_for_round(round).await {
+                warn!(
+                    "DVF Vote Aggregator: Error checking vote accumulation for round {}: {:?}",
+                    round, e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Checks vote accumulation for a specific round
+    async fn check_vote_accumulation_for_round(&self, target_round: u32) -> Result<(), String> {
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+
+        // Get all candidate blocks from the vote pool for this target round
+        let mut candidate_blocks = self.vote_pool.get_candidate_blocks(target_round);
 
         // Filter out blocks we have already triggered justification for locally
         let last_triggered = *self.last_triggered_block.read().unwrap();
@@ -204,7 +228,7 @@ where
 
         info!(
             "DVF Vote Aggregator: ===== Checking vote accumulation for round {} =====",
-            current_round
+            target_round
         );
 
         // Query finality threshold
@@ -228,7 +252,7 @@ where
         info!(
             "DVF Vote Aggregator: Found {} candidate blocks for round {}",
             candidate_blocks.len(),
-            current_round
+            target_round
         );
         
         // Log vote pool statistics
@@ -243,7 +267,7 @@ where
 
         // Check each candidate block
         for block_hash in candidate_blocks {
-            let accumulated_weight = self.calculate_accumulated_weight(current_round, &block_hash)?;
+            let accumulated_weight = self.calculate_accumulated_weight(target_round, &block_hash)?;
 
             info!(
                 "DVF Vote Aggregator: Block {:?} has accumulated weight {} (threshold: {}, reached: {})",
@@ -267,10 +291,6 @@ where
 
         // If we found a candidate that reached threshold, trigger justification
         if let Some(block_hash) = best_candidate {
-            // Check if this block is already DVF-finalized to avoid re-finalization attempts.
-            // We use the DVF finalized block number (not Substrate client finalized) because
-            // DCF progressive finality advances the Substrate finalized head before DVF acts,
-            // which would cause the aggregator to skip blocks that DVF hasn't finalized yet.
             let block_number: NumberFor<Block> = self.client
                 .header(block_hash)
                 .map_err(|e| format!("Failed to get header: {:?}", e))?
@@ -316,27 +336,27 @@ where
             // Record checkpoint time for latency measurement
             let checkpoint_time = std::time::Instant::now();
             if let Ok(mut times) = self.checkpoint_times.write() {
-                times.insert(current_round, checkpoint_time);
+                times.insert(target_round, checkpoint_time);
             }
 
             // Trigger justification construction with retry logic
-            match self.trigger_justification_construction(current_round, block_hash, best_weight).await {
+            match self.trigger_justification_construction(target_round, block_hash, best_weight).await {
                 Ok(_) => {
                     // Update last finalized round
                     if let Ok(mut last_round) = self.last_finalized_round.write() {
-                        *last_round = current_round;
+                        *last_round = target_round;
                     }
 
                     // Calculate and record finality latency
                     if let Ok(times) = self.checkpoint_times.read() {
-                        if let Some(start_time) = times.get(&current_round) {
+                        if let Some(start_time) = times.get(&target_round) {
                             let latency = start_time.elapsed().as_secs_f64();
                             if let Some(ref metrics) = self.metrics {
                                 metrics.record_finality_latency(latency);
                             }
                             info!(
                                 "DVF Vote Aggregator: Finality latency for round {}: {:.2}s",
-                                current_round, latency
+                                target_round, latency
                             );
                         }
                     }

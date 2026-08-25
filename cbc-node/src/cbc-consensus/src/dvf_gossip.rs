@@ -115,6 +115,16 @@ impl<Hash: std::cmp::Eq + std::hash::Hash + Clone, AccountId: std::cmp::Eq + std
             .collect()
     }
 
+    /// Gets all active round numbers that currently have votes in the pool.
+    pub fn get_active_rounds(&self) -> Vec<u32> {
+        let votes = self.votes.read();
+        let mut rounds: Vec<u32> = votes.keys().map(|(r, _)| *r).collect();
+        rounds.sort_unstable();
+        rounds.dedup();
+        rounds
+    }
+
+
     /// Prunes votes older than the finalized round.
     pub fn prune_older_rounds(&self, finalized_round: u32) {
         let mut votes = self.votes.write();
