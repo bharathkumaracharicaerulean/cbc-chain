@@ -323,11 +323,6 @@ where
                 return Ok(());
             }
             
-            // Record that we triggered it to prevent duplicates
-            if let Ok(mut triggered) = self.last_triggered_block.write() {
-                *triggered = block_num_u32.max(*triggered);
-            }
-            
             info!(
                 "DVF Vote Aggregator: Block {:?} reached finality threshold! Weight: {}, Threshold: {}",
                 block_hash, best_weight, finality_threshold
@@ -342,6 +337,11 @@ where
             // Trigger justification construction with retry logic
             match self.trigger_justification_construction(target_round, block_hash, best_weight).await {
                 Ok(_) => {
+                    // Record that we successfully triggered it to prevent duplicates
+                    if let Ok(mut triggered) = self.last_triggered_block.write() {
+                        *triggered = block_num_u32.max(*triggered);
+                    }
+
                     // Update last finalized round
                     if let Ok(mut last_round) = self.last_finalized_round.write() {
                         *last_round = target_round;
