@@ -354,7 +354,7 @@ where
         gossip_engine.gossip_message(
             topic,
             encoded_vote,
-            false, // Don't force send
+            true, // Force send to all connected peers to ensure 100% P2P vote propagation
         );
 
         info!(
