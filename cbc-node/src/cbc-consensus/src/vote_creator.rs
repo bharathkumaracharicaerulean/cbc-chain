@@ -11,8 +11,9 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderMetadata;
 use sp_core::ed25519;
 use sp_keystore::{Keystore, KeystorePtr};
-use sp_runtime::traits::{Block as BlockT, Header, NumberFor};
+use sp_runtime::traits::{Block as BlockT, Header, NumberFor, SaturatedConversion};
 use std::sync::{Arc, Mutex};
+use parking_lot::RwLock;
 
 use crate::dvf_gossip::{DvfVoteMessage, DvfVotePool};
 use crate::metrics::DvfMetrics;
@@ -37,6 +38,7 @@ where
     metrics: Option<Arc<DvfMetrics>>,
     last_voted_round: Arc<AtomicU32>,
     last_voted_block_number: Arc<AtomicU32>,
+    last_voted_vote: Arc<RwLock<Option<DvfVoteMessage<Block::Hash, AccountId>>>>,
 }
 
 impl<Block, Client, AccountId> VoteCreatorService<Block, Client, AccountId>
@@ -70,6 +72,7 @@ where
             metrics: None,
             last_voted_round: Arc::new(AtomicU32::new(0)),
             last_voted_block_number: Arc::new(AtomicU32::new(0)),
+            last_voted_vote: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -85,31 +88,72 @@ where
 
         // Subscribe to block import notifications
         let mut import_notifications = self.client.import_notification_stream();
+        let mut regossip_interval = tokio::time::interval(std::time::Duration::from_secs(3));
 
-        while let Some(notification) = import_notifications.next().await {
-            // Only process blocks on the canonical best chain to avoid voting on forks
-            if !notification.is_new_best {
-                continue;
-            }
+        loop {
+            tokio::select! {
+                maybe_notification = import_notifications.next() => {
+                    match maybe_notification {
+                        Some(notification) => {
+                            if !notification.is_new_best {
+                                continue;
+                            }
+                            let block_number = *notification.header.number();
+                            let block_hash = notification.hash;
 
-            let block_number = *notification.header.number();
-            let block_hash = notification.hash;
+                            debug!(
+                                "DVF Vote Creator: Processing imported block #{} ({:?})",
+                                block_number, block_hash
+                            );
 
-            debug!(
-                "DVF Vote Creator: Processing imported block #{} ({:?})",
-                block_number, block_hash
-            );
-
-            // Process the block
-            if let Err(e) = self.process_block(block_number, block_hash).await {
-                warn!(
-                    "DVF Vote Creator: Failed to process block #{}: {:?}",
-                    block_number, e
-                );
+                            if let Err(e) = self.process_block(block_number, block_hash).await {
+                                warn!(
+                                    "DVF Vote Creator: Failed to process block #{}: {:?}",
+                                    block_number, e
+                                );
+                            }
+                        }
+                        None => {
+                            warn!("DVF Vote Creator: Import notification stream ended");
+                            break;
+                        }
+                    }
+                }
+                _ = regossip_interval.tick() => {
+                    self.regossip_unfinalized_vote().await;
+                }
             }
         }
+    }
 
-        warn!("DVF Vote Creator: Import notification stream ended");
+    /// Periodically re-gossips the locally signed vote for an unfinalized checkpoint block
+    /// to recover from transient P2P packet loss.
+    async fn regossip_unfinalized_vote(&self) {
+        let vote = match self.last_voted_vote.read().clone() {
+            Some(v) => v,
+            None => return,
+        };
+
+        let api = self.client.runtime_api();
+        let best_hash = self.client.info().best_hash;
+
+        let dvf_finalized: u32 = match api.get_dvf_finalized_block(best_hash) {
+            Ok(finalized) => finalized.saturated_into::<u32>(),
+            Err(_) => return,
+        };
+
+        if vote.block_number > dvf_finalized {
+            info!(
+                "DVF Vote Creator: Re-gossiping vote for unfinalized block #{} (round: {}) to recover missing P2P votes",
+                vote.block_number, vote.round_number
+            );
+            if let Err(e) = self.broadcast_vote(vote).await {
+                debug!("DVF Vote Creator: Failed to re-gossip vote: {:?}", e);
+            }
+        } else {
+            // Block is finalized, clear stored vote
+            *self.last_voted_vote.write() = None;
+        }
     }
 
     /// Processes a single imported block
@@ -268,11 +312,14 @@ where
         vote.signature = self.sign_vote(&vote)?;
 
         // Broadcast the vote
-        self.broadcast_vote(vote).await?;
+        self.broadcast_vote(vote.clone()).await?;
 
         // Track that we have voted for this block height and round
         self.last_voted_block_number.store(block_num_u32, Ordering::Relaxed);
         self.last_voted_round.store(round_number, Ordering::Relaxed);
+
+        // Store vote locally for automatic re-gossip if finality stalls
+        *self.last_voted_vote.write() = Some(vote);
 
         Ok(())
     }
@@ -354,7 +401,7 @@ where
         gossip_engine.gossip_message(
             topic,
             encoded_vote,
-            true, // Force send to all connected peers to ensure 100% P2P vote propagation
+            false, // Standard topic gossip (liveness loop handles recovery if dropped)
         );
 
         info!(

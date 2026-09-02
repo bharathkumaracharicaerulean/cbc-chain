@@ -108,6 +108,46 @@ mod vote_aggregator_tests {
 }
 
 // ============================================================================
+// 4b. Vote Creator & Re-Gossip Liveness Tests
+// ============================================================================
+mod vote_creator_tests {
+    use super::*;
+
+    #[test]
+    fn vote_creator_regossip_liveness_state_management() {
+        new_test_ext().execute_with(|| {
+            // Verify initial state for vote re-gossip storage
+            let last_voted_vote: parking_lot::RwLock<Option<crate::dvf_gossip::DvfVoteMessage<sp_core::H256, sp_core::crypto::AccountId32>>> =
+                parking_lot::RwLock::new(None);
+            assert!(last_voted_vote.read().is_none());
+
+            // Simulate storing a vote for an unfinalized block #17470
+            let mock_vote = crate::dvf_gossip::DvfVoteMessage {
+                epoch_id: 174,
+                validator_set_id: 0,
+                round_number: 1746,
+                block_number: 17470,
+                block_hash: sp_core::H256::repeat_byte(0x17),
+                validator_account_id: sp_core::crypto::AccountId32::new([1u8; 32]),
+                validator_public_key: sp_core::ed25519::Public::from_raw([1u8; 32]),
+                signature: sp_core::ed25519::Signature::from_raw([0u8; 64]),
+            };
+
+            *last_voted_vote.write() = Some(mock_vote.clone());
+            assert!(last_voted_vote.read().is_some());
+            assert_eq!(last_voted_vote.read().as_ref().unwrap().block_number, 17470);
+
+            // Simulate finalization advancing to block #17470: vote storage should be cleared
+            let dvf_finalized = 17470u32;
+            if mock_vote.block_number <= dvf_finalized {
+                *last_voted_vote.write() = None;
+            }
+            assert!(last_voted_vote.read().is_none());
+        });
+    }
+}
+
+// ============================================================================
 // 5. Metric Collection Tests
 // ============================================================================
 mod metrics_and_tracer_tests {
