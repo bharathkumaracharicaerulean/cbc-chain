@@ -835,7 +835,6 @@ where
         use sp_runtime::traits::SaturatedConversion;
         use pallet_cbc_dvf::DvfApi as RuntimeDvfApi;
         let finality_client = client.clone();
-		let finality_gossip_pool = dvf_gossip_pool.clone();
         task_manager.spawn_essential_handle().spawn(
             "dvf-finality-sync",
             None,
@@ -905,10 +904,6 @@ where
                 loop {
                     // Wait 6 seconds between checks (one block time)
                     tokio::time::sleep(std::time::Duration::from_secs(6)).await;
-                    
-					// Prune gossip pool
-					let finalized_head = finality_client.info().finalized_number.saturated_into::<u32>();
-					finality_gossip_pool.prune_older_rounds(finalized_head);
                     
                     // STEP 65: Finality check iteration started
                     crate::lifecycle_tracer::LifecycleTracer::global().trace_step(
