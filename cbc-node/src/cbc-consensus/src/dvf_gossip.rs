@@ -71,30 +71,40 @@ impl<Hash: std::cmp::Eq + std::hash::Hash + Clone, AccountId: std::cmp::Eq + std
     /// Returns `false` if a double vote (equivocation) is detected (the validator has already
     /// voted for a DIFFERENT block hash in the same round).
     pub fn insert_vote(&self, vote: DvfVoteMessage<Hash, AccountId>) -> bool {
-        let participation = self.participation.read();
-        if let Some(voters) = participation.get(&vote.round_number) {
-            if voters.contains(&vote.validator_account_id) {
-                // Check if this vote is for the same block hash (valid duplicate) or a different block hash (double vote)
-                let votes = self.votes.read();
-                if let Some(block_votes) = votes.get(&(vote.round_number, vote.block_hash.clone())) {
-                    if block_votes.iter().any(|v| v.validator_account_id == vote.validator_account_id) {
-                        // Same vote already inserted (e.g. locally by VoteCreator or duplicate gossip message)
-                        return true;
-                    }
+        // Step 1: Check if validator already voted in this round (lock dropped immediately)
+        let has_voted = {
+            let participation = self.participation.read();
+            participation.get(&vote.round_number)
+                .map(|voters| voters.contains(&vote.validator_account_id))
+                .unwrap_or(false)
+        };
+
+        if has_voted {
+            // Check if this vote is for the same block hash (valid duplicate) or a different block hash (double vote)
+            let votes = self.votes.read();
+            if let Some(block_votes) = votes.get(&(vote.round_number, vote.block_hash.clone())) {
+                if block_votes.iter().any(|v| v.validator_account_id == vote.validator_account_id) {
+                    // Same vote already inserted (e.g. locally by VoteCreator or duplicate gossip message)
+                    return true;
                 }
-                // Validator voted for a DIFFERENT block hash in the same round -> Double vote / Equivocation!
-                return false;
             }
+            // Validator voted for a DIFFERENT block hash in the same round -> Double vote / Equivocation!
+            return false;
         }
-        drop(participation);
 
-        let mut participation = self.participation.write();
-        let round_voters = participation.entry(vote.round_number).or_insert_with(HashSet::new);
-        round_voters.insert(vote.validator_account_id.clone());
+        // Step 2: Record participation (acquire and release participation lock without holding votes lock)
+        {
+            let mut participation = self.participation.write();
+            let round_voters = participation.entry(vote.round_number).or_insert_with(HashSet::new);
+            round_voters.insert(vote.validator_account_id.clone());
+        }
 
-        let mut votes = self.votes.write();
-        let block_votes = votes.entry((vote.round_number, vote.block_hash.clone())).or_insert_with(Vec::new);
-        block_votes.push(vote);
+        // Step 3: Insert vote into block_votes (acquire and release votes lock without holding participation lock)
+        {
+            let mut votes = self.votes.write();
+            let block_votes = votes.entry((vote.round_number, vote.block_hash.clone())).or_insert_with(Vec::new);
+            block_votes.push(vote);
+        }
 
         true
     }
@@ -131,11 +141,14 @@ impl<Hash: std::cmp::Eq + std::hash::Hash + Clone, AccountId: std::cmp::Eq + std
 
     /// Prunes votes older than the finalized round.
     pub fn prune_older_rounds(&self, finalized_round: u32) {
-        let mut votes = self.votes.write();
-        votes.retain(|&(round, _), _| round >= finalized_round);
-
-        let mut participation = self.participation.write();
-        participation.retain(|&round, _| round >= finalized_round);
+        {
+            let mut votes = self.votes.write();
+            votes.retain(|&(round, _), _| round >= finalized_round);
+        }
+        {
+            let mut participation = self.participation.write();
+            participation.retain(|&round, _| round >= finalized_round);
+        }
     }
 
     /// Prunes votes for rounds older than (current_round - retention_rounds).
@@ -149,13 +162,17 @@ impl<Hash: std::cmp::Eq + std::hash::Hash + Clone, AccountId: std::cmp::Eq + std
     pub fn prune_by_round_age(&self, current_round: u32, retention_rounds: u32) -> usize {
         let cutoff_round = current_round.saturating_sub(retention_rounds);
         
-        let mut votes = self.votes.write();
-        let initial_count = votes.len();
-        votes.retain(|&(round, _), _| round >= cutoff_round);
-        let votes_removed = initial_count - votes.len();
+        let votes_removed = {
+            let mut votes = self.votes.write();
+            let initial_count = votes.len();
+            votes.retain(|&(round, _), _| round >= cutoff_round);
+            initial_count - votes.len()
+        };
 
-        let mut participation = self.participation.write();
-        participation.retain(|&round, _| round >= cutoff_round);
+        {
+            let mut participation = self.participation.write();
+            participation.retain(|&round, _| round >= cutoff_round);
+        }
         
         votes_removed
     }
@@ -234,11 +251,14 @@ impl<Hash: std::cmp::Eq + std::hash::Hash + Clone, AccountId: std::cmp::Eq + std
 
     /// Clears all votes and participation tracking (used on validator set changes).
     pub fn clear(&self) {
-        let mut votes = self.votes.write();
-        votes.clear();
-
-        let mut participation = self.participation.write();
-        participation.clear();
+        {
+            let mut votes = self.votes.write();
+            votes.clear();
+        }
+        {
+            let mut participation = self.participation.write();
+            participation.clear();
+        }
     }
 
 }
@@ -410,32 +430,39 @@ where
         let msg_hash = sp_core::hashing::blake2_256(data);
         let msg_hash_b = B::Hash::decode(&mut &msg_hash[..]).unwrap_or_default();
 
-        let mut known = self.known_messages.write();
-        if !known.insert(msg_hash_b.clone()) {
-            return ValidationResult::ProcessAndDiscard(msg_hash_b); // Seen this message already
-        }
+        let is_known = {
+            let known = self.known_messages.read();
+            known.contains(&msg_hash_b)
+        };
 
         match self.validate_core(data) {
             Ok(msg) => {
-                info!(
-                    "DVF Gossip Validator: Accepted vote for block #{} ({:?}) from validator {:?} (round: {}, epoch: {}, validator_set: {})",
-                    msg.block_number, msg.block_hash, msg.validator_account_id, msg.round_number, msg.epoch_id, msg.validator_set_id
-                );
-                
-                // Record vote reception metrics
-                if let Some(ref metrics) = self.metrics {
-                    metrics.record_vote_received(msg.round_number);
-                }
-                
-                // Track internally and pass to pool
+                // Always attempt to insert into local pool so re-gossiped votes are recorded
                 let inserted = self.pool.insert_vote(msg.clone());
                 if inserted {
-                    info!(
-                        "DVF Gossip Validator: Vote inserted into pool successfully"
-                    );
-                    ValidationResult::ProcessAndKeep(msg_hash_b) // Broadcast to others
+                    if !is_known {
+                        let mut known = self.known_messages.write();
+                        known.insert(msg_hash_b.clone());
+                        info!(
+                            "DVF Gossip Validator: Accepted vote for block #{} ({:?}) from validator {:?} (round: {}, epoch: {}, validator_set: {})",
+                            msg.block_number, msg.block_hash, msg.validator_account_id, msg.round_number, msg.epoch_id, msg.validator_set_id
+                        );
+                        
+                        // Record vote reception metrics
+                        if let Some(ref metrics) = self.metrics {
+                            metrics.record_vote_received(msg.round_number);
+                        }
+                        
+                        ValidationResult::ProcessAndKeep(msg_hash_b) // Broadcast new vote to network peers
+                    } else {
+                        debug!(
+                            "DVF Gossip Validator: Accepted re-gossiped vote into local pool for block #{} from validator {:?}",
+                            msg.block_number, msg.validator_account_id
+                        );
+                        ValidationResult::ProcessAndDiscard(msg_hash_b) // Keep locally, don't re-gossip duplicate bytes
+                    }
                 } else {
-                    // Double vote detected
+                    // Double vote / equivocation detected
                     warn!(
                         "DVF Gossip Validator: Double vote detected from validator {:?} in round {} - REJECTED",
                         msg.validator_account_id, msg.round_number
