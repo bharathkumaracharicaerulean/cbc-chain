@@ -180,6 +180,7 @@ impl pallet_cbc_governance::Config for Test {
     type Balance = u128;
     type ProposalExecutor = MockProposalExecutor;
     type ValidatorProvider = MockValidatorProvider;
+    type WeightInfo = ();
 }
 
 parameter_types! {

@@ -36,7 +36,8 @@ where
     vote_pool: Arc<DvfVotePool<Block::Hash, AccountId>>,
     justification_builder: Arc<JustificationBuilder<Block, Client, AccountId>>,
     check_interval: Duration,
-    last_finalized_round: std::sync::RwLock<u32>,
+    last_finalized_round: std::sync::RwLock<Option<u32>>,
+    last_stall_warn_time: std::sync::RwLock<Option<std::time::Instant>>,
     stall_warning_threshold: u32,
     last_validator_set_id: std::sync::RwLock<u32>,
     last_triggered_block: std::sync::RwLock<u32>,
@@ -79,7 +80,8 @@ where
             vote_pool,
             justification_builder,
             check_interval,
-            last_finalized_round: std::sync::RwLock::new(0),
+            last_finalized_round: std::sync::RwLock::new(None),
+            last_stall_warn_time: std::sync::RwLock::new(None),
             stall_warning_threshold: 10, // Warn if no finality for 10 rounds
             last_validator_set_id: std::sync::RwLock::new(0),
             last_triggered_block: std::sync::RwLock::new(0),
@@ -338,7 +340,12 @@ where
 
                     // Update last finalized round
                     if let Ok(mut last_round) = self.last_finalized_round.write() {
-                        *last_round = target_round;
+                        *last_round = Some(target_round);
+                    }
+
+                    // Reset stall warning timer since finality made progress
+                    if let Ok(mut warn_time) = self.last_stall_warn_time.write() {
+                        *warn_time = None;
                     }
 
                     // Calculate and record finality latency
@@ -370,14 +377,39 @@ where
 
     /// Checks if finality has stalled and logs a warning if needed
     fn check_finality_stall(&self, current_round: u32) {
-        if let Ok(last_finalized) = self.last_finalized_round.read() {
-            let rounds_since_finality = current_round.saturating_sub(*last_finalized);
-            
-            if rounds_since_finality >= self.stall_warning_threshold {
-                warn!(
-                    "DVF Vote Aggregator: Finality stalled! No blocks finalized for {} rounds (current: {}, last finalized: {})",
-                    rounds_since_finality, current_round, *last_finalized
-                );
+        let mut last_finalized = match self.last_finalized_round.write() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+
+        match *last_finalized {
+            None => {
+                // Baseline tracking on the first tick after node startup.
+                // This eliminates false alarm warnings when nodes restart at higher block heights.
+                *last_finalized = Some(current_round);
+            }
+            Some(last_round) => {
+                let rounds_since_finality = current_round.saturating_sub(last_round);
+                
+                if rounds_since_finality >= self.stall_warning_threshold {
+                    let should_warn = match self.last_stall_warn_time.read() {
+                        Ok(guard) => match *guard {
+                            Some(last_time) => last_time.elapsed() >= Duration::from_secs(30),
+                            None => true,
+                        },
+                        Err(_) => true,
+                    };
+
+                    if should_warn {
+                        warn!(
+                            "DVF Vote Aggregator: Finality stalled! No blocks finalized for {} rounds (current: {}, last finalized: {})",
+                            rounds_since_finality, current_round, last_round
+                        );
+                        if let Ok(mut warn_time) = self.last_stall_warn_time.write() {
+                            *warn_time = Some(std::time::Instant::now());
+                        }
+                    }
+                }
             }
         }
     }
